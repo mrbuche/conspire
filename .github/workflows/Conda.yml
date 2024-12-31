@@ -14,3 +14,5 @@ jobs:
         run: conda install anaconda-client conda-build -y
       - name: Build
         run: conda build conspire
+      - name: Upload
+        run: anaconda upload --token ${{ secrets.ANACONDA_TOKEN }} conspire
