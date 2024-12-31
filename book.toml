@@ -1,0 +1,22 @@
+[book]
+authors = ["Michael R. Buche <mrbuche@sandia.gov>"]
+description = "c o n s p i r e"
+language = "en"
+src = "book/"
+title = "conspire"
+
+[build]
+build-dir = "book/build/"
+create-missing = false
+
+[rust]
+edition = "2021"
+
+[output.html]
+edit-url-template = "https://github.com/mrbuche/conspire/edit/main/{path}"
+git-repository-url = "https://github.com/mrbuche/conspire"
+
+[preprocessor.cmdrun]
+
+[preprocessor.katex]
+after = ["links"]
