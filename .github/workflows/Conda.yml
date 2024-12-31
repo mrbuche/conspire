@@ -1,0 +1,14 @@
+name: Conda
+on:
+  push:
+    branches: dev
+jobs:
+  Conda:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Grayskull
+        run: pip install grayskull
+      - name: Meta
+        run: grayskull pypi conspire && cd conspire/
+      - name: Build
+        run: conda-build conspire
