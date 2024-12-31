@@ -22,20 +22,20 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PAT }}
-      - name: Build
+      - name: Test
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
           push: false
           tags: mrbuche/conspire:latest
-      - name: Build and push
-        if: github.event_name == 'push'
+      - name: Latest
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           push: true
           tags: mrbuche/conspire:latest
-      - name: Build and push
-        if: github.event_name == 'release'
+      - name: Versioned
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           push: true
