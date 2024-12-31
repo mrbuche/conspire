@@ -19,4 +19,5 @@ jobs:
       - name: Upload
         run: |
           PATH="/usr/share/miniconda/bin/:$PATH"
-          anaconda upload --token ${{ secrets.ANACONDA_TOKEN }} conspire
+          export ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+          anaconda upload --user mrbuche conspire
