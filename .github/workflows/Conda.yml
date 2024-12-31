@@ -9,10 +9,14 @@ jobs:
       - name: Grayskull
         run: pip install grayskull
       - name: Meta
-        run: grayskull pypi conspire && cd conspire/
+        run: |
+          grayskull pypi conspire
+          cd conspire/
       - name: Conda
         run: conda install anaconda-client conda-build -y
       - name: Build
         run: conda build conspire
       - name: Upload
-        run: anaconda upload --token ${{ secrets.ANACONDA_TOKEN }} conspire
+        run: |
+          PATH="/usr/share/miniconda/bin/:$PATH"
+          anaconda upload --token ${{ secrets.ANACONDA_TOKEN }} conspire
