@@ -10,5 +10,7 @@ jobs:
         run: pip install grayskull
       - name: Meta
         run: grayskull pypi conspire && cd conspire/
+      - name: Conda
+        run: conda install anaconda-client conda-build
       - name: Build
         run: conda-build conspire
