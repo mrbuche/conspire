@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Requirements
-        run: pip install grayskull maturin
+        run: pip install --upgrade grayskull maturin pip
       - name: Meta
         run: |
           grayskull pypi conspire
