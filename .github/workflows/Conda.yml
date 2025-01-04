@@ -8,8 +8,8 @@ jobs:
   Conda:
     runs-on: ubuntu-latest
     steps:
-      - name: Grayskull
-        run: pip install grayskull
+      - name: Requirements
+        run: pip install grayskull maturin
       - name: Meta
         run: |
           grayskull pypi conspire
