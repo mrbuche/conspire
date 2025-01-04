@@ -1,5 +1,6 @@
-FROM julia:1.11 as julia
+FROM julia:1.11
 FROM python:3.13
+FROM rust:1.83.0
 ARG VERSION
 RUN if [[ -z "$VERSION" ]]; \
     then pip install conspire==$VERSION; \
