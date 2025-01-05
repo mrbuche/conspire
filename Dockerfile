@@ -13,6 +13,7 @@ RUN if [ -z "$VERSION" ]; then \
         julia -e 'using Pkg; Pkg.add(name="Conspire", version="'$VERSION'")'; \
         git clone https://github.com/mrbuche/conspire.py.git --branch $VERSION; \
     fi
-RUN mv conspire.py/pyproject.toml .
-RUN mv conspire.py/tests/ .
+RUN mkdir -p /usr/conspire/python/
+RUN mv conspire.py/pyproject.toml /usr/conspire/python/
+RUN mv conspire.py/tests/ /usr/conspire/python/
 RUN rm -r conspire.py/
