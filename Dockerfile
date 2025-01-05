@@ -1,7 +1,3 @@
-FROM rust:1.83.0 AS rust
-
-RUN which cargo
-
 FROM python:3.13
-
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 RUN pip install pip@git+https://github.com/mrbuche/conspire.py
