@@ -5,9 +5,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 ENV PATH="/root/.juliaup/bin:${PATH}"
 ARG VERSION
 RUN if [ -z "$VERSION" ]; then \
-        echo "ASDFASDFASDFASDFASDF"; \
+        pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
+        julia -e 'using Pkg; Pkg.add(url="https://github.com/mrbuche/Conspire.jl")'; \
     else \
-        echo $VERSION; \
+        pip install conspire==$VERSION pytest; \
+        julia -e 'using Pkg; Pkg.add(name="Conspire", version="'$VERSION'")'; \
     fi
-RUN pip install git+https://github.com/mrbuche/conspire.py.git pytest
-RUN julia -e 'using Pkg; Pkg.add(url="https://github.com/mrbuche/Conspire.jl")'
