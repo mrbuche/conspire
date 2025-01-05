@@ -22,6 +22,13 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PAT }}
+      - name: Foo
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          build-args: VERSION=${{ steps.last_release.outputs.tag_name }}
+          load: true
+          tags: mrbuche/conspire:foo
       - name: Test
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
