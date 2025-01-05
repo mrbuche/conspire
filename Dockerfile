@@ -11,3 +11,4 @@ RUN if [ -z "$VERSION" ]; then \
         pip install conspire==$VERSION pytest; \
         julia -e 'using Pkg; Pkg.add(name="Conspire", version="'$VERSION'")'; \
     fi
+RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
