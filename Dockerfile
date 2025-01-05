@@ -7,7 +7,13 @@ ARG VERSION
 RUN if [ -z "$VERSION" ]; then \
         pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
         julia -e 'using Pkg; Pkg.add(url="https://github.com/mrbuche/Conspire.jl")'; \
+        git clone https://github.com/mrbuche/conspire.py.git; \
     else \
         pip install conspire==$VERSION pytest; \
         julia -e 'using Pkg; Pkg.add(name="Conspire", version="'$VERSION'")'; \
+        git clone https://github.com/mrbuche/conspire.py.git --branch $VERSION; \
     fi
+RUN mkdir -p /usr/conspire/python/
+RUN mv conspire.py/pyproject.toml /usr/conspire/python/
+RUN mv conspire.py/tests/ /usr/conspire/python/
+RUN rm -r conspire.py/
