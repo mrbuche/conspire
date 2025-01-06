@@ -26,7 +26,9 @@ jobs:
           grep -lr "python.html" book/build/ | xargs sed -i 's@href="python.html"@href="https://conspire.readthedocs.io"@'
           grep -lr "rust.html" book/build/ | xargs sed -i 's@href="rust.html"@href="https://docs.rs/conspire"@'
       - name: move
-        run: mkdir -p _site/ && cp -r book/build/* _site/
+        run: mkdir -p _site/latest/ && cp -r book/build/* _site/latest/
+      - name: site
+        run: cp book/index.html ../_site/
       - name: upload
         uses: actions/upload-pages-artifact@v3
   Deploy:
