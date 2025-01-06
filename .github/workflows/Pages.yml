@@ -27,6 +27,8 @@ jobs:
           grep -lr "rust.html" book/build/ | xargs sed -i 's@href="rust.html"@href="https://docs.rs/conspire"@'
       - name: move
         run: mkdir -p _site/latest/ && cp -r book/build/* _site/latest/
+      - name: TEMPORARY
+        run: mkdir -p _site/stable/ && cp -r book/build/* _site/stable/
       - name: site
         run: cp book/index.html _site/
       - name: upload
