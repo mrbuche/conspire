@@ -30,7 +30,7 @@ jobs:
       - name: TEMPORARY
         run: mkdir -p _site/stable/ && cp -r book/build/* _site/stable/
       - name: site
-        run: cp book/index.html _site/
+        run: cp book/redirect.html _site/index.html
       - name: upload
         uses: actions/upload-pages-artifact@v3
   Deploy:
