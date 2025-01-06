@@ -28,7 +28,7 @@ jobs:
       - name: move
         run: mkdir -p _site/latest/ && cp -r book/build/* _site/latest/
       - name: site
-        run: cp book/index.html ../_site/
+        run: cp book/index.html _site/
       - name: upload
         uses: actions/upload-pages-artifact@v3
   Deploy:
