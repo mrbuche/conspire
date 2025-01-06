@@ -47,6 +47,8 @@ jobs:
         run: cp book/redirect.html ../_site/index.html
       - name: Upload
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: ../_site/
   Deploy:
     if: github.event_name != 'pull_request'
     environment:
