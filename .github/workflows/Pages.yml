@@ -10,28 +10,42 @@ jobs:
   Book:
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - name: Release
+        id: last_release
+        uses: InsonusK/get-latest-release@v1.1.0
+        with:
+          myToken: ${{ github.token }}
+          view_top: 1
+      - name: Rust
+        uses: actions-rs/toolchain@v1
         with:
           default: true
           toolchain: stable
-      - name: mdbook
+      - name: Dependencies
         run: cargo install mdbook mdbook-cmdrun mdbook-katex
-      - name: build
-        run: mdbook build
-      - name: external
+      - name: Checkout (stable)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.last_release.outputs.tag_name }}
+      - name: Stable
         run: |
+          mdbook build
           grep -lr "julia.html" book/build/ | xargs sed -i 's@href="julia.html"@href="https://mrbuche.github.io/Conspire.jl"@'
           grep -lr "python.html" book/build/ | xargs sed -i 's@href="python.html"@href="https://conspire.readthedocs.io"@'
           grep -lr "rust.html" book/build/ | xargs sed -i 's@href="rust.html"@href="https://docs.rs/conspire"@'
-      - name: move
-        run: mkdir -p _site/latest/ && cp -r book/build/* _site/latest/
-      - name: TEMPORARY
-        run: mkdir -p _site/stable/ && cp -r book/build/* _site/stable/
-      - name: site
+          mkdir -p _site/stable/ && cp -r book/build/* _site/stable/
+      - name: Checkout (latest)
+        uses: actions/checkout@v4
+      - name: Latest
+        run: |
+          mdbook build
+          grep -lr "julia.html" book/build/ | xargs sed -i 's@href="julia.html"@href="https://mrbuche.github.io/Conspire.jl"@'
+          grep -lr "python.html" book/build/ | xargs sed -i 's@href="python.html"@href="https://conspire.readthedocs.io"@'
+          grep -lr "rust.html" book/build/ | xargs sed -i 's@href="rust.html"@href="https://docs.rs/conspire"@'
+          mkdir -p _site/latest/ && cp -r book/build/* _site/latest/
+      - name: Site
         run: cp book/redirect.html _site/index.html
-      - name: upload
+      - name: Upload
         uses: actions/upload-pages-artifact@v3
   Deploy:
     if: github.event_name != 'pull_request'

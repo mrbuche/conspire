@@ -8,7 +8,7 @@
 ## Julia
 
 [![pkg](https://img.shields.io/github/v/release/mrbuche/Conspire.jl?logo=julia&label=Pkg&color=%239558B2)](https://juliahub.com/ui/Packages/General/Conspire)
-[![docs](https://img.shields.io/badge/Docs-API-blue?logo=github)](https://mrbuche.github.io/Conspire.jl)
+[![docs](https://img.shields.io/badge/Docs-API-blue?logo=github)](https://mrbuche.github.io/Conspire.jlasdf)
 
 ```julia
 pkg> add Conspire
