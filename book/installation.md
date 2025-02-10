@@ -1,6 +1,6 @@
 # Installation
 
-[![conda](https://img.shields.io/conda/v/mrbuche/conspire?logo=Anaconda&label=Conda&color=%2344A833)](https://anaconda.org/mrbuche/conspire)
+[![conda](https://img.shields.io/conda/v/conda-forge/conspire?logo=Anaconda&label=Conda&color=%2344A833)](https://anaconda.org/conda-forge/conspire)
 [![docker](https://img.shields.io/docker/v/mrbuche/conspire?logo=docker&label=Docker&color=%232496ED)](https://hub.docker.com/r/mrbuche/conspire)
 
 ## Julia
