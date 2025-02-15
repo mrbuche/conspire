@@ -5,6 +5,10 @@
 # User Guide
 
 - [Installation](installation.md)
+- [Mathematics](math.md)
+  - [Special functions](math/special.md)
+    - [Langevin function](math/special/langevin.md)
+    - [Inverse Langevin function](math/special/inverse_langevin.md)
 
 # Reference Guide
 
