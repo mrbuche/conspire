@@ -19,7 +19,7 @@
       - [Gent](constitutive/solid/hyperelastic/gent.md)
       - [Mooney-Rivlin](constitutive/solid/hyperelastic/mooney_rivlin.md)
       - [Neo-Hookean](constitutive/solid/hyperelastic/neo_hookean.md)
-      - [Saint Venant-Kirchoff](constitutive/solid/hyperelastic/saint_venant_kirchoff.md)
+      - [Saint Venant-Kirchhoff](constitutive/solid/hyperelastic/saint_venant_kirchhoff.md)
       - [Yeoh](constitutive/solid/hyperelastic/yeoh.md)
 
 # Reference Guide
