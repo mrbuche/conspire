@@ -1,6 +1,6 @@
 # Gent model
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/model.md}}
+<!-- cmdrun sed 's/NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/model.md -->
 
 **Helmholtz free energy density**
 

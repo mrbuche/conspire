@@ -1,6 +1,6 @@
 # Fung model
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/fung/model.md}}
+<!-- cmdrun sed 's/NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/fung/model.md -->
 
 **Helmholtz free energy density**
 

@@ -1,6 +1,6 @@
 # Arruda-Boyce model
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/arruda_boyce/model.md}}
+<!-- cmdrun sed 's/NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/arruda_boyce/model.md -->
 
 **Helmholtz free energy density**
 

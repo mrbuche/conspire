@@ -1,6 +1,6 @@
 # Mooney-Rivlin model
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/mooney_rivlin/model.md}}
+<!-- cmdrun sed 's/NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/mooney_rivlin/model.md -->
 
 **Helmholtz free energy density**
 
