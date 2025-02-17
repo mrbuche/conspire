@@ -1,3 +1,0 @@
-[submodule "book/conspire.rs"]
-	path = book/conspire.rs
-	url = git@github.com:mrbuche/conspire.rs
