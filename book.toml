@@ -24,3 +24,5 @@ git-repository-url = "https://github.com/mrbuche/conspire"
 
 [preprocessor.katex]
 after = ["links"]
+block-delimiter = { left = "```math", right = "```" }
+inline-delimiter = { left = "$`", right = "`$" }
