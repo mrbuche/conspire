@@ -14,13 +14,13 @@
     - [Elastic](constitutive/solid/elastic.md)
       - [Almansi-Hamel](constitutive/solid/elastic/almansi_hamel.md)
     - [Hyperelastic](constitutive/solid/hyperelastic.md)
-      - [Arruda-Boyce model](constitutive/solid/hyperelastic/arruda_boyce.md)
-      - [Fung model](constitutive/solid/hyperelastic/fung.md)
-      - [Gent model](constitutive/solid/hyperelastic/gent.md)
+      - [Arruda-Boyce](constitutive/solid/hyperelastic/arruda_boyce.md)
+      - [Fung](constitutive/solid/hyperelastic/fung.md)
+      - [Gent](constitutive/solid/hyperelastic/gent.md)
       - [Mooney-Rivlin](constitutive/solid/hyperelastic/mooney_rivlin.md)
       - [Neo-Hookean](constitutive/solid/hyperelastic/neo_hookean.md)
-      - [Saint-Venant Kirchoff model](constitutive/solid/hyperelastic/saint_venant_kirchoff.md)
-      - [Yeoh model](constitutive/solid/hyperelastic/yeoh.md)
+      - [Saint Venant-Kirchoff](constitutive/solid/hyperelastic/saint_venant_kirchoff.md)
+      - [Yeoh](constitutive/solid/hyperelastic/yeoh.md)
 
 # Reference Guide
 
