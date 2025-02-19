@@ -1,6 +1,6 @@
 # Hyperelastic constitutive models
 
-{{#include ../../conspire.rs/src/constitutive/solid/hyperelastic/doc.md}}
+{{#include ../../../conspire.rs/src/constitutive/solid/hyperelastic/doc.md}}
 
 - [Arruda-Boyce model](hyperelastic/arruda_boyce.md)
 - [Fung model](hyperelastic/fung.md)
