@@ -7,6 +7,7 @@
 - [Installation](installation.md)
 - [Mathematics](math.md)
   - [Special functions](math/special.md)
+    - [Lambert W function](math/special/lambert_w.md)
     - [Langevin function](math/special/langevin.md)
     - [Inverse Langevin function](math/special/inverse_langevin.md)
 - [Constitutive](constitutive.md)
