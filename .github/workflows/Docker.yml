@@ -27,7 +27,7 @@ jobs:
           load: true
           tags: mrbuche/conspire:latest
       - name: Julia (latest)
-        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test("Conspire")'
+        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test()'
       - name: Python (latest)
         run: docker run --rm mrbuche/conspire:latest pytest /usr/conspire/python/
       - name: Build (stable)
@@ -37,7 +37,7 @@ jobs:
           load: true
           tags: mrbuche/conspire:${{ steps.last_release.outputs.tag_name }}
       - name: Julia (stable)
-        run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} julia -e 'using Pkg; Pkg.test("Conspire")'
+        run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} julia -e 'using Pkg; Pkg.test()'
       - name: Python (stable)
         run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} pytest /usr/conspire/python/
       - name: Push (latest)
