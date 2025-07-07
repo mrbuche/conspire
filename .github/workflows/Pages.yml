@@ -1,11 +1,14 @@
 name: Book
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+env:
+  CARGO_TERM_COLOR: always
 on:
   pull_request:
     branches: main
   push:
     branches: main
-env:
-  CARGO_TERM_COLOR: always
 jobs:
   Book:
     runs-on: ubuntu-latest

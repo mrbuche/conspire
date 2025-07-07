@@ -1,8 +1,13 @@
 name: Docker
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+env:
+  CARGO_TERM_COLOR: always
 on:
-  push:
-    branches: main
   pull_request:
+    branches: main
+  push:
     branches: main
   release:
     types: published
@@ -27,7 +32,7 @@ jobs:
           load: true
           tags: mrbuche/conspire:latest
       - name: Julia (latest)
-        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test()'
+        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test("Conspire")'
       - name: Python (latest)
         run: docker run --rm mrbuche/conspire:latest pytest /usr/conspire/python/
       - name: Build (stable)
@@ -37,7 +42,7 @@ jobs:
           load: true
           tags: mrbuche/conspire:${{ steps.last_release.outputs.tag_name }}
       - name: Julia (stable)
-        run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} julia -e 'using Pkg; Pkg.test()'
+        run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} julia -e 'using Pkg; Pkg.test("Conspire")'
       - name: Python (stable)
         run: docker run --rm mrbuche/conspire:${{ steps.last_release.outputs.tag_name }} pytest /usr/conspire/python/
       - name: Push (latest)

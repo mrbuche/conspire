@@ -6,11 +6,12 @@ ENV PATH="/root/.juliaup/bin:${PATH}"
 ARG VERSION
 RUN if [ -z "$VERSION" ]; then \
         pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
-        julia -e 'using Pkg; Pkg.activate(); Pkg.add(url="https://github.com/mrbuche/Conspire.jl"); Pkg.precompile()'; \
+        git clone --recurse-submodules https://github.com/mrbuche/Conspire.jl.git; \
+        julia -e 'using Pkg; Pkg.develop(path="Conspire.jl"); Pkg.precompile()'; \
         git clone https://github.com/mrbuche/conspire.py.git; \
     else \
         pip install conspire==$VERSION pytest; \
-        julia -e 'using Pkg; Pkg.activate(); Pkg.add(name="Conspire", version="'$VERSION'"); Pkg.precompile()'; \
+        julia -e 'using Pkg; Pkg.add(name="Conspire", version="'$VERSION'"); Pkg.precompile()'; \
         git clone https://github.com/mrbuche/conspire.py.git --branch $VERSION; \
     fi
 RUN mkdir -p /usr/conspire/python/
