@@ -1,6 +1,6 @@
 # Yeoh model
 
-<!-- cmdrun sed 's/NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/yeoh/model.md -->
+<!-- cmdrun sed 's/super::NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/yeoh/model.md -->
 
 **Helmholtz free energy density**
 
