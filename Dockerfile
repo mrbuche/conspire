@@ -1,7 +1,7 @@
 FROM python:latest
 RUN curl https://sh.rustup.rs -fsSL | sh -s -- -y
 RUN curl https://install.julialang.org -fsSL | sh -s -- -y
-RUN curl https://astral.sh/uv/install.sh -fsSL | sh -- -y
+RUN curl https://astral.sh/uv/install.sh -fsSL | sh
 ENV PATH="/root/.cargo/bin:${PATH}"
 ENV PATH="/root/.juliaup/bin:${PATH}"
 ARG VERSION
