@@ -9,6 +9,8 @@ on:
     branches: main
   push:
     branches: main
+  release:
+    types: published
 jobs:
   Book:
     runs-on: ubuntu-latest
