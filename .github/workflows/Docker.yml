@@ -32,7 +32,7 @@ jobs:
           load: true
           tags: mrbuche/conspire:latest
       - name: Test (latest)
-        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test("Conspire")' && python -m pytest /usr/conspire/python/
+        run: docker run --rm mrbuche/conspire:latest julia -e 'using Pkg; Pkg.test("Conspire")' && uv run pytest /usr/conspire/python/
       - name: Build (stable)
         uses: docker/build-push-action@v6
         with:
