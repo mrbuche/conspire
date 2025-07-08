@@ -8,7 +8,6 @@ RUN if [ -z "$VERSION" ]; then \
         pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
         git clone https://github.com/mrbuche/conspire.py.git; \
         git clone https://github.com/mrbuche/Conspire.jl.git --recurse-submodules; \
-        ls Conspire.jl/conspire.rs; \
         julia -e 'using Pkg; Pkg.develop(path="Conspire.jl"); Pkg.build("Conspire")'; \
     else \
         pip install conspire==$VERSION pytest; \
