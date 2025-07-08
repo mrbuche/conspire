@@ -7,7 +7,6 @@ ENV PATH="/root/.juliaup/bin:${PATH}"
 ENV PATH="/root/.local/bin:${PATH}"
 ARG VERSION
 RUN uv venv
-RUN source .venv/bin/activate
 RUN if [ -z "$VERSION" ]; then \
         uv pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
         git clone https://github.com/mrbuche/conspire.py.git; \
@@ -23,3 +22,4 @@ RUN mkdir -p /usr/conspire/python/
 RUN mv conspire.py/pyproject.toml /usr/conspire/python/
 RUN mv conspire.py/tests/ /usr/conspire/python/
 RUN rm -r conspire.py/
+RUN ["/bin/bash", "-c", "source .venv/bin/activate"]
