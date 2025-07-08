@@ -4,6 +4,7 @@ RUN curl https://install.julialang.org -fsSL | sh -s -- -y
 RUN curl https://astral.sh/uv/install.sh -fsSL | sh
 ENV PATH="/root/.cargo/bin:${PATH}"
 ENV PATH="/root/.juliaup/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 ARG VERSION
 RUN if [ -z "$VERSION" ]; then \
         uv pip install git+https://github.com/mrbuche/conspire.py.git pytest; \
