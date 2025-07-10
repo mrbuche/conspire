@@ -5,10 +5,10 @@ version = 4
 [[package]]
 name = "conspire"
 version = "0.5.8"
-source = "git+https://github.com/mrbuche/conspire.rs.git?rev=497515b75a570e49d1f3daec487557c4da2bf8ca#497515b75a570e49d1f3daec487557c4da2bf8ca"
+source = "git+https://github.com/mrbuche/conspire.rs.git#497515b75a570e49d1f3daec487557c4da2bf8ca"
 
 [[package]]
-name = "conspire_wrapper"
+name = "conspire_book"
 version = "0.1.0"
 dependencies = [
  "conspire",
