@@ -36,7 +36,7 @@ jobs:
       - name: Stable
         run: |
           pip install conspire==${{ steps.last_release.outputs.tag_name }} matplotlib numpy
-          cargo run --release
+          # cargo run --release
           mdbook build
           grep -lr "julia.html" book/build/ | xargs sed -i 's@href="julia.html"@href="https://mrbuche.github.io/Conspire.jl"@'
           grep -lr "python.html" book/build/ | xargs sed -i 's@href="python.html"@href="https://conspire.readthedocs.io"@'
