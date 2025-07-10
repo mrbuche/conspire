@@ -1,15 +1,15 @@
 # Gent model
 
-<!-- cmdrun sed 's/super::NeoHookean/neo_hookean.html/' ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/model.md -->
+{{#include ../../../../target/doc/constitutive/solid/hyperelastic/gent/doc.md}}
 
 **Helmholtz free energy density**
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/helmholtz_free_energy_density.md}}
+{{#include ../../../../target/doc/constitutive/solid/hyperelastic/gent/helmholtz_free_energy_density.md}}
 
 **Cauchy stress**
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/cauchy_stress.md}}
+{{#include ../../../../target/doc/constitutive/solid/hyperelastic/gent/cauchy_stress.md}}
 
 **Cauchy tangent stiffness**
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/hyperelastic/gent/cauchy_tangent_stiffness.md}}
+{{#include ../../../../target/doc/constitutive/solid/hyperelastic/gent/cauchy_tangent_stiffness.md}}
