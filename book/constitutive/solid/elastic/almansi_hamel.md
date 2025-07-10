@@ -1,6 +1,6 @@
 # Almansi-Hamel model
 
-{{#include ../../../../conspire.rs/src/constitutive/solid/elastic/almansi_hamel/model.md}}
+{{#include ../../../../target/doc/constitutive/solid/elastic/almansi_hamel/doc.md}}
 
 **Cauchy stress**
 

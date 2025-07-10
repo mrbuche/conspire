@@ -1,2 +1,8 @@
 **.svg
 book/build/
+target/
+
+
+# Added by cargo
+
+/target
