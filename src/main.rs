@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
         create_dir_all(Path::new(format!("target/doc/{path}").as_str()))?;
         write(
             Path::new(format!("target/doc/{path}/doc.md").as_str()),
-            model[0][1].replace("$`", "$").replace("`$", "$"),
+            model[0][1],
         )?;
         model.iter().skip(1).try_for_each(|[method, doc]| {
             if doc.is_empty() {
@@ -38,13 +38,7 @@ fn main() -> Result<(), Error> {
             } else {
                 write(
                     Path::new(format!("target/doc/{path}/{method}.md").as_str()),
-                    doc.replace("```math", "$$")
-                        .replace("```", "$$")
-                        .replace("\\begin{aligned}", "")
-                        .replace("\\end{aligned}", "")
-                        .replace("&", "")
-                        .replace("\\\\", "")
-                        .replace("\n", ""),
+                    doc,
                 )
             }
         })
