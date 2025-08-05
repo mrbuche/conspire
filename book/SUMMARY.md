@@ -10,6 +10,7 @@
     - [Lambert W function](math/special/lambert_w.md)
     - [Langevin function](math/special/langevin.md)
     - [Inverse Langevin function](math/special/inverse_langevin.md)
+    - [Rosenbrock function](math/special/rosenbrock.md)
 - [Constitutive](constitutive.md)
   - [Solid models](constitutive/solid.md)
     - [Elastic models](constitutive/solid/elastic.md)

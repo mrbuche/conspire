@@ -8,3 +8,4 @@
 - [Lambert W function](special/lambert_w.md)
 - [Langevin function](special/langevin.md)
 - [Inverse Langevin function](special/inverse_langevin.md)
+- [Rosenbrock function](special/rosenbrock.md)
