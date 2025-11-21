@@ -26,8 +26,10 @@ jobs:
         with:
           default: true
           toolchain: stable
+      - name: mdBook
+        run: cargo install mdbook --version 0.4.52
       - name: Dependencies
-        run: cargo install mdbook mdbook-cmdrun mdbook-katex
+        run: cargo install mdbook-cmdrun mdbook-katex
       - name: Checkout (stable)
         uses: actions/checkout@v6
         with:
