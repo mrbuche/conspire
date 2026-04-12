@@ -10,7 +10,7 @@ publish = false
 version = "0.1.0"
 
 [dependencies]
-conspire = { version = "=0.6.0", features = ["doc", "constitutive"] }
+conspire = { features = ["doc", "constitutive"], git = "https://github.com/mrbuche/conspire.rs.git" }
 
 [profile.release]
 codegen-units = 1
