@@ -6,10 +6,11 @@ edition = "2024"
 keywords = ["conspire", "mrbuche"]
 license = "GPL-3.0"
 name = "conspire_book"
+publish = false
 version = "0.1.0"
 
 [dependencies]
-conspire = { features = ["doc", "constitutive"], git = "https://github.com/mrbuche/conspire.rs.git" }
+conspire = { version = "=0.6.0", features = ["doc", "constitutive"] }
 
 [profile.release]
 codegen-units = 1

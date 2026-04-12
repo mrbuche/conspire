@@ -13,8 +13,7 @@ use conspire::{
         },
     },
     math::integrate::doc::{
-        EXPLICIT, EXPLICIT_IV, IMPLICIT, backward_euler, bogacki_shampine, dormand_prince,
-        verner_8, verner_9,
+        EXPLICIT, IMPLICIT, backward_euler, bogacki_shampine, dormand_prince, verner_8, verner_9,
     },
 };
 
@@ -26,7 +25,6 @@ fn main() -> Result<(), Error> {
 fn math() -> Result<(), Error> {
     let methods = [
         vec![["math/integrate/explicit", EXPLICIT]],
-        vec![["math/integrate/explicit_iv", EXPLICIT_IV]],
         bogacki_shampine(),
         dormand_prince(),
         verner_8(),
