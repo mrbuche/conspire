@@ -1,4 +1,12 @@
-from conspire.math.special import lambert_w, langevin, inverse_langevin, rosenbrock
+from conspire.math.special import (
+    erf,
+    erfc,
+    inverse_langevin,
+    lambert_w,
+    langevin,
+    rosenbrock,
+    sinhc,
+)
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -95,3 +103,64 @@ ax.tick_params(axis="x", colors="#000002")
 ax.tick_params(axis="y", colors="#000002")
 
 plt.savefig("special/rosenbrock.svg", transparent=True)
+
+ax.clear()
+
+x = np.linspace(-4, 4, num)
+f = np.zeros(len(x))
+for i, xi in enumerate(x):
+    f[i] = sinhc(xi)
+
+plt.plot(x, f, "#000005")
+
+ax = plt.gca()
+ax.set_xlabel("$x$", fontsize=12)
+ax.set_ylabel("$\mathrm{sinhc}(x)$", fontsize=12)
+
+ax.xaxis.label.set_color("#000002")
+ax.yaxis.label.set_color("#000002")
+ax.tick_params(axis="x", colors="#000002")
+ax.tick_params(axis="y", colors="#000002")
+
+plt.savefig("special/sinhc.svg", transparent=True)
+
+ax.clear()
+
+x = np.linspace(-3, 3, num)
+f = np.zeros(len(x))
+for i, xi in enumerate(x):
+    f[i] = erf(xi)
+
+plt.plot(x, f, "#000005")
+
+ax = plt.gca()
+ax.set_ylim([-1.1, 1.1])
+ax.set_xlabel("$x$", fontsize=12)
+ax.set_ylabel("$\mathrm{erf}(x)$", fontsize=12)
+
+ax.xaxis.label.set_color("#000002")
+ax.yaxis.label.set_color("#000002")
+ax.tick_params(axis="x", colors="#000002")
+ax.tick_params(axis="y", colors="#000002")
+
+plt.savefig("special/erf.svg", transparent=True)
+
+ax.clear()
+
+f = np.zeros(len(x))
+for i, xi in enumerate(x):
+    f[i] = erfc(xi)
+
+plt.plot(x, f, "#000005")
+
+ax = plt.gca()
+ax.set_ylim([-0.1, 2.1])
+ax.set_xlabel("$x$", fontsize=12)
+ax.set_ylabel("$\mathrm{erfc}(x)$", fontsize=12)
+
+ax.xaxis.label.set_color("#000002")
+ax.yaxis.label.set_color("#000002")
+ax.tick_params(axis="x", colors="#000002")
+ax.tick_params(axis="y", colors="#000002")
+
+plt.savefig("special/erfc.svg", transparent=True)

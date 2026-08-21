@@ -1,4 +1,4 @@
-# Integration and ODEs
+# Integration, ODEs, and DAEs
 
 <!-- cmdrun python integrate/figures.py -->
 <!-- cmdrun sed -i 's/#000000/var(--fg)/' integrate/*/*.svg -->
