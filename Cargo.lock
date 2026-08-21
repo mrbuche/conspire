@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "conspire"
-version = "0.6.1"
-source = "git+https://github.com/mrbuche/conspire.rs.git#32ca150258098e5c7273c9725be9d5f0854c3164"
+version = "0.7.6"
+source = "git+https://github.com/mrbuche/conspire.rs.git#d5774c5a8395115f93f32f96243e7c5e8e38867a"
 
 [[package]]
 name = "conspire_book"
