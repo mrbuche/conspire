@@ -5,12 +5,18 @@ use std::{
 };
 
 use conspire::{
-    constitutive::solid::{
-        elastic::doc::{DOC as ELASTIC, almansi_hamel},
-        hyperelastic::doc::{
-            DOC as HYPERELASTIC, arruda_boyce, fung, gent, mooney_rivlin, neo_hookean,
-            saint_venant_kirchhoff, yeoh,
+    constitutive::{
+        solid::{
+            elastic::doc::{
+                DOC as ELASTIC, almansi_hamel, hencky as hencky_elastic,
+                saint_venant_kirchhoff as saint_venant_kirchhoff_elastic,
+            },
+            hyperelastic::doc::{
+                DOC as HYPERELASTIC, arruda_boyce, eight_chain, fung, gent, hencky,
+                mooney_rivlin, neo_hookean, saint_venant_kirchhoff, yeoh,
+            },
         },
+        thermal::conduction::doc::{DOC as THERMAL_CONDUCTION, fourier},
     },
     math::integrate::doc::{
         EXPLICIT, IMPLICIT, backward_euler, bogacki_shampine, dormand_prince, verner_8, verner_9,
@@ -19,7 +25,8 @@ use conspire::{
 
 fn main() -> Result<(), Error> {
     math()?;
-    constitutive()
+    constitutive()?;
+    thermal()
 }
 
 fn math() -> Result<(), Error> {
@@ -44,25 +51,41 @@ fn math() -> Result<(), Error> {
 }
 
 fn constitutive() -> Result<(), Error> {
-    let models = [
+    write_models(&[
         vec![["constitutive/solid/elastic", ELASTIC]],
         almansi_hamel(),
+        hencky_elastic(),
+        saint_venant_kirchhoff_elastic(),
         vec![["constitutive/solid/hyperelastic", HYPERELASTIC]],
         arruda_boyce(),
+        eight_chain(),
         fung(),
         gent(),
+        hencky(),
         mooney_rivlin(),
         neo_hookean(),
         saint_venant_kirchhoff(),
         yeoh(),
-    ];
+    ])
+}
+
+fn thermal() -> Result<(), Error> {
+    write_models(&[
+        vec![["constitutive/thermal/conduction", THERMAL_CONDUCTION]],
+        fourier(),
+    ])
+}
+
+fn write_models(models: &[Vec<[&str; 2]>]) -> Result<(), Error> {
     let mut path = "";
     models.iter().try_for_each(|model| {
         path = model[0][0];
         create_dir_all(Path::new(format!("target/doc/{path}").as_str()))?;
         write(
             Path::new(format!("target/doc/{path}/doc.md").as_str()),
-            model[0][1].replace("super::NeoHookean", "neo_hookean.html"),
+            model[0][1]
+                .replace("super::NeoHookean", "neo_hookean.html")
+                .replace("super::ArrudaBoyce", "arruda_boyce.html"),
         )?;
         model.iter().skip(1).try_for_each(|[method, doc]| {
             if doc.is_empty() {

@@ -10,7 +10,7 @@ publish = false
 version = "0.1.0"
 
 [dependencies]
-conspire = { features = ["doc", "constitutive"], git = "https://github.com/mrbuche/conspire.rs.git" }
+conspire = { features = ["doc", "constitutive"], git = "https://github.com/mrbuche/conspire.rs.git", branch = "elastic-svk-doc" }
 
 [profile.release]
 codegen-units = 1
