@@ -53,6 +53,7 @@
     - [Hyperviscoelastic models](constitutive/solid/hyperviscoelastic.md)
       - [Saint Venant-Kirchhoff](constitutive/solid/hyperviscoelastic/saint_venant_kirchhoff.md)
     - [Elastic-viscoplastic models](constitutive/solid/elastic_viscoplastic.md)
+      - [Almansi-Hamel](constitutive/solid/elastic_viscoplastic/almansi_hamel.md)
     - [Hyperelastic-viscoplastic models](constitutive/solid/hyperelastic_viscoplastic.md)
       - [Hencky](constitutive/solid/hyperelastic_viscoplastic/hencky.md)
       - [Saint Venant-Kirchhoff](constitutive/solid/hyperelastic_viscoplastic/saint_venant_kirchhoff.md)
