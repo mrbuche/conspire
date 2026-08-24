@@ -80,6 +80,7 @@ fn constitutive() -> Result<(), Error> {
             "constitutive/solid/elastic_viscoplastic",
             elastic_viscoplastic::DOC,
         ]],
+        elastic_viscoplastic::almansi_hamel(),
         vec![[
             "constitutive/solid/hyperelastic_viscoplastic",
             hyperelastic_viscoplastic::DOC,
