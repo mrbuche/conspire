@@ -2,5 +2,5 @@
 
 {{#include ../../../target/doc/constitutive/solid/elastic_viscoplastic/doc.md}}
 
-- [Almansi-Hamel model](elastic_viscoplastic/almansi_hamel.md)
+- [Eulerian Almansi-Hamel model](elastic_viscoplastic/almansi_hamel_eulerian.md)
 

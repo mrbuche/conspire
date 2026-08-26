@@ -52,17 +52,26 @@ fn math() -> Result<(), Error> {
 fn constitutive() -> Result<(), Error> {
     write_models(&[
         vec![["constitutive/solid/elastic", elastic::DOC]],
-        elastic::almansi_hamel(),
+        elastic::almansi_hamel_eulerian(),
+        elastic::almansi_hamel_lagrangian(),
+        elastic::bazant_itskov_eulerian(),
+        elastic::bazant_itskov_lagrangian(),
         elastic::hencky(),
         elastic::saint_venant_kirchhoff(),
+        elastic::seth_hill_eulerian(),
+        elastic::seth_hill_lagrangian(),
         vec![["constitutive/solid/hyperelastic", hyperelastic::DOC]],
         hyperelastic::arruda_boyce(),
+        hyperelastic::blatz_ko(),
+        hyperelastic::carroll(),
         hyperelastic::eight_chain(),
         hyperelastic::fung(),
         hyperelastic::gent(),
         hyperelastic::hencky(),
+        hyperelastic::isihara(),
         hyperelastic::mooney_rivlin(),
         hyperelastic::neo_hookean(),
+        hyperelastic::ogden(),
         hyperelastic::saint_venant_kirchhoff(),
         hyperelastic::yeoh(),
         vec![["constitutive/solid/viscoelastic", viscoelastic::DOC]],
@@ -80,7 +89,7 @@ fn constitutive() -> Result<(), Error> {
             "constitutive/solid/elastic_viscoplastic",
             elastic_viscoplastic::DOC,
         ]],
-        elastic_viscoplastic::almansi_hamel(),
+        elastic_viscoplastic::almansi_hamel_eulerian(),
         vec![[
             "constitutive/solid/hyperelastic_viscoplastic",
             hyperelastic_viscoplastic::DOC,
@@ -114,6 +123,23 @@ fn write_models(models: &[Vec<[&str; 2]>]) -> Result<(), Error> {
             model[0][1]
                 .replace("super::NeoHookean", "neo_hookean.html")
                 .replace("super::ArrudaBoyce", "arruda_boyce.html")
+                .replace("super::MooneyRivlin", "mooney_rivlin.html")
+                .replace(
+                    "super::super::hyperelastic::Hencky",
+                    "../hyperelastic/hencky.html",
+                )
+                .replace(
+                    "super::super::hyperelastic::SaintVenantKirchhoff",
+                    "../hyperelastic/saint_venant_kirchhoff.html",
+                )
+                .replace("super::Hencky", "hencky.html")
+                .replace("super::SaintVenantKirchhoff", "saint_venant_kirchhoff.html")
+                .replace("super::AlmansiHamelEulerian", "almansi_hamel_eulerian.html")
+                .replace("super::AlmansiHamelLagrangian", "almansi_hamel_lagrangian.html")
+                .replace("super::BazantItskovEulerian", "bazant_itskov_eulerian.html")
+                .replace("super::BazantItskovLagrangian", "bazant_itskov_lagrangian.html")
+                .replace("super::SethHillEulerian", "seth_hill_eulerian.html")
+                .replace("super::SethHillLagrangian", "seth_hill_lagrangian.html")
                 .replace(
                     "[Bogacki-Shampine](`crate::math::integrate::BogackiShampine`)",
                     "[Bogacki-Shampine](bogacki_shampine.html)",
