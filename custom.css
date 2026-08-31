@@ -1,9 +1,3 @@
-/* Hide nested reproduction pages from the sidebar TOC while keeping the
-   top-level "Reproductions" entry. The pages still build and are reachable
-   from links within reproductions.md.
-
-   `ol.chapter` is the sidebar list in both render paths mdBook 0.5 uses:
-   the JS-injected sidebar on the page and the `toc.html` iframe fallback. */
 ol.chapter li.chapter-item:has(a[href*="reproductions/"]) {
     display: none;
 }
