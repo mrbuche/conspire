@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+import numpy as np
 from conspire.math.special import (
     erf,
     erfc,
@@ -7,12 +9,6 @@ from conspire.math.special import (
     rosenbrock,
     sinhc,
 )
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from matplotlib.ticker import LogFormatterMathtext
-
 
 num = 333
 

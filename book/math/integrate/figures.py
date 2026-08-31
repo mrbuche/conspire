@@ -1,6 +1,5 @@
-from conspire.math.integrate import BogackiShampine, DormandPrince, Verner8, Verner9
 import matplotlib.pyplot as plt
-
+from conspire.math.integrate import BogackiShampine, DormandPrince, Verner8, Verner9
 
 for integrator, name in [
     (BogackiShampine(abs_tol=1e-3, rel_tol=1e-3), "bogacki_shampine"),

@@ -12,3 +12,8 @@ repos:
     -   id: clippy
         args: ['--', '-D',  'warnings']
     -   id: fmt
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.11.10
+  hooks:
+    - id: ruff-check
+    - id: ruff-format

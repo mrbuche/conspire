@@ -54,6 +54,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+      - name: Ruff
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: 0.16.5
+      - name: Check
+        run: ruff check
+      - name: Format
+        run: ruff format --check
       - name: Latest
         run: |
           pip install git+https://github.com/mrbuche/conspire.py.git matplotlib numpy
