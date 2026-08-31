@@ -5,3 +5,4 @@ langtabs.js
 target/
 
 **.svg
+**__pycache__/

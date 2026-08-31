@@ -16,7 +16,7 @@ for integrator, name in [
 
     ax = plt.gca()
     ax.set_title(
-        f"The van der Pol oscillator ($\mu=1$) with tol={integrator.abs_tol:.0e}.",
+        rf"The van der Pol oscillator ($\mu=1$) with tol={integrator.abs_tol:.0e}.",
         fontsize=12,
     )
     ax.set_xlim([0, 20])

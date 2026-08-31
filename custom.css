@@ -1,3 +1,7 @@
 ol.chapter li.chapter-item:has(a[href*="reproductions/"]) {
     display: none;
 }
+
+#mdbook-sidebar .on-this-page {
+    display: none;
+}
