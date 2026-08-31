@@ -15,5 +15,5 @@ conspire = { features = ["doc", "constitutive"], git = "https://github.com/mrbuc
 [profile.release]
 codegen-units = 1
 lto = true
-panic = "abort"
+# panic = "abort"
 strip = "symbols"

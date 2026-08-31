@@ -4,4 +4,4 @@
 \mathrm{sinhc}(x) = \frac{\sinh(x)}{x}
 ```
 
-<p align="center"><!-- cmdrun cat sinhc.svg --></p>
+<p align="center">{{#include sinhc.svg}}</p>

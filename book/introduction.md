@@ -17,3 +17,9 @@ c o n s p i r e
 - [Julia interface](julia.md)
 - [Python interface](python.md)
 - [Rust interface](rust.md)
+
+## Miscellaneous
+
+- [Contributors](contributors.md)
+- [Publications](publications.md)
+- [Reproductions](reproductions.md)

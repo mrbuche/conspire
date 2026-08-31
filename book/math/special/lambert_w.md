@@ -4,4 +4,4 @@
 y = W_0(x)
 ```
 
-<p align="center"><!-- cmdrun cat lambert_w.svg --></p>
+<p align="center">{{#include lambert_w.svg}}</p>

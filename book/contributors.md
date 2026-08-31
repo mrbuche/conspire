@@ -1,3 +1,3 @@
 # Contributors
 
-<!-- cmdrun python3 contributors.py -->
+{{#include contributors.generated.md}}
