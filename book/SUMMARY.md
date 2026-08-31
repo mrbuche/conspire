@@ -86,3 +86,7 @@
 -----------
 
 [Contributors](contributors.md)
+[Publications](publications.md)
+[Reproductions](reproductions.md)
+
+[10.1103/PhysRevE.106.024502](reproductions/10.1103/PhysRevE.106.024502.md)

@@ -4,4 +4,4 @@
 x = \mathcal{L}^{-1}(y)
 ```
 
-<p align="center"><!-- cmdrun cat inverse_langevin.svg --></p>
+<p align="center">{{#include inverse_langevin.svg}}</p>

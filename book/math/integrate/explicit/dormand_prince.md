@@ -2,4 +2,4 @@
 
 {{#include ../../../../target/doc/math/integrate/explicit/dormand_prince/doc.md}}
 
-<p align="center"><!-- cmdrun cat dormand_prince.svg --></p>
+<p align="center">{{#include dormand_prince.svg}}</p>

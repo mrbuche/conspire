@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+import numpy as np
 from conspire.math.special import (
     erf,
     erfc,
@@ -7,12 +9,6 @@ from conspire.math.special import (
     rosenbrock,
     sinhc,
 )
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from matplotlib.ticker import LogFormatterMathtext
-
 
 num = 333
 
@@ -26,7 +22,7 @@ plt.plot(x, f, "#000005")
 ax = plt.gca()
 ax.set_ylim([-1, 1])
 ax.set_xlabel("$x$", fontsize=12)
-ax.set_ylabel("$\mathcal{L}(x)$", fontsize=12)
+ax.set_ylabel(r"$\mathcal{L}(x)$", fontsize=12)
 
 ax.xaxis.label.set_color("#000002")
 ax.yaxis.label.set_color("#000002")
@@ -46,7 +42,7 @@ plt.plot(f, y, "#000005")
 ax = plt.gca()
 ax.set_xlim([-1, 1])
 ax.set_xlabel("$y$", fontsize=12)
-ax.set_ylabel("$\mathcal{L}^{-1}(y)$", fontsize=12)
+ax.set_ylabel(r"$\mathcal{L}^{-1}(y)$", fontsize=12)
 
 ax.xaxis.label.set_color("#000002")
 ax.yaxis.label.set_color("#000002")
@@ -115,7 +111,7 @@ plt.plot(x, f, "#000005")
 
 ax = plt.gca()
 ax.set_xlabel("$x$", fontsize=12)
-ax.set_ylabel("$\mathrm{sinhc}(x)$", fontsize=12)
+ax.set_ylabel(r"$\mathrm{sinhc}(x)$", fontsize=12)
 
 ax.xaxis.label.set_color("#000002")
 ax.yaxis.label.set_color("#000002")
@@ -136,7 +132,7 @@ plt.plot(x, f, "#000005")
 ax = plt.gca()
 ax.set_ylim([-1.1, 1.1])
 ax.set_xlabel("$x$", fontsize=12)
-ax.set_ylabel("$\mathrm{erf}(x)$", fontsize=12)
+ax.set_ylabel(r"$\mathrm{erf}(x)$", fontsize=12)
 
 ax.xaxis.label.set_color("#000002")
 ax.yaxis.label.set_color("#000002")
@@ -156,7 +152,7 @@ plt.plot(x, f, "#000005")
 ax = plt.gca()
 ax.set_ylim([-0.1, 2.1])
 ax.set_xlabel("$x$", fontsize=12)
-ax.set_ylabel("$\mathrm{erfc}(x)$", fontsize=12)
+ax.set_ylabel(r"$\mathrm{erfc}(x)$", fontsize=12)
 
 ax.xaxis.label.set_color("#000002")
 ax.yaxis.label.set_color("#000002")

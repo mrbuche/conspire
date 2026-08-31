@@ -1,8 +1,8 @@
-**.svg
 book/build/
+book/contributors.generated.md
+langtabs.css
+langtabs.js
 target/
 
-
-# Added by cargo
-
-/target
+**.svg
+**__pycache__/
