@@ -10,8 +10,7 @@ use conspire::{
             elastic::doc as elastic, elastic_hyperviscous::doc as elastic_hyperviscous,
             elastic_viscoplastic::doc as elastic_viscoplastic, hyperelastic::doc as hyperelastic,
             hyperelastic_viscoplastic::doc as hyperelastic_viscoplastic,
-            hyperviscoelastic::doc as hyperviscoelastic,
-            thermoelastic::doc as thermoelastic,
+            hyperviscoelastic::doc as hyperviscoelastic, thermoelastic::doc as thermoelastic,
             thermohyperelastic::doc as thermohyperelastic, viscoelastic::doc as viscoelastic,
         },
         thermal::conduction::doc as thermal_conduction,
@@ -79,23 +78,18 @@ fn constitutive() -> Result<(), Error> {
             "constitutive/solid/elastic_hyperviscous",
             elastic_hyperviscous::DOC,
         ]],
-        elastic_hyperviscous::almansi_hamel(),
         vec![[
             "constitutive/solid/hyperviscoelastic",
             hyperviscoelastic::DOC,
         ]],
-        hyperviscoelastic::saint_venant_kirchhoff(),
         vec![[
             "constitutive/solid/elastic_viscoplastic",
             elastic_viscoplastic::DOC,
         ]],
-        elastic_viscoplastic::almansi_hamel_eulerian(),
         vec![[
             "constitutive/solid/hyperelastic_viscoplastic",
             hyperelastic_viscoplastic::DOC,
         ]],
-        hyperelastic_viscoplastic::hencky(),
-        hyperelastic_viscoplastic::saint_venant_kirchhoff(),
         vec![["constitutive/solid/thermoelastic", thermoelastic::DOC]],
         thermoelastic::almansi_hamel(),
         vec![[
@@ -135,9 +129,15 @@ fn write_models(models: &[Vec<[&str; 2]>]) -> Result<(), Error> {
                 .replace("super::Hencky", "hencky.html")
                 .replace("super::SaintVenantKirchhoff", "saint_venant_kirchhoff.html")
                 .replace("super::AlmansiHamelEulerian", "almansi_hamel_eulerian.html")
-                .replace("super::AlmansiHamelLagrangian", "almansi_hamel_lagrangian.html")
+                .replace(
+                    "super::AlmansiHamelLagrangian",
+                    "almansi_hamel_lagrangian.html",
+                )
                 .replace("super::BazantItskovEulerian", "bazant_itskov_eulerian.html")
-                .replace("super::BazantItskovLagrangian", "bazant_itskov_lagrangian.html")
+                .replace(
+                    "super::BazantItskovLagrangian",
+                    "bazant_itskov_lagrangian.html",
+                )
                 .replace("super::SethHillEulerian", "seth_hill_eulerian.html")
                 .replace("super::SethHillLagrangian", "seth_hill_lagrangian.html")
                 .replace(
