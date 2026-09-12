@@ -11,7 +11,7 @@ mod voxels;
 pub use ntree::Dualization;
 #[cfg(test)]
 pub(crate) use ntree::verify_dual;
-pub(crate) use ntree::leaf_containing;
+pub(crate) use ntree::{leaf_containing, leaf_containing_from};
 
 use crate::{
     geometry::{
