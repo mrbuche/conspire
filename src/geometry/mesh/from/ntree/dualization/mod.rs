@@ -19,6 +19,13 @@ use core::array::from_fn;
 
 type NodeMap<const D: usize> = FxHashMap<[usize; D], usize>;
 
+/// Whether a template split into two halves may be drawn: at least one half is whole, and every
+/// other is provably off-domain. A half absent for any other reason means the transition belongs
+/// to another cluster, and drawing here would double-cover it.
+pub(super) fn admits(whole: impl Fn(usize) -> bool, truncated: impl Fn(usize) -> bool) -> bool {
+    (0..2).any(&whole) && (0..2).all(|j| whole(j) || truncated(j))
+}
+
 /// `(corner, length) -> leaf index`, built once per dualization so every template's lookups are
 /// O(1) instead of a fresh root-to-leaf descent each. Keyed the same way `pairing_vertices` and
 /// `NodeMap` are: raw cell-grid coordinates, not tree-node indices, so a query needs no tree walk
