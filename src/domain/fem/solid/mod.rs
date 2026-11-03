@@ -19,6 +19,9 @@ pub use crate::domain::solid::dynamics::{
     MassChoice, Stability, Unchecked,
 };
 
+#[cfg(feature = "gpu")]
+pub use crate::domain::gpu::{GpuOptions, GpuPrecision};
+
 pub use crate::domain::solid::{
     NodalDampingsSolid, NodalDampingsSolidSymmetric, NodalForcesSolid, NodalStiffnessesSolid,
     NodalStiffnessesSolidSymmetric,
