@@ -6,8 +6,26 @@
     clippy::std_instead_of_alloc,
     clippy::std_instead_of_core
 )]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(
+    not(feature = "std"),
+    feature(core_float_math, prelude_import),
+    allow(internal_features)
+)]
+#![cfg_attr(
+    all(not(feature = "std"), target_arch = "nvptx64"),
+    feature(stdarch_nvptx)
+)]
 
 extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+mod no_std;
+
+#[cfg(not(feature = "std"))]
+#[prelude_import]
+#[allow(unused_imports)]
+use no_std::prelude::*;
 
 #[cfg(feature = "cbm")]
 #[doc(hidden)]
