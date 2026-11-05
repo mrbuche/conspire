@@ -135,7 +135,7 @@ where
     #[cfg(feature = "gpu")]
     fn gpu_blocks(&self, blocks: &mut Vec<GpuItems>) -> Result<(), GpuError> {
         blocks.push(self.gpu_block().ok_or_else(|| {
-            GpuError::Unsupported(format!("{} has no kernels", std::any::type_name::<Self>()))
+            GpuError::Unsupported(format!("{} has no kernels", core::any::type_name::<Self>()))
         })?);
         Ok(())
     }
