@@ -1,4 +1,10 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
+#![cfg_attr(
+    not(feature = "std"),
+    feature(prelude_import),
+    allow(internal_features)
+)]
 #![cfg_attr(feature = "autodiff", feature(autodiff))]
 #![cfg_attr(feature = "nightly", feature(portable_simd))]
 #![warn(
@@ -7,7 +13,16 @@
     clippy::std_instead_of_core
 )]
 
+#[macro_use]
 extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+mod no_std;
+
+#[cfg(not(feature = "std"))]
+#[prelude_import]
+#[allow(unused_imports)]
+use no_std::prelude::*;
 
 #[cfg(feature = "cbm")]
 #[doc(hidden)]

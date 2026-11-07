@@ -6,7 +6,7 @@ mod portable;
 
 use crate::math::Scalar;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
 use std::sync::LazyLock;
 
 #[cfg(all(not(feature = "nightly"), target_arch = "x86_64"))]
@@ -23,7 +23,7 @@ pub(crate) enum Isa {
     Avx2,
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
 static ISA: LazyLock<Isa> = LazyLock::new(|| {
     if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
         Isa::Avx2
@@ -33,9 +33,19 @@ static ISA: LazyLock<Isa> = LazyLock::new(|| {
 });
 
 /// The SIMD backend selected for this run, resolved once.
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
 pub(crate) fn isa() -> Isa {
     *ISA
+}
+
+/// The SIMD backend the code was compiled for, as the processor cannot be asked without `std`.
+#[cfg(all(target_arch = "x86_64", not(feature = "std")))]
+pub(crate) fn isa() -> Isa {
+    if cfg!(all(target_feature = "avx2", target_feature = "fma")) {
+        Isa::Avx2
+    } else {
+        Isa::None
+    }
 }
 
 #[cfg(any(not(feature = "nightly"), target_arch = "x86_64"))]
