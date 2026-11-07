@@ -5,7 +5,7 @@ use crate::{
     domain::{
         Model, NodalCoordinates, NodalVelocities, Stepping,
         boundary::{ConstrainAt, Solid},
-        gpu::{GpuOptions, Resident},
+        gpu::{GpuOptions, Moved, Resident},
         solid::{
             elastic::ParallelElasticElements,
             mass::{Lumped, LumpedMassElements, MassChoice},
@@ -37,7 +37,8 @@ where
 pub trait DeviceExplicitDynamics {
     /// Takes `steps` steps of velocity Verlet of size `dt` on a device, with lumped masses.
     ///
-    /// Degrees of freedom may be held where they are, and none may be moved, as there are no
+    /// Degrees of freedom may be held where they are or moved, as the conditions say, and they
+    /// are held at what they are at the time of each step, as on the calling thread. There are no
     /// loads. The coordinates and velocities at the end are returned.
     fn integrate_on_device(
         &self,
@@ -86,11 +87,6 @@ where
             velocities,
             Stepping::Explicit,
         )?;
-        if motion.moves() {
-            return Err(IntegrationError::Intermediate(
-                "Degrees of freedom that are moved are not supported on a device yet.".to_string(),
-            ));
-        }
         let error =
             |error: crate::domain::gpu::GpuError| IntegrationError::Intermediate(error.to_string());
         let mut blocks = Vec::new();
@@ -103,6 +99,12 @@ where
                 &flatten(&velocities),
                 dt.value(),
                 steps,
+                // The degrees of freedom that are moved are held at what they are at the time of
+                // each step, which the run of dynamics on the calling thread holds them at.
+                motion.moves().then(|| Moved {
+                    dofs: motion.moving().iter().map(|&dof| dof as u32).collect(),
+                    values: Box::new(|step| motion.values(Quantity::new(step as f64 * dt.value()))),
+                }),
             )
             .map_err(error)?;
         let unflatten = |values: Vec<f64>| -> Vec<[f64; 3]> { values.as_chunks::<3>().0.to_vec() };

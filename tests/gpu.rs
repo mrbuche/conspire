@@ -14,14 +14,14 @@ use conspire::{
             Block,
             element::linear::{Hexahedron, Pyramid, Tetrahedron, Wedge},
         },
-        boundary::{BoundaryConditions, Solid},
+        boundary::{BoundaryConditions, ConstrainAt, Displacement, Solid},
         solid::{
             DeviceExplicitDynamics, ElasticExplicitDynamics, Execution, GpuGradients, GpuKernels,
             GpuOptions, GpuPrecision, Lumped, Unchecked,
         },
     },
     math::{Quantity, Tensor, integrate::VelocityVerlet},
-    units::{Density, Stress, Time},
+    units::{Density, Length, Stress, Time},
 };
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
@@ -975,5 +975,76 @@ fn run_in_chunks_of_elements_gives_the_results_of_the_run_in_one_chunk() {
                 "{gradients:?}, chunks of {chunk}: the velocities are not those of one chunk"
             );
         }
+    }
+}
+
+/// One face of the grid is held and the opposite one is pulled on a ramp, which moves it along the
+/// axis at a rate that is not that of the velocities it starts with, and a device holds it where
+/// the calling thread does at each step, in every way that there is.
+#[test]
+fn run_with_a_face_that_is_moved_follows_the_run_on_the_calling_thread() {
+    let (model, reference) = model();
+    let (coordinates, velocities) = (deformed(&reference), velocities(&reference));
+    let face = |i: usize| {
+        (0..=CELLS)
+            .flat_map(|k| (0..=CELLS).map(move |j| index(i, j, k)))
+            .collect::<Vec<_>>()
+    };
+    let (held, pulled) = (face(0), face(CELLS));
+    let duration = STEPS as f64 * STEP;
+    let conditions = BoundaryConditions::<Solid<3>>::new()
+        .fix_nodes(Displacement::<0>, held.clone())
+        .fix_nodes(Displacement::<1>, held.clone())
+        .fix_nodes(Displacement::<2>, held)
+        .prescribe_nodes_with(Displacement::<0>, pulled, move |time| {
+            Length::meters(2e-3 * time.value() / duration)
+        });
+    let expected = model
+        .integrate(
+            Execution::Serial,
+            Unchecked,
+            Lumped,
+            &VelocityVerlet::new(Time::seconds(STEP)),
+            &[Time::seconds(0.0), Time::seconds(duration)],
+            (coordinates.clone(), velocities.clone()),
+            &(),
+            &conditions,
+        )
+        .unwrap();
+    let expected = (
+        components(expected.1.iter().last().unwrap()),
+        components(expected.2.iter().last().unwrap()),
+    );
+    // The face moved, so that the run is not the run of a body that is held.
+    let moved = difference(&expected.0, &components(&coordinates)).0;
+    assert!(moved > 1e-3, "the face did not move: {moved}");
+    for (precision, gradients, kernels, tolerance) in EVERY_WAY {
+        let run = model.integrate_on_device(
+            GpuOptions {
+                precision,
+                gradients,
+                kernels,
+                ..GpuOptions::default()
+            },
+            Time::seconds(STEP),
+            STEPS,
+            (coordinates.clone(), velocities.clone()),
+            &conditions,
+        );
+        let (found_coordinates, found_velocities) = match run {
+            Ok(run) => run,
+            Err(error) if no_device(&error) => return println!("skipped: {error:?}"),
+            Err(error) => panic!("{precision:?} {gradients:?} {kernels:?}: {error:?}"),
+        };
+        let (gap, scale) = difference(&components(&found_coordinates), &expected.0);
+        assert!(
+            gap < tolerance * scale.max(1.0),
+            "{precision:?} {gradients:?} {kernels:?}: the coordinates differ by {gap}"
+        );
+        let (gap, scale) = difference(&components(&found_velocities), &expected.1);
+        assert!(
+            gap < tolerance * scale.max(1.0),
+            "{precision:?} {gradients:?} {kernels:?}: the velocities differ by {gap}"
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! What a run keeps on the device, and the two passes that compute the nodal forces with it.
 
 use super::{
-    GpuError, GpuGradients, GpuItems, GpuKernels, GpuOptions, GpuPrecision,
+    GpuError, GpuGradients, GpuItems, GpuKernels, GpuOptions, GpuPrecision, Moved,
     cuda::{Argument, Buffer, Device, Function, Module},
 };
 use crate::{
@@ -49,6 +49,10 @@ pub(super) fn library_has(name: &str) -> bool {
 const THREADS_PER_BLOCK: usize = 128;
 /// How many steps of a run on the device are taken between looks for an inverted element.
 const CHECK_EVERY: usize = 1024;
+
+/// The most values of what the moved degrees of freedom are held at that are copied to the device
+/// at a time, which is 32 MB in double precision.
+const MOVED_VALUES: usize = 4 * 1024 * 1024;
 
 /// A floating-point type that a device computes with.
 pub(crate) trait Real: Argument + Copy + Default {
@@ -125,6 +129,9 @@ impl Resident {
     /// coordinates and velocities as `3 * node + component`, with the masses of each of those
     /// degrees of freedom, which are infinite for those that are held. Only the coordinates and
     /// velocities at the end come back, so nothing is copied between steps.
+    ///
+    /// The degrees of freedom that are `moved` are set to what they are held at after each step,
+    /// from a table of that for a number of steps, which is all that is copied to the device.
     pub(crate) fn integrate(
         &mut self,
         masses: &[f64],
@@ -132,10 +139,15 @@ impl Resident {
         velocities: &[f64],
         dt: f64,
         steps: usize,
+        moved: Option<Moved<'_>>,
     ) -> Result<(Vec<f64>, Vec<f64>, Duration), GpuError> {
         match self {
-            Self::Single(state) => state.integrate(masses, coordinates, velocities, dt, steps),
-            Self::Double(state) => state.integrate(masses, coordinates, velocities, dt, steps),
+            Self::Single(state) => {
+                state.integrate(masses, coordinates, velocities, dt, steps, moved)
+            }
+            Self::Double(state) => {
+                state.integrate(masses, coordinates, velocities, dt, steps, moved)
+            }
         }
     }
     /// Adds the nodal forces to `nodal_forces`, in the order of the elements for each node.
@@ -555,6 +567,7 @@ impl<R: Real> State<R> {
         velocities: &[f64],
         dt: f64,
         steps: usize,
+        mut moved: Option<Moved<'_>>,
     ) -> Result<(Vec<f64>, Vec<f64>, Duration), GpuError> {
         let count = 3 * self.nodes;
         if [masses.len(), coordinates.len(), velocities.len()] != [count; 3] {
@@ -582,6 +595,19 @@ impl<R: Real> State<R> {
         };
         let kick_drift = module.function("kick_drift")?;
         let accelerate = module.function("accelerate")?;
+        // The degrees of freedom that are moved, and a table of what they are held at for as
+        // many steps as fit, which is copied again when the steps of it have been taken.
+        let set_targets = module.function("set_targets")?;
+        let moved_count = moved.as_ref().map_or(0, |moved| moved.dofs.len());
+        let rows = (MOVED_VALUES / moved_count.max(1)).clamp(1, CHECK_EVERY);
+        let (moved_dofs, moved_table) = match &moved {
+            Some(moved) if moved_count > 0 => (
+                Some(self.device.buffer_of(&moved.dofs)?),
+                Some(self.device.buffer::<R>(moved_count * rows)?),
+            ),
+            _ => (None, None),
+        };
+        let moved_count = moved_count as u32;
         let (count, dt) = (count as u32, R::from_f64(dt));
         let (first, kick) = (0_u32, 1_u32);
         // Everything above is the setup of the run, which is waited for so that it is not timed.
@@ -604,12 +630,40 @@ impl<R: Real> State<R> {
             ],
         )?;
         for step in 0..steps {
+            // What the moved degrees of freedom are held at after each of the next steps. The
+            // copy waits for the steps that are queued, which read the table, so it is not
+            // done before they are, and it is the one wait that the steps make besides checking
+            // the elements.
+            if let (Some(moved), Some(table)) = (moved.as_mut(), moved_table.as_ref())
+                && step % rows == 0
+            {
+                let width = moved_count as usize;
+                let mut values = vec![R::default(); width * rows];
+                for row in 0..rows.min(steps - step) {
+                    for (slot, value) in values[row * width..(row + 1) * width]
+                        .iter_mut()
+                        .zip((moved.values)(step + 1 + row))
+                    {
+                        *slot = R::from_f64(value);
+                    }
+                }
+                table.upload(&values)?;
+            }
             self.device.launch(
                 &kick_drift,
                 count as usize,
                 THREADS_PER_BLOCK,
                 &[&count, &self.coordinates, &velocities, &accelerations, &dt],
             )?;
+            if let (Some(dofs), Some(table)) = (moved_dofs.as_ref(), moved_table.as_ref()) {
+                let row = (step % rows) as u32;
+                self.device.launch(
+                    &set_targets,
+                    moved_count as usize,
+                    THREADS_PER_BLOCK,
+                    &[&moved_count, dofs, table, &row, &self.coordinates],
+                )?;
+            }
             self.launch_forces()?;
             self.device.launch(
                 &accelerate,

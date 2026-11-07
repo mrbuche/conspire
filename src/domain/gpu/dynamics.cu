@@ -23,6 +23,23 @@ extern "C" __global__ void kick_drift(
     coordinates[i] = half_velocity * dt + coordinates[i];
 }
 
+// Holds the coordinates that are moved at what they are held at: the coordinate dofs[i] is set to
+// table[row * count + i], for each of the count of them.
+extern "C" __global__ void set_targets(
+    const unsigned int count,
+    const unsigned int *__restrict__ dofs,
+    const REAL *__restrict__ table,
+    const unsigned int row,
+    REAL *__restrict__ coordinates)
+{
+    const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= count)
+    {
+        return;
+    }
+    coordinates[dofs[i]] = table[(size_t)row * count + i];
+}
+
 // The accelerations that balance the forces, which are then cleared for the next step, and
 // the velocity another half step on when the step is not the first evaluation.
 extern "C" __global__ void accelerate(

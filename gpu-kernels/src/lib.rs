@@ -704,6 +704,31 @@ pub unsafe extern "ptx-kernel" fn kick_drift(
     }
 }
 
+/// Holds the coordinates that are moved at what they are held at: the coordinate `dofs[i]` is
+/// set to `table[row * count + i]`, for each of the `count` of them.
+///
+/// # Safety
+///
+/// `dofs` must be `count` coordinates that `coordinates` has, and `table` must have the `count`
+/// values of a row.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn set_targets(
+    count: u32,
+    dofs: *const u32,
+    table: *const f64,
+    row: u32,
+    coordinates: *mut f64,
+) {
+    let index = thread();
+    if index < count as usize {
+        // SAFETY: the index is within the values that there are.
+        unsafe {
+            *coordinates.add(*dofs.add(index) as usize) =
+                *table.add(row as usize * count as usize + index);
+        }
+    }
+}
+
 /// The accelerations that balance the forces, which are then cleared for the next step, and the
 /// velocity another half step on when `kick` is not zero.
 ///

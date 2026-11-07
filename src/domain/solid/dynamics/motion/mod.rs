@@ -101,6 +101,26 @@ where
     pub(super) fn moves(&self) -> bool {
         !self.moving.is_empty()
     }
+    /// The degrees of freedom that are moved, as `3 * node + component`.
+    #[cfg(feature = "gpu")]
+    pub(super) fn moving(&self) -> &[usize] {
+        &self.moving
+    }
+    /// What the degrees of freedom that are moved are held at, at a time, in the order of
+    /// [`moving`](Self::moving), as [`apply`](Self::apply) holds them.
+    #[cfg(feature = "gpu")]
+    pub(super) fn values(&self, time: Quantity<Time>) -> Vec<f64> {
+        let targets = self.targets(time);
+        self.moving
+            .iter()
+            .map(|dof| {
+                targets
+                    .get(dof)
+                    .copied()
+                    .unwrap_or(self.anchor[dof / 3][dof % 3].value())
+            })
+            .collect()
+    }
     /// The constraints at a time, with what is held at a distance from where it starts held at
     /// that distance from the coordinates the motion starts at.
     pub(super) fn constraint_at(&self, time: Quantity<Time>) -> EqualityConstraints {

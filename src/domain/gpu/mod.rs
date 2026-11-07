@@ -11,6 +11,17 @@ mod test;
 
 pub(crate) use resident::Resident;
 
+/// The degrees of freedom of a run that are moved, and where they are held at each step.
+///
+/// What they are held at is a function of time that only the host can evaluate, so it is
+/// evaluated for a number of steps at a time and given to the device as a table.
+pub(crate) struct Moved<'a> {
+    /// The degrees of freedom, as `3 * node + component`.
+    pub dofs: Vec<u32>,
+    /// What they are held at after a number of steps, in the order of `dofs`.
+    pub values: Box<dyn FnMut(usize) -> Vec<f64> + 'a>,
+}
+
 use crate::constitutive::solid::elastic::GpuModel;
 use core::fmt::{self, Display, Formatter};
 
