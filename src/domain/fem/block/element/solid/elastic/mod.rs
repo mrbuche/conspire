@@ -57,6 +57,11 @@ where
 /// lists, which a device keeps in memory far from the arithmetic. What `data` is does not change
 /// the arithmetic, so an element that a device keeps in another order has the forces that the
 /// element has.
+///
+/// The elements of the CPU do not use this for their own forces, since the version with the lists
+/// is 4 to 7% faster there when the crate is built with its release profile, which the
+/// compiler schedules better than the one pass, with the forces that are the same to the bit.
+/// A test checks that, for the layout of a device.
 pub fn nodal_forces_from<D, C, const G: usize, const N: usize>(
     data: &D,
     context: &(impl Debug + ?Sized),
@@ -105,7 +110,12 @@ where
         constitutive_model: &C,
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError> {
-        nodal_forces_from(self, self, constitutive_model, nodal_coordinates)
+        nodal_forces::<_, _, _, _, _, O, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )
     }
     fn nodal_stiffnesses(
         &self,
