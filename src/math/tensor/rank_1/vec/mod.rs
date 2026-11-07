@@ -4,14 +4,15 @@ use crate::math::{Current, Reference};
 use crate::units::{Dimensionless, UnitDiv};
 
 use crate::math::{
-    Jacobian, Quantity, Scalar, Solution, Tensor, TensorRank0, TensorRank1, TensorRank1List,
-    TensorRank2SparseVec2D, TensorRank2SparseVec2DSymmetric, TensorRank2Vec2D, TensorVec, Vector,
-    tensor::vec::TensorVector,
+    FlatView, Jacobian, Quantity, Scalar, Solution, Tensor, TensorRank0, TensorRank1,
+    TensorRank1List, TensorRank2SparseVec2D, TensorRank2SparseVec2DSymmetric, TensorRank2Vec2D,
+    TensorVec, Vector, tensor::vec::TensorVector,
 };
 use core::{
     array::from_fn,
     mem::forget,
     ops::{Div, Sub},
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 use crate::math::assert::FiniteDifference;
@@ -40,6 +41,33 @@ impl<const D: usize, I, U> TensorRank1Vec<D, I, U> {
     }
     pub fn zero(len: usize) -> Self {
         (0..len).map(|_| super::zero()).collect()
+    }
+    /// Views the entries as one contiguous slice of numbers, units discarded.
+    pub fn as_flat(&self) -> &[TensorRank0] {
+        const { assert!(size_of::<TensorRank1<D, I, U>>() == D * size_of::<TensorRank0>()) };
+        const { assert!(align_of::<TensorRank1<D, I, U>>() == align_of::<TensorRank0>()) };
+        let entries = self.as_slice();
+        // SAFETY: `TensorRank1` is `repr(transparent)` over `[Quantity<U>; D]` and `Quantity`
+        // over `TensorRank0`, the markers being zero-sized, so `entries` is `entries.len() * D`
+        // contiguous numbers of the same alignment, as the assertions above check.
+        unsafe { from_raw_parts(entries.as_ptr().cast(), entries.len() * D) }
+    }
+    /// Views the entries as one contiguous mutable slice of numbers, units discarded.
+    pub fn as_flat_mut(&mut self) -> &mut [TensorRank0] {
+        const { assert!(size_of::<TensorRank1<D, I, U>>() == D * size_of::<TensorRank0>()) };
+        const { assert!(align_of::<TensorRank1<D, I, U>>() == align_of::<TensorRank0>()) };
+        let entries = self.as_mut_slice();
+        // SAFETY: as in `as_flat`, the unique borrow of `entries` being carried over.
+        unsafe { from_raw_parts_mut(entries.as_mut_ptr().cast(), entries.len() * D) }
+    }
+}
+
+impl<const D: usize, I, U> FlatView for TensorRank1Vec<D, I, U> {
+    fn as_flat(&self) -> &[TensorRank0] {
+        Self::as_flat(self)
+    }
+    fn as_flat_mut(&mut self) -> &mut [TensorRank0] {
+        Self::as_flat_mut(self)
     }
 }
 
