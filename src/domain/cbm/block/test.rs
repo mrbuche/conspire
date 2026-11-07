@@ -1,4 +1,5 @@
-use super::{Block, node::Weighting};
+use super::Block;
+use crate::cbm::node::Weighting;
 use crate::{
     EPSILON,
     cbm::SolidElements,

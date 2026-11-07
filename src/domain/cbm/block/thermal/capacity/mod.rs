@@ -1,5 +1,5 @@
 use crate::{
-    cbm::block::{Block, node::thermal::capacity::NodalHeatCapacity},
+    cbm::{block::Block, node::thermal::capacity::NodalHeatCapacity},
     domain::{
         NodalReferenceCoordinates,
         thermal::capacity::{LumpedHeatCapacityElements, NodalLumpedHeatCapacities},

@@ -3,10 +3,7 @@ use crate::{
     math::{Quantity, Scalar, Tensor},
     mechanics::ReferenceCoordinate,
     units::Volume,
-    vem::{
-        NodalReferenceCoordinates,
-        block::{Block, element::mass::LumpedMassVirtualElement},
-    },
+    vem::{NodalReferenceCoordinates, block::Block, element::mass::LumpedMassVirtualElement},
 };
 
 impl<C, F, R> NodalVolumeElements for Block<C, F, R>

@@ -8,14 +8,12 @@ use crate::{
     fem::{
         Blocks, ElasticViscoplasticAndElastic, Minimize, Model, NodalCoordinates,
         NodalReferenceCoordinates, Root,
-        block::{
-            Block,
-            element::{
-                linear::{Hexahedron, Tetrahedron, Wedge},
-                planar::{Quadrilateral, Triangle},
-            },
-        },
+        block::Block,
         boundary::{BoundaryConditions, ConstrainAt, Displacement, Enforcement, Loads, Solid},
+        element::{
+            linear::{Hexahedron, Tetrahedron, Wedge},
+            planar::{Quadrilateral, Triangle},
+        },
         nodal_coordinates,
         solid::{NodalForcesSolid, elastic::ElasticElements, elastic_viscoplastic::RootRkmkDae},
     },

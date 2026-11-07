@@ -10,8 +10,8 @@ use crate::{
     math::Quantity,
     units::Power,
     vem::{
-        NodalCoordinates, NodalVelocities,
-        block::{Block, element::solid::elastic_hyperviscous::ElasticHyperviscousVirtualElement},
+        NodalCoordinates, NodalVelocities, block::Block,
+        element::solid::elastic_hyperviscous::ElasticHyperviscousVirtualElement,
     },
 };
 use core::any::type_name;

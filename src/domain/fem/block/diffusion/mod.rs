@@ -4,14 +4,12 @@ use crate::{
     domain::diffusion::{DiffusionElements, NodalFields, NodalForces, NodalStiffnesses},
     fem::{
         ElementModelError,
-        block::{
-            Block,
-            element::{
-                FiniteElementError,
-                diffusion::{
-                    DiffusionFiniteElement, DiffusiveFiniteElement, ElementGradients,
-                    ElementNodalFields,
-                },
+        block::Block,
+        element::{
+            FiniteElementError,
+            diffusion::{
+                DiffusionFiniteElement, DiffusiveFiniteElement, ElementGradients,
+                ElementNodalFields,
             },
         },
     },

@@ -2,11 +2,11 @@ use super::InverseHeatCapacity;
 use crate::{
     fem::{
         Model, NodalReferenceCoordinates,
-        block::thermal::conduction::NodalForcesThermal,
         block::{
-            Block, ElementDensities, NoDensity, element::linear::Tetrahedron,
-            thermal::capacity::ElementHeatCapacities,
+            Block, ElementDensities, NoDensity,
+            thermal::{capacity::ElementHeatCapacities, conduction::NodalForcesThermal},
         },
+        element::linear::Tetrahedron,
     },
     math::{
         Quantity, QuantityVector, Tensor,

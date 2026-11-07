@@ -7,11 +7,11 @@ use crate::{
         ElementModelError, NodalCoordinates, NodalVelocities,
         block::{
             Block,
-            element::{
-                FiniteElementError,
-                multiphysics::solid_thermal::thermoelastic_thermal_conduction::rates::ThermoelasticThermalConductionRateFiniteElement,
-            },
             thermal::{NodalTemperatures, ThermalElements},
+        },
+        element::{
+            FiniteElementError,
+            multiphysics::solid_thermal::thermoelastic_thermal_conduction::rates::ThermoelasticThermalConductionRateFiniteElement,
         },
         multiphysics::solid_thermal::{
             NodalForcesSolidThermal, NodalHeatingsSolidThermal, NodalStiffnessesSolidThermal,

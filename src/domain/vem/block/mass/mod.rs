@@ -7,7 +7,10 @@ use crate::{
         solid::mass::{LumpedMassElements, NodalLumpedMasses},
     },
     math::Tensor,
-    vem::block::{Block, Densities, element::mass::LumpedMassVirtualElement},
+    vem::{
+        block::{Block, Densities},
+        element::mass::LumpedMassVirtualElement,
+    },
 };
 
 impl<C, F, R> LumpedMassElements<3> for Block<C, F, R>

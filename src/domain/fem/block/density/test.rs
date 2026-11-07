@@ -1,7 +1,8 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{Block, Densities, ElementDensities, element::linear::Tetrahedron},
+        block::{Block, Densities, ElementDensities},
+        element::linear::Tetrahedron,
     },
     math::{
         Quantity,
@@ -92,7 +93,7 @@ macro_rules! test_density {
                     .zip(reference.elements())
                     .map(|(&nodes, element)| {
                         Density::kilograms_per_cubic_meter(linear(centroid_x(nodes)))
-                            * crate::fem::block::element::FiniteElement::volume(element)
+                            * crate::fem::element::FiniteElement::volume(element)
                     })
                     .sum::<Quantity<Mass>>();
                 Assert::default().eq_within_tols(&block.mass(), &expected)

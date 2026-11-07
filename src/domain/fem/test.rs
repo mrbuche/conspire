@@ -1,8 +1,7 @@
 use crate::{
     constitutive::solid::hyperelastic::NeoHookean,
     fem::{
-        NodalCoordinates, NodalReferenceCoordinates,
-        block::{Block, element::linear::Tetrahedron},
+        NodalCoordinates, NodalReferenceCoordinates, block::Block, element::linear::Tetrahedron,
         solid::elastic::ElasticElements,
     },
     units::Stress,

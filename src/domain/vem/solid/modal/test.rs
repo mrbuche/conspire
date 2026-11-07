@@ -16,10 +16,8 @@ use crate::{
     units::Density,
     vem::{
         Model,
-        block::{
-            Block,
-            element::{DEFAULT_STABILIZATION, Element},
-        },
+        block::Block,
+        element::{DEFAULT_STABILIZATION, Element},
     },
 };
 

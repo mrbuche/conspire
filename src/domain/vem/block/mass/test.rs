@@ -11,10 +11,7 @@ use crate::{
     },
     mechanics::ReferenceCoordinate,
     units::{Density, Mass},
-    vem::{
-        NodalReferenceCoordinates,
-        block::{Block, element::Element},
-    },
+    vem::{NodalReferenceCoordinates, block::Block, element::Element},
 };
 
 type VemBlock<R = crate::vem::block::NoDensity> = Block<(), Element, R>;
@@ -78,7 +75,7 @@ fn a_uniform_density_block_has_the_mass_of_its_volume() -> Result<(), AssertionE
         LEFT,
         connectivity,
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let model = Model::from((block, coordinates));
     let masses = model.nodal_lumped_masses();
@@ -94,7 +91,7 @@ fn the_nodal_masses_are_an_eighth_of_each_hexahedron_mass() -> Result<(), Assert
         field,
         connectivity,
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let model = Model::from((block, coordinates));
     let masses = model.nodal_lumped_masses();
@@ -129,7 +126,7 @@ fn the_block_mass_is_the_total_of_the_nodal_masses() -> Result<(), AssertionErro
         field,
         connectivity,
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let mass = block.mass();
     let model = Model::from((block, coordinates));
@@ -145,7 +142,7 @@ fn the_nodal_volumes_add_up_to_the_volume() -> Result<(), AssertionError> {
         LEFT,
         connectivity,
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let model = Model::from((block, coordinates));
     Assert::default().eq_within_tols(
@@ -163,7 +160,7 @@ fn a_linear_field_integrates_exactly_at_the_centers() -> Result<(), AssertionErr
         LEFT,
         connectivity,
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let model = Model::from((block, coordinates.clone()));
     let mut integral = 0.0;

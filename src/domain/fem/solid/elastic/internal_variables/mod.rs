@@ -1,8 +1,8 @@
 use crate::{
     fem::{
         ElementModel, ElementModelError, Elements, Model, NodalCoordinates,
-        block::element::solid::elastic::internal_variables::InternalVariables,
         boundary::{Constrain, NodalState},
+        element::solid::elastic::internal_variables::InternalVariables,
         solid::{NodalForcesSolid, NodalStiffnessesSolid},
     },
     math::{

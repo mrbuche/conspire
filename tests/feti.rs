@@ -4,8 +4,9 @@ use conspire::{
     constitutive::solid::{elastic::AlmansiHamelLagrangian, hyperelastic::NeoHookean},
     fem::{
         Minimize, Model, NodalCoordinates, NodalReferenceCoordinates,
-        block::{Block, element::linear::Hexahedron},
+        block::Block,
         boundary::{BoundaryConditions as Conditions, Constrain, ConstrainAt, Displacement, Solid},
+        element::linear::Hexahedron,
         solid::NodalForcesSolid,
     },
     feti::{Feti, Formulation, GMRES},

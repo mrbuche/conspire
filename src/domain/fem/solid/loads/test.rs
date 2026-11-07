@@ -110,8 +110,9 @@ mod patch {
         domain::ElementModel,
         fem::{
             Minimize, Model, NodalCoordinates, Root,
-            block::{Block, element::linear::Hexahedron},
+            block::Block,
             boundary::{BoundaryConditions, ConstrainAt, Displacement, Loads, Solid},
+            element::linear::Hexahedron,
             solid::{NodalForcesSolid, loads::DeadLoad},
         },
         geometry::mesh::{Connectivity, Mesh, NodeSet, SideSet},
@@ -338,8 +339,9 @@ mod rate {
         domain::ElementModel,
         fem::{
             Model,
-            block::{Block, element::linear::Hexahedron},
+            block::Block,
             boundary::{BoundaryConditions, ConstrainAt, Loads, Solid, SolidRate, Velocity},
+            element::linear::Hexahedron,
             solid::{
                 elastic_hyperviscous::Minimize as _, loads::DeadLoad, viscoelastic::Root as _,
             },
@@ -468,8 +470,9 @@ mod body {
         domain::{ElementModel, solid::loads::BodyForce},
         fem::{
             Model, NodalCoordinates,
-            block::{Block, element::linear::Hexahedron},
+            block::Block,
             boundary::{LoadAt, Loads, Solid},
+            element::linear::Hexahedron,
             solid::NodalForcesSolid,
         },
         geometry::mesh::{Connectivity, Mesh},
@@ -584,8 +587,9 @@ mod follower {
         domain::ElementModel,
         fem::{
             Model, NodalCoordinates, Root,
-            block::{Block, element::linear::Hexahedron},
+            block::Block,
             boundary::{BoundaryConditions, ConstrainAt as _, Displacement, Loads, Solid},
+            element::linear::Hexahedron,
         },
         geometry::mesh::{Connectivity, Mesh, NodeSet, SideSet},
         math::{

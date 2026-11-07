@@ -7,13 +7,11 @@ use crate::{
     domain::solid::elastic_plastic::{ElasticPlasticElements, MonolithicSystem},
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError,
-                solid::elastic_plastic::{
-                    ElasticPlasticFiniteElement, MonolithicElasticPlasticFiniteElement,
-                },
+        block::Block,
+        element::{
+            FiniteElementError,
+            solid::elastic_plastic::{
+                ElasticPlasticFiniteElement, MonolithicElasticPlasticFiniteElement,
             },
         },
         solid::{NodalForcesSolid, NodalStiffnessesSolid},

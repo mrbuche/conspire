@@ -2,7 +2,8 @@ use super::NodalTemperatures;
 use crate::{
     cbm::{
         Model, NodalReferenceCoordinates,
-        block::{Block, node::thermal::ThermalNode},
+        block::Block,
+        node::thermal::ThermalNode,
         thermal::{time_scale::ThermalTimeScaleElements, transient::ThermalConductionTransient},
     },
     constitutive::thermal::conduction::Fourier,

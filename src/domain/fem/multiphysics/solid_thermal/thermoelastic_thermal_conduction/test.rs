@@ -12,11 +12,12 @@ use crate::{
     },
     fem::{
         Model, NodalReferenceCoordinates, Root,
-        block::{Block, element::linear::Tetrahedron},
+        block::Block,
         boundary::{
             BoundaryConditions, Constrain, ConstrainAt, Displacement, Enforcement, Loads,
             SolidThermal, Temperature,
         },
+        element::linear::Tetrahedron,
         multiphysics::solid_thermal::{
             NodalForcesSolidThermal, NodalStatesSolidThermal, NodalStiffnessesSolidThermal,
         },
@@ -326,7 +327,8 @@ mod dynamics {
         },
         fem::{
             Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
-            block::{Block, element::linear::Tetrahedron, thermal::NodalTemperatures},
+            block::{Block, thermal::NodalTemperatures},
+            element::linear::Tetrahedron,
             multiphysics::solid_thermal::thermoelastic_thermal_conduction::dynamics::{
                 ThermoelasticThermalConductionDynamics,
                 time_scale::ThermoelasticThermalConductionTimeScaleElements,
@@ -1193,9 +1195,9 @@ mod quasistatic {
             Model, NodalCoordinates, NodalReferenceCoordinates,
             block::{
                 Block,
-                element::linear::Tetrahedron,
                 thermal::{NodalTemperatures, conduction::NodalForcesThermal},
             },
+            element::linear::Tetrahedron,
             multiphysics::solid_thermal::thermoelastic_thermal_conduction::quasistatic::ThermoelasticThermalConductionQuasistatic,
             solid::Lumped,
         },

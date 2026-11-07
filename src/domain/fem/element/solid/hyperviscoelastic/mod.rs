@@ -1,0 +1,96 @@
+#[cfg(feature = "autodiff")]
+pub mod autodiff;
+
+pub use crate::domain::block::element::solid::hyperviscoelastic::HyperviscoelasticElement;
+
+use crate::domain::block::element::AtPoints;
+use crate::{
+    constitutive::{ConstitutiveError, solid::hyperviscoelastic::Hyperviscoelastic},
+    fem::element::{
+        Element, ElementNodalCoordinates, FiniteElementError,
+        solid::elastic_hyperviscous::ElasticHyperviscousFiniteElement, surface::SurfaceElement,
+    },
+    math::{Quantity, Tensor},
+    units::Energy,
+};
+
+pub trait HyperviscoelasticFiniteElement<
+    C,
+    const G: usize,
+    const M: usize,
+    const N: usize,
+    const P: usize,
+> where
+    C: Hyperviscoelastic,
+    Self: ElasticHyperviscousFiniteElement<C, G, M, N, P> + HyperviscoelasticElement<C>,
+{
+}
+
+impl<T, C, const G: usize, const M: usize, const N: usize, const P: usize>
+    HyperviscoelasticFiniteElement<C, G, M, N, P> for T
+where
+    C: Hyperviscoelastic,
+    T: ElasticHyperviscousFiniteElement<C, G, M, N, P> + HyperviscoelasticElement<C>,
+{
+}
+
+impl<C, const G: usize, const N: usize, const O: usize> HyperviscoelasticElement<C>
+    for Element<3, G, N, O>
+where
+    C: Hyperviscoelastic,
+    Self: ElasticHyperviscousFiniteElement<C, G, 3, N, N>,
+{
+    fn helmholtz_free_energy(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<Quantity<Energy>, FiniteElementError> {
+        helmholtz_free_energy::<_, _, _, _, _, O, _>(self, constitutive_model, nodal_coordinates)
+    }
+}
+
+impl<C, const G: usize, const N: usize, const O: usize> HyperviscoelasticElement<C>
+    for SurfaceElement<G, N, O>
+where
+    C: Hyperviscoelastic,
+    Self: ElasticHyperviscousFiniteElement<C, G, 2, N, N>,
+{
+    fn helmholtz_free_energy(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<Quantity<Energy>, FiniteElementError> {
+        helmholtz_free_energy::<_, _, _, _, _, O, _>(self, constitutive_model, nodal_coordinates)
+    }
+}
+
+fn helmholtz_free_energy<
+    C,
+    F,
+    const G: usize,
+    const M: usize,
+    const N: usize,
+    const O: usize,
+    const P: usize,
+>(
+    element: &F,
+    constitutive_model: &C,
+    nodal_coordinates: &ElementNodalCoordinates<N>,
+) -> Result<Quantity<Energy>, FiniteElementError>
+where
+    C: Hyperviscoelastic,
+    F: ElasticHyperviscousFiniteElement<C, G, M, N, P>,
+{
+    element
+        .deformation_gradients(nodal_coordinates)
+        .iter()
+        .zip(element.integration_weights())
+        .map(|(deformation_gradient, integration_weight)| {
+            Ok::<_, ConstitutiveError>(
+                constitutive_model.helmholtz_free_energy_density(deformation_gradient)?
+                    * integration_weight,
+            )
+        })
+        .sum_at_points()
+        .map_err(Into::into)
+}

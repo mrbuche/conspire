@@ -1,0 +1,23 @@
+use crate::{
+    fem::element::{
+        ElementNodalCoordinates, ElementNodalReferenceCoordinates, ElementNodalVelocities,
+        FiniteElement, GradientVectors,
+        linear::wedge::{G, M, N, Wedge},
+        test::test_finite_element,
+    },
+    math::{ScalarList, Tensor},
+    mechanics::DeformationGradient,
+};
+
+fn reference_coordinates() -> ElementNodalReferenceCoordinates<N> {
+    ElementNodalReferenceCoordinates::from([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ])
+}
+
+test_finite_element!(Wedge);

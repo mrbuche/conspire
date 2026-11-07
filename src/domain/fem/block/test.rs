@@ -167,7 +167,7 @@ pub(crate) use test_finite_element_block;
 
 macro_rules! test_surface_finite_element_block {
     ($element: ident) => {
-        use crate::fem::block::element::test::THICKNESS;
+        use crate::fem::element::test::THICKNESS;
         macro_rules! setup_block {
             ($constitutive_model: expr, $constitutive_model_type: ident) => {
                 fn get_block() -> Block<$constitutive_model_type, $element, G, M, N, P> {

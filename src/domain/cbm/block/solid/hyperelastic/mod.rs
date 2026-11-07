@@ -1,7 +1,5 @@
-use super::super::{
-    Block,
-    node::solid::{elastic::ElasticElement, hyperelastic::HyperelasticElement},
-};
+use super::super::Block;
+use crate::cbm::node::solid::{elastic::ElasticElement, hyperelastic::HyperelasticElement};
 use crate::domain::AtItems;
 use crate::{
     constitutive::{ConstitutiveError, solid::hyperelastic::Hyperelastic},

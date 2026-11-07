@@ -4,8 +4,8 @@ mod time_scale;
 
 use crate::{
     constitutive::thermal::Thermal,
-    fem::block::{
-        diffusion::DiffusiveElements,
+    fem::{
+        block::diffusion::DiffusiveElements,
         element::thermal::{ElementNodalTemperatures, ThermalFiniteElement},
     },
     mechanics::TemperatureGradients,

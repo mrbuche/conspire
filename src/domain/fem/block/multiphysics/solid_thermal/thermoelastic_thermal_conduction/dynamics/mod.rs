@@ -8,12 +8,12 @@ use crate::{
         ElementModelError, NodalCoordinates, NodalReferenceCoordinates,
         block::{
             Block, Densities, HeatCapacities,
-            element::{
-                FiniteElementError, mass::LumpedMassFiniteElement,
-                multiphysics::solid_thermal::thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionFiniteElement,
-                thermal::capacity::LumpedHeatCapacityFiniteElement, time_scale::fastest_time_scale,
-            },
             thermal::{NodalTemperatures, ThermalElements},
+        },
+        element::{
+            FiniteElementError, mass::LumpedMassFiniteElement,
+            multiphysics::solid_thermal::thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionFiniteElement,
+            thermal::capacity::LumpedHeatCapacityFiniteElement, time_scale::fastest_time_scale,
         },
         multiphysics::solid_thermal::thermoelastic_thermal_conduction::dynamics::time_scale::ThermoelasticThermalConductionTimeScaleElements,
     },

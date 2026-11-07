@@ -9,11 +9,11 @@ use crate::{
         ElementModelError, NodalCoordinates,
         block::{
             Block,
-            element::{
-                FiniteElementError,
-                multiphysics::solid_thermal::thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionFiniteElement,
-            },
             thermal::{NodalTemperatures, ThermalElements},
+        },
+        element::{
+            FiniteElementError,
+            multiphysics::solid_thermal::thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionFiniteElement,
         },
         multiphysics::solid_thermal::{
             NodalForcesSolidThermal, NodalStiffnessesSolidThermal,

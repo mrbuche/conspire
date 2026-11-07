@@ -1,0 +1,257 @@
+pub mod internal_variables;
+
+pub use crate::domain::block::element::solid::elastic::ElasticElement;
+
+use crate::domain::block::element::AtPoints;
+use crate::{
+    constitutive::solid::elastic::Elastic,
+    fem::element::{
+        Element, ElementNodalCoordinates, FiniteElement, FiniteElementError, GradientVectors,
+        solid::{
+            ElementNodalForcesSolid, ElementNodalStiffnessesSolid, SolidElement, SolidFiniteElement,
+        },
+        surface::{SurfaceElement, SurfaceFiniteElement},
+    },
+    math::{ContractSecondFourthWithFirst, Current, IDENTITY, Quantity, Tensor, TensorRank2},
+    mechanics::{FirstPiolaKirchhoffStressList, FirstPiolaKirchhoffTangentStiffnessList},
+    units::StressPerArea,
+};
+
+pub trait ElasticFiniteElement<C, const G: usize, const M: usize, const N: usize, const P: usize>
+where
+    C: Elastic,
+    Self: SolidFiniteElement<G, M, N, P>
+        + ElasticElement<
+            C,
+            Forces = ElementNodalForcesSolid<N>,
+            Stiffnesses = ElementNodalStiffnessesSolid<N>,
+            Error = FiniteElementError,
+        >,
+{
+}
+
+impl<T, C, const G: usize, const M: usize, const N: usize, const P: usize>
+    ElasticFiniteElement<C, G, M, N, P> for T
+where
+    C: Elastic,
+    T: SolidFiniteElement<G, M, N, P>
+        + ElasticElement<
+            C,
+            Forces = ElementNodalForcesSolid<N>,
+            Stiffnesses = ElementNodalStiffnessesSolid<N>,
+            Error = FiniteElementError,
+        >,
+{
+}
+
+impl<C, const G: usize, const N: usize, const O: usize> ElasticElement<C> for Element<3, G, N, O>
+where
+    C: Elastic,
+    Self: SolidFiniteElement<G, 3, N, N>,
+{
+    type Forces = ElementNodalForcesSolid<N>;
+    type Stiffnesses = ElementNodalStiffnessesSolid<N>;
+    type Error = FiniteElementError;
+    fn nodal_forces(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError> {
+        nodal_forces::<_, _, _, _, _, O, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )
+    }
+    fn nodal_stiffnesses(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError> {
+        nodal_stiffnesses::<_, _, _, _, _, O, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )
+    }
+}
+
+impl<C, const G: usize, const N: usize, const O: usize> ElasticElement<C>
+    for SurfaceElement<G, N, O>
+where
+    C: Elastic,
+    Self: SolidFiniteElement<G, 2, N, N>,
+{
+    type Forces = ElementNodalForcesSolid<N>;
+    type Stiffnesses = ElementNodalStiffnessesSolid<N>;
+    type Error = FiniteElementError;
+    fn nodal_forces(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError> {
+        nodal_forces::<_, _, _, _, _, O, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )
+    }
+    fn nodal_stiffnesses(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError> {
+        let first_piola_kirchhoff_tangent_stiffnesses = self
+            .deformation_gradients(nodal_coordinates)
+            .iter()
+            .map(|deformation_gradient| {
+                constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
+            })
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
+        Ok(first_piola_kirchhoff_tangent_stiffnesses
+            .iter()
+            .zip(
+                self.gradient_vectors()
+                    .iter()
+                    .zip(self.integration_weights().iter()
+                    .zip(self.reference_normals().iter()
+                    .zip(Self::normal_gradients(nodal_coordinates))
+                )
+                ),
+            )
+            .map(
+                |(
+                    first_piola_kirchhoff_tangent_stiffness,
+                    (gradient_vectors, (integration_weight, (reference_normal, normal_gradients))),
+                )| {
+                    gradient_vectors.iter()
+                    .map(|gradient_vector_a|
+                        gradient_vectors.iter()
+                        .zip(normal_gradients.iter())
+                        .map(|(gradient_vector_b, normal_gradient_b)|
+                            first_piola_kirchhoff_tangent_stiffness.iter()
+                            .map(|first_piola_kirchhoff_tangent_stiffness_m|
+                                IDENTITY.iter()
+                                .zip(normal_gradient_b.iter())
+                                .map(|(identity_n, normal_gradient_b_n)|
+                                    first_piola_kirchhoff_tangent_stiffness_m.iter()
+                                    .zip(gradient_vector_a.iter())
+                                    .map(|(first_piola_kirchhoff_tangent_stiffness_mj, gradient_vector_a_j)|
+                                        first_piola_kirchhoff_tangent_stiffness_mj.iter()
+                                        .zip(identity_n.iter()
+                                        .zip(normal_gradient_b_n.iter()))
+                                        .map(|(first_piola_kirchhoff_tangent_stiffness_mjk, (identity_nk, normal_gradient_b_n_k))|
+                                            first_piola_kirchhoff_tangent_stiffness_mjk.iter()
+                                            .zip(gradient_vector_b.iter()
+                                            .zip(reference_normal.iter()))
+                                            .map(|(first_piola_kirchhoff_tangent_stiffness_mjkl, (gradient_vector_b_l, reference_normal_l))|
+                                                first_piola_kirchhoff_tangent_stiffness_mjkl * gradient_vector_a_j * (
+                                                    identity_nk * gradient_vector_b_l + normal_gradient_b_n_k * reference_normal_l
+                                                )
+                                            ).sum::<Quantity<StressPerArea>>()
+                                        ).sum::<Quantity<StressPerArea>>()
+                                    ).sum::<Quantity<StressPerArea>>()
+                                ).collect()
+                            ).collect::<TensorRank2<3, Current, Current, StressPerArea>>() * integration_weight
+                        ).collect()
+                    ).collect()
+                }
+            )
+            .sum())
+    }
+}
+
+fn nodal_forces<
+    C,
+    F,
+    const G: usize,
+    const M: usize,
+    const N: usize,
+    const O: usize,
+    const P: usize,
+>(
+    element: &F,
+    constitutive_model: &C,
+    gradient_vectors: &GradientVectors<3, G, N>,
+    nodal_coordinates: &ElementNodalCoordinates<N>,
+) -> Result<ElementNodalForcesSolid<N>, FiniteElementError>
+where
+    C: Elastic,
+    F: SolidFiniteElement<G, M, N, P>,
+{
+    let first_piola_kirchhoff_stresses = element
+        .deformation_gradients(nodal_coordinates)
+        .iter()
+        .map(|deformation_gradient| {
+            constitutive_model.first_piola_kirchhoff_stress(deformation_gradient)
+        })
+        .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
+    Ok(first_piola_kirchhoff_stresses
+        .iter()
+        .zip(gradient_vectors.iter().zip(element.integration_weights()))
+        .map(
+            |(first_piola_kirchhoff_stress, (gradient_vectors, integration_weight))| {
+                gradient_vectors
+                    .iter()
+                    .map(|gradient_vector| {
+                        (first_piola_kirchhoff_stress * gradient_vector) * integration_weight
+                    })
+                    .collect()
+            },
+        )
+        .sum())
+}
+
+fn nodal_stiffnesses<
+    C,
+    F,
+    const G: usize,
+    const M: usize,
+    const N: usize,
+    const O: usize,
+    const P: usize,
+>(
+    element: &F,
+    constitutive_model: &C,
+    gradient_vectors: &GradientVectors<3, G, N>,
+    nodal_coordinates: &ElementNodalCoordinates<N>,
+) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError>
+where
+    C: Elastic,
+    F: SolidFiniteElement<G, M, N, P>,
+{
+    let first_piola_kirchhoff_tangent_stiffnesses = element
+        .deformation_gradients(nodal_coordinates)
+        .iter()
+        .map(|deformation_gradient| {
+            constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
+        })
+        .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
+    Ok(first_piola_kirchhoff_tangent_stiffnesses
+        .iter()
+        .zip(gradient_vectors.iter().zip(element.integration_weights()))
+        .map(
+            |(first_piola_kirchhoff_tangent_stiffness, (gradient_vectors, integration_weight))| {
+                gradient_vectors
+                    .iter()
+                    .map(|gradient_vector_a| {
+                        gradient_vectors
+                            .iter()
+                            .map(|gradient_vector_b| {
+                                first_piola_kirchhoff_tangent_stiffness
+                                    .contract_second_fourth_with_first(
+                                        gradient_vector_a,
+                                        gradient_vector_b,
+                                    )
+                                    * integration_weight
+                            })
+                            .collect()
+                    })
+                    .collect()
+            },
+        )
+        .sum())
+}

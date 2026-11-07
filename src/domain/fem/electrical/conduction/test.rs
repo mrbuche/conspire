@@ -3,8 +3,9 @@ use crate::{
     domain::diffusion::DiffusionElements,
     fem::{
         Blocks, Minimize, Model, NodalReferenceCoordinates, Root,
-        block::{Block, electrical::NodalPotentials, element::linear::Tetrahedron},
+        block::{Block, electrical::NodalPotentials},
         electrical::conduction::{ElectricalConductionElements, NodalConductances, NodalCurrents},
+        element::linear::Tetrahedron,
     },
     math::{Matrix, Quantity, Tensor, Vector, optimize::NewtonRaphson},
     units::{ElectricalConductivity, Power},

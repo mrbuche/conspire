@@ -11,9 +11,9 @@ use crate::{
         Model, NodalReferenceCoordinates,
         block::{
             Block, NoDensity,
-            element::linear::Tetrahedron,
             thermal::{NodalTemperatures, conduction::NodalForcesThermal},
         },
+        element::linear::Tetrahedron,
         solid::{Checked, Consistent, Lumped, Unchecked},
         thermal::{
             capacity::HeatCapacityMatrix, time_scale::ThermalTimeScaleElements,

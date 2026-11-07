@@ -4,8 +4,8 @@ mod test;
 use crate::{
     domain::{NodalReferenceCoordinates, from::FromConnectivities},
     geometry::mesh::{Connectivity, PolytopalConnectivity},
-    vem::block::{
-        Block,
+    vem::{
+        block::Block,
         element::{DEFAULT_STABILIZATION, VirtualElement},
     },
 };

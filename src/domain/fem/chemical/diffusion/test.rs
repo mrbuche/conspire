@@ -3,11 +3,12 @@ use crate::{
     domain::diffusion::DiffusionElements,
     fem::{
         Blocks, Minimize, Model, NodalReferenceCoordinates, Root,
-        block::{Block, element::linear::Tetrahedron},
+        block::Block,
         chemical::diffusion::{
             ChemicalDiffusionElements, NodalConcentrations, NodalMolarFlowRates,
             NodalVolumetricFlowRates,
         },
+        element::linear::Tetrahedron,
     },
     math::{Matrix, Quantity, Tensor, Vector, optimize::NewtonRaphson},
     units::{Diffusivity, MolarFlowRateConcentration},

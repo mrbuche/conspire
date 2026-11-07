@@ -3,11 +3,8 @@ use crate::{
     constitutive::solid::hyperelastic_viscoplastic::HyperelasticViscoplastic,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticFiniteElement,
-            solid::elastic_viscoplastic::ViscoplasticStateVariables,
-        },
+        block::{Block, solid::elastic_viscoplastic::ViscoplasticStateVariables},
+        element::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticFiniteElement,
         solid::{
             elastic_viscoplastic::ElasticViscoplasticElements,
             hyperelastic_viscoplastic::HyperelasticViscoplasticElements,

@@ -7,7 +7,7 @@ use crate::{
     domain::{diffusion::DiffusionElements, electrical::NodalPotentials},
     math::{Hessian, Quantity, Scalar, Tensor},
     units::{ElectricPotential, Permittivity},
-    vem::block::{Block, element::Element},
+    vem::{block::Block, element::Element},
 };
 
 type B = Block<Linear, Element>;

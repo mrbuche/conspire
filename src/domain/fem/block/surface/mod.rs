@@ -1,7 +1,8 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{Block, NoDensity, NoHeatCapacity, element::ElementNodalReferenceCoordinates},
+        block::{Block, NoDensity, NoHeatCapacity},
+        element::ElementNodalReferenceCoordinates,
     },
     math::Quantity,
     units::Length,

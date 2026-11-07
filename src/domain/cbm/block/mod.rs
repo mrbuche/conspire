@@ -3,7 +3,6 @@ mod diffusion;
 #[cfg(test)]
 mod electrical;
 pub mod mass;
-pub mod node;
 pub mod solid;
 #[cfg(test)]
 mod test;
@@ -11,13 +10,13 @@ pub mod thermal;
 pub mod time_scale;
 mod volume;
 
+use crate::cbm::node::{Node, Weighting};
 use crate::{
     domain::{NodalReferenceCoordinates, block::element::Items},
     geometry::mesh::PrimitiveConnectivity,
 };
 use core::fmt::{self, Debug, Formatter};
 use density::NoDensity;
-use node::{Node, Weighting};
 
 pub struct Block<C, R = NoDensity> {
     constitutive_model: C,

@@ -3,10 +3,8 @@ mod test;
 
 use crate::fem::{
     NodalReferenceCoordinates,
-    block::{
-        Block, Densities,
-        element::mass::{LumpedMassFiniteElement, MassFiniteElement},
-    },
+    block::{Block, Densities},
+    element::mass::{LumpedMassFiniteElement, MassFiniteElement},
     solid::mass::{ConsistentMassElements, LumpedMassElements},
 };
 

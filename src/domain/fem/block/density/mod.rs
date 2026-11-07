@@ -4,10 +4,8 @@ mod test;
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{
-            Block,
-            element::{ElementNodalReferenceCoordinates, FiniteElement},
-        },
+        block::Block,
+        element::{ElementNodalReferenceCoordinates, FiniteElement},
     },
     geometry::mesh::PrimitiveConnectivity,
     math::{Quantity, Tensor, TensorList, TensorListVec},

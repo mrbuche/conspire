@@ -223,7 +223,7 @@ impl<I: Iterator> ForEachAtItems for I {}
 #[cfg(all(test, feature = "fem"))]
 mod test {
     use super::*;
-    use crate::fem::block::element::FiniteElementError;
+    use crate::fem::element::FiniteElementError;
 
     #[test]
     fn the_error_names_the_point_element_and_block() {

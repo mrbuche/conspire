@@ -6,10 +6,8 @@ use crate::{
     },
     fem::{
         Model,
-        block::{
-            Block,
-            element::linear::{Hexahedron, Tetrahedron},
-        },
+        block::Block,
+        element::linear::{Hexahedron, Tetrahedron},
     },
     math::{Quantity, assert::AssertionError},
     units::Density,

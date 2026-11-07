@@ -5,8 +5,7 @@ use crate::{
     },
     domain::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
     fem::{
-        NodalCoordinates, NodalReferenceCoordinates,
-        block::{Block, element::linear::Tetrahedron},
+        NodalCoordinates, NodalReferenceCoordinates, block::Block, element::linear::Tetrahedron,
     },
     geometry::mesh::Decomposition,
     math::{Tensor, Vector},

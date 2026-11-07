@@ -4,14 +4,14 @@ use crate::{
         Blocks, Model, NodalReferenceCoordinates, nodal_coordinates,
         solid::elastic::ElasticElements,
     },
-    fem::block::{Block as FemBlock, element::linear::Tetrahedron},
+    fem::{block::Block as FemBlock, element::linear::Tetrahedron},
     geometry::{
         Coordinates,
         mesh::{Connectivity, Mesh, PolytopalConnectivity},
     },
     math::Tensor,
     units::Stress,
-    vem::block::{Block as VemBlock, element::Element as VemElement},
+    vem::{block::Block as VemBlock, element::Element as VemElement},
 };
 
 fn constitutive_model() -> NeoHookean {
@@ -61,7 +61,7 @@ fn fem_and_vem_blocks_combine_via_trait_bounds() {
             vec![1, 3, 7, 5],
         ],
         &coordinates,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     let model: Model<MixedBlocks, 3> = (Blocks(fem_block, vem_block), coordinates.clone()).into();
     let current_coordinates = coordinates.into();
@@ -137,8 +137,8 @@ fn three_blocks_two_fem_one_vem_combine_via_mesh() {
 #[test]
 fn element_error_messages_name_their_kind() {
     use crate::constitutive::ConstitutiveError;
-    use crate::fem::block::element::FiniteElementError;
-    use crate::vem::block::element::VirtualElementError;
+    use crate::fem::element::FiniteElementError;
+    use crate::vem::element::VirtualElementError;
     let fem_message =
         FiniteElementError::new(Some(2), ConstitutiveError::MaximumExtensibility).to_string();
     let vem_message =

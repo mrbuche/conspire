@@ -7,8 +7,8 @@ use crate::{
     fem::{
         Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
         block::Block,
-        block::element::linear::Tetrahedron,
         boundary::{Enforcement, Rows},
+        element::linear::Tetrahedron,
         solid::{
             Consistent, ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid,
             Unchecked, elastic::ElasticElements,
@@ -935,7 +935,7 @@ mod bar_wave {
     use crate::{
         fem::{
             NodalAccelerationsHistory, NodalCoordinatesHistory, NodalVelocitiesHistory,
-            block::element::linear::Hexahedron,
+            element::linear::Hexahedron,
         },
         math::integrate::{
             DormandPrince, DormandPrinceFixedStep, ExplicitDynamics, VelocityVerlet,

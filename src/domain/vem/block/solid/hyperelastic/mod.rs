@@ -6,11 +6,8 @@ use crate::{
     units::Energy,
     vem::{
         NodalCoordinates,
-        block::{
-            Block,
-            element::{VirtualElementError, solid::hyperelastic::HyperelasticVirtualElement},
-            solid::NodalStiffnessesSolidSymmetric,
-        },
+        block::{Block, solid::NodalStiffnessesSolidSymmetric},
+        element::{VirtualElementError, solid::hyperelastic::HyperelasticVirtualElement},
     },
 };
 use core::any::type_name;

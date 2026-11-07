@@ -7,10 +7,8 @@ use crate::{
     },
     vem::{
         NodalCoordinates,
-        block::{
-            Block,
-            element::{VirtualElementError, solid::elastic::ElasticVirtualElement},
-        },
+        block::Block,
+        element::{VirtualElementError, solid::elastic::ElasticVirtualElement},
     },
 };
 use core::any::type_name;

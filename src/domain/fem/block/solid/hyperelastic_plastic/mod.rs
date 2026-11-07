@@ -4,7 +4,8 @@ use crate::{
     domain::block::solid::plastic::PlasticStateVariablesField,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{Block, element::solid::hyperelastic_plastic::HyperelasticPlasticFiniteElement},
+        block::Block,
+        element::solid::hyperelastic_plastic::HyperelasticPlasticFiniteElement,
         solid::{
             elastic_plastic::ElasticPlasticElements,
             hyperelastic_plastic::HyperelasticPlasticElements,

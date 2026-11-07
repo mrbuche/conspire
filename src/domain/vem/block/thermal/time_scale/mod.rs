@@ -11,14 +11,14 @@ use crate::{
         NodalReferenceCoordinates,
         block::{
             Block,
-            element::{
-                VirtualElementError,
-                thermal::{
-                    capacity::LumpedHeatCapacityVirtualElement,
-                    conduction::ThermalConductionVirtualElement,
-                },
-            },
             thermal::{NodalTemperatures, capacity::HeatCapacities},
+        },
+        element::{
+            VirtualElementError,
+            thermal::{
+                capacity::LumpedHeatCapacityVirtualElement,
+                conduction::ThermalConductionVirtualElement,
+            },
         },
     },
 };

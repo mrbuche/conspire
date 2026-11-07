@@ -4,11 +4,8 @@ use crate::{
     units::{PowerPerLengthTemperature, Temperature},
     vem::{
         Checked, Lumped, NodalReferenceCoordinates, Unchecked,
-        block::{
-            Block,
-            element::{DEFAULT_STABILIZATION, Element},
-            thermal::NodalTemperatures,
-        },
+        block::{Block, thermal::NodalTemperatures},
+        element::{DEFAULT_STABILIZATION, Element},
     },
 };
 
@@ -122,7 +119,7 @@ mod heat {
         },
         math::{Hessian, Tensor, integrate::Euler},
         units::{Density, SpecificHeat, Temperature, Time, Volume, VolumetricHeatCapacity},
-        vem::block::element::VirtualElement,
+        vem::element::VirtualElement,
     };
     type H = Block<Fourier, Element, Quantity<VolumetricHeatCapacity>>;
     fn capacity() -> Quantity<VolumetricHeatCapacity> {

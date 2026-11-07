@@ -8,14 +8,14 @@ use crate::{
         ElementModelError, NodalReferenceCoordinates,
         block::{
             Block,
-            element::{
-                FiniteElementError,
-                thermal::{
-                    capacity::LumpedHeatCapacityFiniteElement,
-                    conduction::ThermalConductionFiniteElement,
-                },
-            },
             thermal::{NodalTemperatures, ThermalElements, capacity::HeatCapacities},
+        },
+        element::{
+            FiniteElementError,
+            thermal::{
+                capacity::LumpedHeatCapacityFiniteElement,
+                conduction::ThermalConductionFiniteElement,
+            },
         },
     },
     math::{Quantity, Tensor},

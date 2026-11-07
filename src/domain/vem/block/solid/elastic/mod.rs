@@ -4,12 +4,9 @@ use crate::{
     domain::{ElementModelError, solid::elastic::ElasticItems},
     vem::{
         NodalCoordinates,
-        block::{
-            Block,
-            element::solid::{
-                ElementNodalForcesSolid, ElementNodalStiffnessesSolid,
-                elastic::ElasticVirtualElement,
-            },
+        block::Block,
+        element::solid::{
+            ElementNodalForcesSolid, ElementNodalStiffnessesSolid, elastic::ElasticVirtualElement,
         },
     },
 };

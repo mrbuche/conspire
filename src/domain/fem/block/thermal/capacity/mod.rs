@@ -1,12 +1,9 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{
-            Block,
-            element::thermal::capacity::{
-                HeatCapacityFiniteElement, IntegrationHeatCapacities,
-                LumpedHeatCapacityFiniteElement,
-            },
+        block::Block,
+        element::thermal::capacity::{
+            HeatCapacityFiniteElement, IntegrationHeatCapacities, LumpedHeatCapacityFiniteElement,
         },
         thermal::capacity::{
             ConsistentHeatCapacityElements, LumpedHeatCapacityElements, NodalHeatCapacities,

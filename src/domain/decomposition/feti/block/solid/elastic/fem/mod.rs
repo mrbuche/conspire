@@ -6,10 +6,8 @@ use crate::{
     },
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{FiniteElementError, solid::elastic::ElasticFiniteElement},
-        },
+        block::Block,
+        element::{FiniteElementError, solid::elastic::ElasticFiniteElement},
     },
 };
 use core::any::type_name;
