@@ -5,12 +5,13 @@
 //! does not start. Kernels are compiled for the device at hand when it is opened.
 
 use super::GpuError;
-use std::{
-    ffi::{CStr, CString, c_char, c_int, c_uint, c_void},
+use alloc::{ffi::CString, sync::Arc};
+use core::ffi::{c_char, c_int, c_uint, c_void};
+use core::{
+    ffi::CStr,
     marker::PhantomData,
     mem::{size_of, transmute_copy},
     ptr::{null, null_mut},
-    sync::Arc,
 };
 
 #[cfg_attr(target_os = "linux", link(name = "dl"))]

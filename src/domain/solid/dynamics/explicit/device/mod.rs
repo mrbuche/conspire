@@ -14,7 +14,7 @@ use crate::{
     math::{Quantity, Tensor, integrate::IntegrationError},
     units::Time,
 };
-use std::time::Duration;
+use core::time::Duration;
 
 /// The components of the nodes, as `3 * node + component`.
 fn flatten<T, U>(nodes: &T) -> Vec<f64>

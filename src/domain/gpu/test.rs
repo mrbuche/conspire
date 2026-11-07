@@ -1114,9 +1114,9 @@ fn library_element_forces_on_the_device_are_the_forces_of_the_library() {
     let count = elements.len();
     // SAFETY: the elements are plain numbers, which the device reads as the bytes that they are.
     let bytes = unsafe {
-        std::slice::from_raw_parts(
+        core::slice::from_raw_parts(
             elements.as_ptr().cast::<u8>(),
-            std::mem::size_of_val(elements),
+            core::mem::size_of_val(elements),
         )
     };
     let elements_buffer = device.buffer_of(bytes).unwrap();

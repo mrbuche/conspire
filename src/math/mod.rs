@@ -32,10 +32,10 @@ mod tensor;
 
 pub(crate) use style::{Style, StyledError, defeat_message, styled_error};
 
-pub use graph::{Graph, Incidence};
 pub use crate::hash::FxHasher;
 #[cfg(feature = "std")]
 pub use crate::hash::{FxHashMap, FxHashSet};
+pub use graph::{Graph, Incidence};
 #[cfg(feature = "std")]
 pub use labels::Labels;
 pub use matrix::{

@@ -10,7 +10,8 @@ use crate::{
     math::{Quantity, Tensor},
 };
 
-use std::time::{Duration, Instant};
+use core::time::Duration;
+use std::time::Instant;
 
 const KERNELS: &str = include_str!("kernel.cu");
 const DYNAMICS: &str = include_str!("dynamics.cu");
@@ -28,11 +29,11 @@ const LIBRARY: &str = include_str!("kernels.ptx");
 /// differ in the last bits, as they do when a fused multiply-add is used on any processor, so
 /// `CONSPIRE_GPU_NO_FMA` keeps the rounding named, for the results that the operations alone
 /// give.
-fn library_ptx() -> std::borrow::Cow<'static, str> {
+fn library_ptx() -> alloc::borrow::Cow<'static, str> {
     if std::env::var_os("CONSPIRE_GPU_NO_FMA").is_some() {
-        std::borrow::Cow::Borrowed(LIBRARY)
+        alloc::borrow::Cow::Borrowed(LIBRARY)
     } else {
-        std::borrow::Cow::Owned(
+        alloc::borrow::Cow::Owned(
             LIBRARY
                 .replace("mul.rn.f64", "mul.f64")
                 .replace("add.rn.f64", "add.f64")
@@ -252,10 +253,10 @@ impl<R: Real> State<R> {
                     block
                         .chunks(options.chunk)
                         .into_iter()
-                        .map(|(first, chunk)| (origin, first, std::borrow::Cow::Owned(chunk)))
+                        .map(|(first, chunk)| (origin, first, alloc::borrow::Cow::Owned(chunk)))
                         .collect::<Vec<_>>()
                 } else {
-                    vec![(origin, 0, std::borrow::Cow::Borrowed(block))]
+                    vec![(origin, 0, alloc::borrow::Cow::Borrowed(block))]
                 }
             })
             .collect::<Vec<_>>();
