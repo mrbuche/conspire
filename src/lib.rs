@@ -2,7 +2,7 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![cfg_attr(
     not(feature = "std"),
-    feature(prelude_import),
+    feature(core_float_math, prelude_import),
     allow(internal_features)
 )]
 #![cfg_attr(feature = "autodiff", feature(autodiff))]
