@@ -1,5 +1,5 @@
 use crate::hash::{FxHashMap, FxHashSet, FxHasher};
-use core::Hasher;
+use core::hash::Hasher;
 
 #[test]
 fn map_inserts_and_reads() {
