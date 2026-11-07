@@ -1,5 +1,7 @@
+#[cfg(feature = "fem")]
 use crate::{math::Quantity, units::Length};
 
+#[cfg(feature = "fem")]
 pub const THICKNESS: Quantity<Length> = Length::meters(1.23);
 
 macro_rules! test_finite_element {
@@ -224,6 +226,7 @@ macro_rules! test_finite_element {
 }
 pub(crate) use test_finite_element;
 
+#[cfg(feature = "fem")]
 macro_rules! test_surface_finite_element {
     ($element: ident) => {
         use crate::{
@@ -652,6 +655,7 @@ macro_rules! test_surface_finite_element {
         }
     };
 }
+#[cfg(feature = "fem")]
 pub(crate) use test_surface_finite_element;
 
 macro_rules! setup {

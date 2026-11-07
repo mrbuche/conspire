@@ -35,11 +35,16 @@ mod hash;
 #[cfg(feature = "constitutive")]
 pub mod constitutive;
 
-#[cfg(any(feature = "cbm", feature = "fem", feature = "vem"))]
+#[cfg(any(
+    feature = "cbm",
+    feature = "elements",
+    feature = "fem",
+    feature = "vem"
+))]
 #[path = "domain/mod.rs"]
 pub mod domain;
 
-#[cfg(feature = "fem")]
+#[cfg(any(feature = "elements", feature = "fem"))]
 #[doc(hidden)]
 pub use domain::fem;
 

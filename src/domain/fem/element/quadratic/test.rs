@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "fem"))]
 pub use crate::fem::element::quadratic::tetrahedron::test::{
     D as TETRAHEDRON_D, applied_velocities as tetrahedron_applied_velocities,
     applied_velocity as tetrahedron_applied_velocity,

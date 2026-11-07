@@ -1,6 +1,6 @@
 #[cfg(feature = "autodiff")]
 mod autodiff;
-#[cfg(test)]
+#[cfg(all(test, feature = "fem"))]
 pub mod test;
 
 use crate::{

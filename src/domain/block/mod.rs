@@ -18,6 +18,10 @@ pub(crate) fn trimmed_type_name<T>() -> &'static str {
         .unwrap()
 }
 
+#[cfg_attr(
+    not(any(feature = "cbm", feature = "fem", feature = "vem")),
+    allow(dead_code)
+)]
 pub(crate) fn add_node_neighbors<'a>(
     elements_nodes: impl Iterator<Item = &'a [usize]>,
     neighbors: &mut [Vec<usize>],
@@ -31,6 +35,10 @@ pub(crate) fn add_node_neighbors<'a>(
     })
 }
 
+#[cfg_attr(
+    not(any(feature = "cbm", feature = "fem", feature = "vem")),
+    allow(dead_code)
+)]
 pub(crate) fn finalize_node_neighbors(neighbors: &mut [Vec<usize>]) {
     neighbors.iter_mut().for_each(|nodes| {
         nodes.sort_unstable();
@@ -38,6 +46,10 @@ pub(crate) fn finalize_node_neighbors(neighbors: &mut [Vec<usize>]) {
     })
 }
 
+#[cfg_attr(
+    not(any(feature = "cbm", feature = "fem", feature = "vem")),
+    allow(dead_code)
+)]
 pub(crate) fn solver_from_neighbors(
     neighbors: &[Vec<usize>],
     equality_constraints: &[EqualityConstraint],
