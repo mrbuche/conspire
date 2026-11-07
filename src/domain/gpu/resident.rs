@@ -177,6 +177,9 @@ pub(crate) struct State<R: Real> {
     nodes: usize,
     library: bool,
     element_stride: u32,
+    /// The kernels of the library, which every block and the steps use, loaded once: the driver
+    /// compiles all of them when it loads them.
+    library_module: Option<Module>,
     _modules: Vec<Module>,
     device: Device,
 }
@@ -198,6 +201,11 @@ impl<R: Real> State<R> {
         let device = Device::new(options.device)?;
         device.bind()?;
         let to_device = |values: &[f64]| values.iter().map(|&x| R::from_f64(x)).collect::<Vec<_>>();
+        let library_module = if library {
+            Some(device.module_from_ptx(LIBRARY)?)
+        } else {
+            None
+        };
         let mut modules = Vec::with_capacity(blocks.len());
         let mut states = Vec::with_capacity(blocks.len());
         for block in blocks {
@@ -225,7 +233,7 @@ impl<R: Real> State<R> {
                         )
                     })?;
                     (
-                        device.module_from_ptx(LIBRARY)?,
+                        None,
                         Geometry::LibraryOnTheFly {
                             derivatives: device.buffer_of(&to_device(&shape.derivatives))?,
                             weights: device.buffer_of(&to_device(&shape.weights))?,
@@ -234,7 +242,7 @@ impl<R: Real> State<R> {
                     )
                 } else {
                     (
-                        device.module_from_ptx(LIBRARY)?,
+                        None,
                         Geometry::Library {
                             reference: device.buffer_of(&to_device(&layout.reference))?,
                         },
@@ -270,8 +278,14 @@ impl<R: Real> State<R> {
                         reference: device.buffer_of(&to_device(&layout.reference))?,
                     }
                 };
-                (module, geometry, "item_forces")
+                (Some(module), geometry, "item_forces")
             };
+            // The kernels of the block are in a module of its own, or in that of the library.
+            let own = module;
+            let module = own
+                .as_ref()
+                .or(library_module.as_ref())
+                .expect("the module of a block");
             states.push(BlockState {
                 items: items as u32,
                 nodes_per_item: block.nodes_per_item as u32,
@@ -287,7 +301,7 @@ impl<R: Real> State<R> {
                 forces_kernel: module.function(forces_name)?,
                 gather_kernel: module.function("gather")?,
             });
-            modules.push(module);
+            modules.extend(own);
         }
         Ok(Self {
             blocks: states,
@@ -308,6 +322,7 @@ impl<R: Real> State<R> {
             } else {
                 1
             },
+            library_module,
             _modules: modules,
             device,
         })
@@ -483,11 +498,15 @@ impl<R: Real> State<R> {
         self.coordinates.upload(&to_device(coordinates))?;
         self.forces.fill(0)?;
         self.reset_failures()?;
-        let module = if self.library {
-            self.device.module_from_ptx(LIBRARY)?
-        } else {
-            self.device
-                .module(DYNAMICS, &[format!("REAL={}", R::NAME)], R::FUSED)?
+        let own;
+        let module = match &self.library_module {
+            Some(module) => module,
+            None => {
+                own = self
+                    .device
+                    .module(DYNAMICS, &[format!("REAL={}", R::NAME)], R::FUSED)?;
+                &own
+            }
         };
         let kick_drift = module.function("kick_drift")?;
         let accelerate = module.function("accelerate")?;
