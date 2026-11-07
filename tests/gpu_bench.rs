@@ -24,7 +24,10 @@ use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
-        block::{Block, element::linear::Hexahedron},
+        block::{
+            Block,
+            element::linear::{Hexahedron, Pyramid, Tetrahedron, Wedge},
+        },
         boundary::{BoundaryConditions, Solid},
         solid::{
             DeviceExplicitDynamics, ElasticExplicitDynamics, Execution, GpuGradients, GpuKernels,
@@ -36,7 +39,14 @@ use conspire::{
 };
 use std::{thread::available_parallelism, time::Instant};
 
+#[allow(dead_code)]
+mod common;
+
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
+type OnePoint = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
+type FourPoints = Block<NeoHookean, Tetrahedron<4>, 4, 3, 4, 4, Quantity<Density>>;
+type Prisms = Block<NeoHookean, Wedge, 6, 3, 6, 6, Quantity<Density>>;
+type Pyramids = Block<NeoHookean, Pyramid, 8, 3, 5, 5, Quantity<Density>>;
 type Elastic = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 
 const STEP: f64 = 1e-8;
@@ -670,4 +680,193 @@ fn mixed_model_steps() {
             return;
         }
     }
+}
+
+/// The correctness and the cost of a step of a block of one kind of element, in a row: the
+/// block is made of the mesh, a body of Neo-Hookean solid, and run on a device in each way
+/// that there is, after checking that each way gives the velocities of the run on the calling
+/// thread. Evaluates to whether there is a device.
+macro_rules! element_row {
+    ($label:expr, $block:ty, $mesh:expr, $points:expr) => {{
+        let mesh = $mesh;
+        let elements = mesh.connectivity.len();
+        let per_element = mesh.connectivity[0].len();
+        let current = deformed(&mesh.coordinates);
+        let nodes = current.len();
+        let reference = NodalReferenceCoordinates::from(mesh.coordinates.clone());
+        let block = <$block>::from((
+            NeoHookean {
+                shear_modulus: Stress::pascals(3.0e9),
+                bulk_modulus: Stress::pascals(13.0e9),
+            },
+            Density::kilograms_per_cubic_meter(7.8e3),
+            mesh.connectivity,
+            &reference,
+        ));
+        let model: Model<$block, 3> = (block, reference).into();
+        let velocities = || NodalVelocities::from(vec![[0.0; 3]; nodes]);
+        let conditions = BoundaryConditions::<Solid<3>>::new();
+        let (short, _) = history_steps(nodes);
+        let serial = model
+            .integrate(
+                Execution::Serial,
+                Unchecked,
+                Lumped,
+                &VelocityVerlet::new(Time::seconds(STEP)),
+                &[Time::seconds(0.0), Time::seconds(short as f64 * STEP)],
+                (current.clone(), velocities()),
+                &(),
+                &conditions,
+            )
+            .unwrap();
+        let expected = components(serial.2.iter().last().unwrap());
+        let fastest = expected.iter().map(|v| v.abs()).fold(0.0, f64::max);
+        assert!(fastest > 0.0, "{}: the run on the calling thread did not move", $label);
+        let mut costs = Vec::new();
+        let mut device = true;
+        for (gradients, kernels) in [
+            (GpuGradients::Stored, GpuKernels::Library),
+            (GpuGradients::OnTheFly, GpuKernels::Library),
+            (GpuGradients::Stored, GpuKernels::Handwritten),
+            (GpuGradients::OnTheFly, GpuKernels::Handwritten),
+        ] {
+            let run = model.integrate_on_device(
+                options(GpuPrecision::F64, gradients, kernels),
+                Time::seconds(STEP),
+                short,
+                (current.clone(), velocities()),
+                &conditions,
+            );
+            match run {
+                Ok((_, found)) => {
+                    let gap = components(&found)
+                        .iter()
+                        .zip(&expected)
+                        .map(|(found, expected)| (found - expected).abs())
+                        .fold(0.0, f64::max);
+                    assert!(
+                        gap < 1e-9 * fastest,
+                        "{} {gradients:?} {kernels:?}: the velocities differ by {gap}, of velocities up to {fastest}",
+                        $label
+                    );
+                }
+                Err(error) if no_device(&error) => {
+                    println!("skipped: {error:?}");
+                    device = false;
+                    break;
+                }
+                Err(error) => panic!("{} {gradients:?} {kernels:?}: {error:?}", $label),
+            }
+            let (step, _) = device_cost(|steps| {
+                let start = Instant::now();
+                let (_, stepping) = model
+                    .integrate_on_device_timed(
+                        options(GpuPrecision::F64, gradients, kernels),
+                        Time::seconds(STEP),
+                        steps,
+                        (current.clone(), velocities()),
+                        &conditions,
+                    )
+                    .unwrap();
+                (
+                    stepping.as_secs_f64() * 1e3,
+                    start.elapsed().as_secs_f64() * 1e3,
+                )
+            });
+            costs.push(step);
+        }
+        if device {
+            let best = costs.iter().cloned().fold(f64::INFINITY, f64::min);
+            println!(
+                "{:>14} {:>3} {:>3} {elements:>9} {:>10.3} {:>10.3} {:>10.3} {:>10.3} {:>10.1}",
+                $label,
+                $points,
+                per_element,
+                costs[0],
+                costs[1],
+                costs[2],
+                costs[3],
+                elements as f64 / best / 1e3
+            );
+        }
+        device
+    }};
+}
+
+/// The cost of a step of a block of each kind of linear element, on a grid of `ELEMENT_CELLS`
+/// cells on a side, 40 by default, whose elements are cut from its cells: the hexahedra, the
+/// wedges, two to a cell, and the tetrahedra and pyramids, six to a cell.
+///
+/// The columns are the integration points and nodes of an element, the number of elements, the
+/// milliseconds of a step of the library with stored and with on-the-fly gradient vectors and of
+/// the kernels written for the device with stored and with on-the-fly ones, and the Melement/s
+/// of the fastest.
+#[test]
+#[ignore]
+fn element_steps() {
+    let cells: usize = variable("ELEMENT_CELLS").unwrap_or(40);
+    println!(
+        "\n{:>14} {:>3} {:>3} {:>9} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "", "G", "N", "elements", "lib", "lib fly", "hand", "hand fly", "Melem/s"
+    );
+    if !element_row!("hexahedron", Grid, common::hexahedra(cells), 8) {
+        return;
+    }
+    if !element_row!("wedge", Prisms, common::wedges(cells), 6) {
+        return;
+    }
+    if !element_row!("tetrahedron 1", OnePoint, common::tetrahedra(cells), 1) {
+        return;
+    }
+    if !element_row!("tetrahedron 4", FourPoints, common::tetrahedra(cells), 4) {
+        return;
+    }
+    element_row!("pyramid", Pyramids, common::pyramids(cells), 8);
+}
+
+/// A block of one kind of element of a mesh runs on the calling thread, which it only does if the
+/// nodes of its elements are ordered as the element asks, so that every Jacobian is positive.
+macro_rules! runs_on_the_calling_thread {
+    ($block:ty, $mesh:expr) => {{
+        let mesh = $mesh;
+        let current = deformed(&mesh.coordinates);
+        let nodes = current.len();
+        let reference = NodalReferenceCoordinates::from(mesh.coordinates.clone());
+        let block = <$block>::from((
+            NeoHookean {
+                shear_modulus: Stress::pascals(3.0e9),
+                bulk_modulus: Stress::pascals(13.0e9),
+            },
+            Density::kilograms_per_cubic_meter(7.8e3),
+            mesh.connectivity,
+            &reference,
+        ));
+        let model: Model<$block, 3> = (block, reference).into();
+        let run = model
+            .integrate(
+                Execution::Serial,
+                Unchecked,
+                Lumped,
+                &VelocityVerlet::new(Time::seconds(STEP)),
+                &[Time::seconds(0.0), Time::seconds(2.0 * STEP)],
+                (current, NodalVelocities::from(vec![[0.0; 3]; nodes])),
+                &(),
+                &BoundaryConditions::<Solid<3>>::new(),
+            )
+            .unwrap();
+        let fastest = components(run.2.iter().last().unwrap())
+            .iter()
+            .map(|v| v.abs())
+            .fold(0.0, f64::max);
+        assert!(fastest > 0.0, "the run did not move");
+    }};
+}
+
+#[test]
+fn the_meshes_of_every_kind_of_element_run_on_the_calling_thread() {
+    runs_on_the_calling_thread!(Grid, common::hexahedra(3));
+    runs_on_the_calling_thread!(Prisms, common::wedges(3));
+    runs_on_the_calling_thread!(OnePoint, common::tetrahedra(3));
+    runs_on_the_calling_thread!(FourPoints, common::tetrahedra(3));
+    runs_on_the_calling_thread!(Pyramids, common::pyramids(3));
 }
