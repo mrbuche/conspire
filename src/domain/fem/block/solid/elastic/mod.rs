@@ -126,6 +126,7 @@ where
         let library = LibraryBlock::new(&model, G, N);
         Some(GpuItems {
             library,
+            node_list: Vec::new(),
             shape,
             model,
             nodes_per_item: N,

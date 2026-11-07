@@ -1186,3 +1186,74 @@ fn library_element_forces_on_the_device_are_the_forces_of_the_library() {
         "the largest difference is {worst} of forces up to {largest}"
     );
 }
+
+/// The chunks of a block have its elements one after the other, and for each node the
+/// contributions of its elements in the order of the elements, so that the sums over the chunks
+/// are the sums over the block.
+#[test]
+fn chunks_of_a_block_have_its_elements_and_its_contributions_in_order() {
+    let (model, _) = grid(4);
+    let mut blocks = Vec::new();
+    model.gpu_blocks(&mut blocks).unwrap();
+    let block = &blocks[0];
+    let (items, width) = (block.number_of_items(), block.nodes_per_item);
+    let nodes = block.offsets.len() - 1;
+    for size in [0, 1, 5, 7, 64, items - 1, items, items + 3] {
+        let chunks = block.chunks(size);
+        let mut connectivity: Vec<u32> = Vec::new();
+        let mut reference: Vec<f64> = Vec::new();
+        let mut rebuilt: Vec<Vec<usize>> = vec![Vec::new(); nodes];
+        for (first, chunk) in &chunks {
+            assert_eq!(*first * width, connectivity.len(), "size {size}");
+            connectivity.extend(&chunk.connectivity);
+            reference.extend(&chunk.reference);
+            // The nodes are listed once each, in order, and each is touched.
+            assert!(
+                chunk.node_list.windows(2).all(|pair| pair[0] < pair[1]),
+                "size {size}"
+            );
+            assert_eq!(chunk.node_list.len() + 1, chunk.offsets.len());
+            for (position, &node) in chunk.node_list.iter().enumerate() {
+                let (start, end) = (
+                    chunk.offsets[position] as usize,
+                    chunk.offsets[position + 1] as usize,
+                );
+                assert!(
+                    start < end,
+                    "size {size}: a node that is listed is not touched"
+                );
+                rebuilt[node as usize].extend(
+                    chunk.contributions[start..end]
+                        .iter()
+                        .map(|&contribution| contribution as usize + first * width),
+                );
+            }
+            // Every contribution is to an element of the chunk.
+            assert!(
+                chunk
+                    .contributions
+                    .iter()
+                    .all(|&contribution| (contribution as usize) < chunk.number_of_items() * width),
+                "size {size}"
+            );
+        }
+        assert_eq!(connectivity, block.connectivity, "size {size}");
+        assert_eq!(reference, block.reference, "size {size}");
+        for (node, contributions) in rebuilt.iter().enumerate() {
+            let (start, end) = (
+                block.offsets[node] as usize,
+                block.offsets[node + 1] as usize,
+            );
+            let expected = block.contributions[start..end]
+                .iter()
+                .map(|&contribution| contribution as usize)
+                .collect::<Vec<_>>();
+            assert_eq!(contributions, &expected, "size {size}, node {node}");
+        }
+        if size == 0 || size >= items {
+            assert_eq!(chunks.len(), 1, "size {size}");
+        } else {
+            assert_eq!(chunks.len(), items.div_ceil(size), "size {size}");
+        }
+    }
+}

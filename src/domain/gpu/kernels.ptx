@@ -16827,7 +16827,7 @@ $L__BB20_15:
 	// .globl	gather                  // -- Begin function gather
 .visible .entry gather(
 	.param .u32 gather_param_0,
-	.param .u32 gather_param_1,
+	.param .u64 .ptr .align 1 gather_param_1,
 	.param .u32 gather_param_2,
 	.param .u64 .ptr .align 1 gather_param_3,
 	.param .u64 .ptr .align 1 gather_param_4,
@@ -16837,68 +16837,72 @@ $L__BB20_15:
 {
 	.reg .pred 	%p<7>;
 	.reg .b32 	%r<19>;
-	.reg .b64 	%rd<72>;
+	.reg .b64 	%rd<76>;
 
 // %bb.0:
-	ld.param.b32 	%rd10, [gather_param_0];
-	ld.param.b64 	%rd11, [gather_param_3];
-	cvta.to.global.u64 	%rd1, %rd11;
-	ld.param.b64 	%rd12, [gather_param_6];
-	cvta.to.global.u64 	%rd2, %rd12;
-	ld.param.b64 	%rd13, [gather_param_4];
-	cvta.to.global.u64 	%rd3, %rd13;
-	ld.param.b64 	%rd14, [gather_param_5];
-	cvta.to.global.u64 	%rd4, %rd14;
-	mov.u32 	%r6, %ctaid.x;
-	mov.u32 	%r7, %ntid.x;
-	mul.wide.u32 	%rd15, %r6, %r7;
-	mov.u32 	%r8, %tid.x;
-	cvt.u64.u32 	%rd16, %r8;
-	add.s64 	%rd5, %rd15, %rd16;
-	setp.ge.u64 	%p1, %rd5, %rd10;
+	ld.param.b32 	%rd11, [gather_param_0];
+	ld.param.b64 	%rd12, [gather_param_1];
+	cvta.to.global.u64 	%rd1, %rd12;
+	ld.param.b64 	%rd13, [gather_param_3];
+	cvta.to.global.u64 	%rd2, %rd13;
+	ld.param.b64 	%rd14, [gather_param_6];
+	cvta.to.global.u64 	%rd3, %rd14;
+	ld.param.b64 	%rd15, [gather_param_4];
+	cvta.to.global.u64 	%rd4, %rd15;
+	ld.param.b64 	%rd16, [gather_param_5];
+	cvta.to.global.u64 	%rd5, %rd16;
+	mov.u32 	%r5, %ctaid.x;
+	mov.u32 	%r6, %ntid.x;
+	mul.wide.u32 	%rd17, %r5, %r6;
+	mov.u32 	%r7, %tid.x;
+	cvt.u64.u32 	%rd18, %r7;
+	add.s64 	%rd6, %rd17, %rd18;
+	setp.ge.u64 	%p1, %rd6, %rd11;
 	@%p1 bra 	$L__BB21_10;
 // %bb.1:
-	shl.b64 	%rd17, %rd5, 2;
-	add.s64 	%rd18, %rd1, %rd17;
-	ld.global.b32 	%r1, [%rd18];
-	ld.global.b32 	%r2, [%rd18+4];
-	mad.lo.s64 	%rd8, %rd5, 24, %rd2;
-	ld.global.b64 	%rd70, [%rd8];
-	ld.global.b64 	%rd69, [%rd8+8];
-	ld.global.b64 	%rd68, [%rd8+16];
+	shl.b64 	%rd19, %rd6, 2;
+	add.s64 	%rd20, %rd1, %rd19;
+	ld.global.b32 	%r8, [%rd20];
+	add.s64 	%rd21, %rd2, %rd19;
+	ld.global.b32 	%r1, [%rd21];
+	ld.global.b32 	%r2, [%rd21+4];
+	mul.wide.u32 	%rd22, %r8, 24;
+	add.s64 	%rd9, %rd3, %rd22;
+	ld.global.b64 	%rd74, [%rd9];
+	ld.global.b64 	%rd73, [%rd9+8];
+	ld.global.b64 	%rd72, [%rd9+16];
 	setp.ge.u32 	%p2, %r1, %r2;
 	@%p2 bra 	$L__BB21_9;
 // %bb.2:
-	ld.param.b32 	%r5, [gather_param_2];
-	ld.param.b32 	%r4, [gather_param_1];
-	mul.wide.u32 	%rd6, %r5, %r4;
-	shl.b64 	%rd9, %rd6, 4;
+	ld.param.b32 	%r4, [gather_param_2];
+	cvt.u64.u32 	%rd7, %r4;
+	shl.b64 	%rd10, %rd7, 4;
 	sub.s32 	%r9, %r2, %r1;
 	and.b32 	%r3, %r9, 3;
 	setp.eq.b32 	%p3, %r3, 0;
-	shl.b64 	%rd66, %rd6, 3;
+	shl.b64 	%rd70, %rd7, 3;
 	mov.b32 	%r17, %r1;
 	@%p3 bra 	$L__BB21_6;
 // %bb.3:                               // %.preheader3.preheader
-	cvt.u64.u32 	%rd7, %r1;
-	shl.b64 	%rd19, %rd7, 2;
-	add.s64 	%rd67, %rd3, %rd19;
+	cvt.u64.u32 	%rd8, %r1;
+	shl.b64 	%rd23, %rd8, 2;
+	add.s64 	%rd71, %rd4, %rd23;
 	mov.b32 	%r16, %r3;
 $L__BB21_4:                             // %.preheader3
                                         // =>This Inner Loop Header: Depth=1
 	.pragma "nounroll";
-	ld.global.b32 	%r10, [%rd67];
-	mul.wide.u32 	%rd20, %r10, 8;
-	add.s64 	%rd21, %rd4, %rd20;
-	ld.global.b64 	%rd22, [%rd21];
-	add.rn.f64 	%rd70, %rd70, %rd22;
-	add.s64 	%rd23, %rd21, %rd66;
-	ld.global.b64 	%rd24, [%rd23];
-	add.rn.f64 	%rd69, %rd69, %rd24;
-	add.s64 	%rd25, %rd21, %rd9;
+	ld.global.b32 	%r10, [%rd71];
+	mul.wide.u32 	%rd24, %r10, 8;
+	add.s64 	%rd25, %rd5, %rd24;
 	ld.global.b64 	%rd26, [%rd25];
-	add.rn.f64 	%rd68, %rd68, %rd26;
-	add.s64 	%rd67, %rd67, 4;
+	add.rn.f64 	%rd74, %rd74, %rd26;
+	add.s64 	%rd27, %rd25, %rd70;
+	ld.global.b64 	%rd28, [%rd27];
+	add.rn.f64 	%rd73, %rd73, %rd28;
+	add.s64 	%rd29, %rd25, %rd10;
+	ld.global.b64 	%rd30, [%rd29];
+	add.rn.f64 	%rd72, %rd72, %rd30;
+	add.s64 	%rd71, %rd71, 4;
 	add.s32 	%r16, %r16, -1;
 	setp.ne.b32 	%p4, %r16, 0;
 	@%p4 bra 	$L__BB21_4;
@@ -16910,63 +16914,63 @@ $L__BB21_6:                             // %.loopexit4
 	@%p5 bra 	$L__BB21_9;
 // %bb.7:                               // %.preheader.preheader
 	sub.s32 	%r18, %r2, %r17;
-	mul.wide.u32 	%rd27, %r17, 4;
-	add.s64 	%rd28, %rd27, %rd3;
-	add.s64 	%rd71, %rd28, 8;
+	mul.wide.u32 	%rd31, %r17, 4;
+	add.s64 	%rd32, %rd31, %rd4;
+	add.s64 	%rd75, %rd32, 8;
 $L__BB21_8:                             // %.preheader
                                         // =>This Inner Loop Header: Depth=1
-	ld.global.b32 	%r12, [%rd71+-8];
-	mul.wide.u32 	%rd29, %r12, 8;
-	add.s64 	%rd30, %rd4, %rd29;
-	ld.global.b64 	%rd31, [%rd30];
-	add.rn.f64 	%rd32, %rd70, %rd31;
-	add.s64 	%rd33, %rd30, %rd66;
-	ld.global.b64 	%rd34, [%rd33];
-	add.rn.f64 	%rd35, %rd69, %rd34;
-	add.s64 	%rd36, %rd30, %rd9;
-	ld.global.b64 	%rd37, [%rd36];
-	add.rn.f64 	%rd38, %rd68, %rd37;
-	ld.global.b32 	%r13, [%rd71+-4];
-	mul.wide.u32 	%rd39, %r13, 8;
-	add.s64 	%rd40, %rd4, %rd39;
+	ld.global.b32 	%r12, [%rd75+-8];
+	mul.wide.u32 	%rd33, %r12, 8;
+	add.s64 	%rd34, %rd5, %rd33;
+	ld.global.b64 	%rd35, [%rd34];
+	add.rn.f64 	%rd36, %rd74, %rd35;
+	add.s64 	%rd37, %rd34, %rd70;
+	ld.global.b64 	%rd38, [%rd37];
+	add.rn.f64 	%rd39, %rd73, %rd38;
+	add.s64 	%rd40, %rd34, %rd10;
 	ld.global.b64 	%rd41, [%rd40];
-	add.rn.f64 	%rd42, %rd32, %rd41;
-	add.s64 	%rd43, %rd40, %rd66;
-	ld.global.b64 	%rd44, [%rd43];
-	add.rn.f64 	%rd45, %rd35, %rd44;
-	add.s64 	%rd46, %rd40, %rd9;
-	ld.global.b64 	%rd47, [%rd46];
-	add.rn.f64 	%rd48, %rd38, %rd47;
-	ld.global.b32 	%r14, [%rd71];
-	mul.wide.u32 	%rd49, %r14, 8;
-	add.s64 	%rd50, %rd4, %rd49;
+	add.rn.f64 	%rd42, %rd72, %rd41;
+	ld.global.b32 	%r13, [%rd75+-4];
+	mul.wide.u32 	%rd43, %r13, 8;
+	add.s64 	%rd44, %rd5, %rd43;
+	ld.global.b64 	%rd45, [%rd44];
+	add.rn.f64 	%rd46, %rd36, %rd45;
+	add.s64 	%rd47, %rd44, %rd70;
+	ld.global.b64 	%rd48, [%rd47];
+	add.rn.f64 	%rd49, %rd39, %rd48;
+	add.s64 	%rd50, %rd44, %rd10;
 	ld.global.b64 	%rd51, [%rd50];
 	add.rn.f64 	%rd52, %rd42, %rd51;
-	add.s64 	%rd53, %rd50, %rd66;
-	ld.global.b64 	%rd54, [%rd53];
-	add.rn.f64 	%rd55, %rd45, %rd54;
-	add.s64 	%rd56, %rd50, %rd9;
-	ld.global.b64 	%rd57, [%rd56];
-	add.rn.f64 	%rd58, %rd48, %rd57;
-	ld.global.b32 	%r15, [%rd71+4];
-	mul.wide.u32 	%rd59, %r15, 8;
-	add.s64 	%rd60, %rd4, %rd59;
+	ld.global.b32 	%r14, [%rd75];
+	mul.wide.u32 	%rd53, %r14, 8;
+	add.s64 	%rd54, %rd5, %rd53;
+	ld.global.b64 	%rd55, [%rd54];
+	add.rn.f64 	%rd56, %rd46, %rd55;
+	add.s64 	%rd57, %rd54, %rd70;
+	ld.global.b64 	%rd58, [%rd57];
+	add.rn.f64 	%rd59, %rd49, %rd58;
+	add.s64 	%rd60, %rd54, %rd10;
 	ld.global.b64 	%rd61, [%rd60];
-	add.rn.f64 	%rd70, %rd52, %rd61;
-	add.s64 	%rd62, %rd60, %rd66;
-	ld.global.b64 	%rd63, [%rd62];
-	add.rn.f64 	%rd69, %rd55, %rd63;
-	add.s64 	%rd64, %rd60, %rd9;
+	add.rn.f64 	%rd62, %rd52, %rd61;
+	ld.global.b32 	%r15, [%rd75+4];
+	mul.wide.u32 	%rd63, %r15, 8;
+	add.s64 	%rd64, %rd5, %rd63;
 	ld.global.b64 	%rd65, [%rd64];
-	add.rn.f64 	%rd68, %rd58, %rd65;
+	add.rn.f64 	%rd74, %rd56, %rd65;
+	add.s64 	%rd66, %rd64, %rd70;
+	ld.global.b64 	%rd67, [%rd66];
+	add.rn.f64 	%rd73, %rd59, %rd67;
+	add.s64 	%rd68, %rd64, %rd10;
+	ld.global.b64 	%rd69, [%rd68];
+	add.rn.f64 	%rd72, %rd62, %rd69;
 	add.s32 	%r18, %r18, -4;
-	add.s64 	%rd71, %rd71, 16;
+	add.s64 	%rd75, %rd75, 16;
 	setp.eq.b32 	%p6, %r18, 0;
 	@!%p6 bra 	$L__BB21_8;
 $L__BB21_9:                             // %.loopexit
-	st.global.b64 	[%rd8], %rd70;
-	st.global.b64 	[%rd8+8], %rd69;
-	st.global.b64 	[%rd8+16], %rd68;
+	st.global.b64 	[%rd9], %rd74;
+	st.global.b64 	[%rd9+8], %rd73;
+	st.global.b64 	[%rd9+16], %rd72;
 $L__BB21_10:
 	ret;
                                         // -- End function

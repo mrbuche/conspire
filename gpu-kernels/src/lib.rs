@@ -630,31 +630,35 @@ block_kernels!(
 /// The forces on `nodes` nodes, each the sum of the forces of the elements that have it, in the
 /// order of the elements, added to the forces that it has.
 ///
-/// A contribution is `position * items + item`, which is where the force of an element on a
-/// node is in each plane of components.
+/// The nodes are those of `node_list`, which a block that is in chunks has for each chunk, since
+/// a chunk touches only some of them. A contribution is `position * items + item`, with the
+/// elements being those of the chunk, which is where the force of an element on a node is in
+/// each plane of components, and a plane is `plane` values.
 ///
 /// # Safety
 ///
-/// The offsets must be `nodes + 1` and the contributions what they say, within the forces of
-/// the elements, which are `3 * nodes_per_item * items`.
+/// The node list and the offsets must be `nodes` values and `nodes + 1`, and the contributions
+/// what they say, within the forces of the elements, which are three planes.
 #[unsafe(no_mangle)]
 pub unsafe extern "ptx-kernel" fn gather(
     nodes: u32,
-    items: u32,
-    nodes_per_item: u32,
+    node_list: *const u32,
+    plane: u32,
     offsets: *const u32,
     contributions: *const u32,
     forces: *const f64,
     nodal_forces: *mut f64,
 ) {
-    let node = thread();
-    if node < nodes as usize {
-        let plane = nodes_per_item as usize * items as usize;
-        // SAFETY: the node is within the nodes that there are.
+    let listed = thread();
+    if listed < nodes as usize {
+        let plane = plane as usize;
+        // SAFETY: the position in the list is within the nodes that the chunk has.
+        let node = unsafe { *node_list.add(listed) } as usize;
+        // SAFETY: the offsets are those of the listed nodes, and the node is one that there is.
         let (first, last, mut sum) = unsafe {
             (
-                *offsets.add(node),
-                *offsets.add(node + 1),
+                *offsets.add(listed),
+                *offsets.add(listed + 1),
                 [
                     *nodal_forces.add(3 * node),
                     *nodal_forces.add(3 * node + 1),

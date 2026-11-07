@@ -73,6 +73,16 @@ pub struct GpuOptions {
     pub gradients: GpuGradients,
     /// Which kernels run on the device.
     pub kernels: GpuKernels,
+    /// How many elements of a block the kernels of the library take at a time, or none for all of
+    /// them.
+    ///
+    /// The forces of the elements of a block go to an array between the kernel that makes them
+    /// and the one that sums them on the nodes, which is as large as the block and so is read
+    /// from the memory of the device. In chunks of elements that are small enough for that array
+    /// to stay in the cache of the device, which is tens of megabytes, it is not. Each node still
+    /// gets the forces of its elements in the order of the elements, whatever the chunks are, so
+    /// the results are the same to the bit. The kernels written for the device do not use this.
+    pub chunk: usize,
 }
 
 /// What can go wrong on a device.
@@ -110,6 +120,7 @@ impl Display for GpuError {
 impl core::error::Error for GpuError {}
 
 /// A block of elements as a device takes it: plain arrays, in the order of the elements.
+#[derive(Clone)]
 pub struct GpuItems {
     /// The constitutive model of the block.
     pub model: GpuModel,
@@ -128,6 +139,9 @@ pub struct GpuItems {
     /// These arrays are by element, and [`device_layout`](Self::device_layout) puts the
     /// element last for the kernels.
     pub contributions: Vec<u32>,
+    /// The nodes that the offsets are for, if they are not all of the nodes in order, which is
+    /// how a chunk of a block has them, as it only touches some.
+    pub node_list: Vec<u32>,
     /// What makes the gradient vectors from the reference coordinates, if the elements can.
     pub shape: Option<ShapeTables>,
     /// The kernels of the library for the block, if it has them.
@@ -136,6 +150,7 @@ pub struct GpuItems {
 
 /// A block as the kernels of the library take it: with the same arrays as the kernels written for
 /// it, and the name of the kernel that makes the forces of its elements.
+#[derive(Clone)]
 pub struct LibraryBlock {
     /// The name of the kernel that computes the forces of the elements.
     pub forces_kernel: String,
@@ -161,6 +176,7 @@ impl LibraryBlock {
 
 /// The shape functions of the elements of a block, at the integration points of its parametric
 /// element, from which gradient vectors are made on the fly.
+#[derive(Clone)]
 pub struct ShapeTables {
     /// The derivatives of the shape functions with respect to the parametric coordinates, as
     /// point, then node, then component.
@@ -172,6 +188,85 @@ pub struct ShapeTables {
 impl GpuItems {
     pub fn number_of_items(&self) -> usize {
         self.connectivity.len() / self.nodes_per_item
+    }
+    /// The block as chunks of at most `size` consecutive elements, each a block of its own that
+    /// has the nodes that its elements touch, with the index of its first element in this block.
+    ///
+    /// The contributions to a node are in the order of the elements, so those of a chunk are the
+    /// run of them that its elements make, and the sum of a node over the chunks, one after the
+    /// other, is its sum over the elements.
+    pub(crate) fn chunks(&self, size: usize) -> Vec<(usize, GpuItems)> {
+        let items = self.number_of_items();
+        if items == 0 || size == 0 || size >= items {
+            return vec![(0, self.whole())];
+        }
+        let width = self.nodes_per_item;
+        let count = items.div_ceil(size);
+        // The nodes, offsets and contributions of each chunk, as they are built.
+        let mut built = (0..count)
+            .map(|_| (Vec::<u32>::new(), vec![0_u32], Vec::<u32>::new()))
+            .collect::<Vec<_>>();
+        let node_of = |position: usize| {
+            if self.node_list.is_empty() {
+                position as u32
+            } else {
+                self.node_list[position]
+            }
+        };
+        for position in 0..self.offsets.len() - 1 {
+            let (start, end) = (
+                self.offsets[position] as usize,
+                self.offsets[position + 1] as usize,
+            );
+            let chunk_of = |k: usize| self.contributions[k] as usize / width / size;
+            let mut k = start;
+            while k < end {
+                let (chunk, from) = (chunk_of(k), k);
+                while k < end && chunk_of(k) == chunk {
+                    k += 1;
+                }
+                let (nodes, offsets, contributions) = &mut built[chunk];
+                nodes.push(node_of(position));
+                contributions.extend(
+                    self.contributions[from..k]
+                        .iter()
+                        .map(|&contribution| contribution - (chunk * size * width) as u32),
+                );
+                offsets.push(contributions.len() as u32);
+            }
+        }
+        let reference_size = self.reference.len() / items;
+        built
+            .into_iter()
+            .enumerate()
+            .map(|(chunk, (node_list, offsets, contributions))| {
+                let (first, last) = (chunk * size, ((chunk + 1) * size).min(items));
+                (
+                    first,
+                    GpuItems {
+                        model: self.model,
+                        nodes_per_item: width,
+                        points_per_item: self.points_per_item,
+                        connectivity: self.connectivity[first * width..last * width].to_vec(),
+                        reference: self.reference[first * reference_size..last * reference_size]
+                            .to_vec(),
+                        offsets,
+                        contributions,
+                        node_list,
+                        shape: self.shape.clone(),
+                        library: self.library.clone(),
+                    },
+                )
+            })
+            .collect()
+    }
+    /// The block as one chunk of itself, which is the nodes that it touches.
+    fn whole(&self) -> GpuItems {
+        let mut whole = self.clone();
+        if whole.node_list.is_empty() {
+            whole.node_list = (0..(whole.offsets.len().max(1) - 1) as u32).collect();
+        }
+        whole
     }
     /// The arrays as the kernels read them, with the element last, so that the threads of a
     /// warp, which are consecutive elements, read consecutive addresses.

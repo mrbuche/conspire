@@ -155,8 +155,14 @@ impl Resident {
 
 struct BlockState<R> {
     items: u32,
-    /// The nodes of each element.
-    nodes_per_item: u32,
+    /// The block of the model that this is from, and the index of its first element there, since
+    /// a block of the model is in chunks, each a block here, for the kernels of the library.
+    origin: usize,
+    first_item: u32,
+    /// The nodes that the offsets are for, which the kernels of the library gather the forces of.
+    node_list: Option<Buffer<u32>>,
+    /// The values in a plane of the forces of the elements of the chunk.
+    plane: u32,
     nodes: u32,
     shear_modulus: R,
     bulk_modulus: R,
@@ -164,7 +170,9 @@ struct BlockState<R> {
     geometry: Geometry<R>,
     offsets: Buffer<u32>,
     contributions: Buffer<u32>,
-    item_forces: Buffer<R>,
+    /// The forces of the elements, for the kernels written for the device, and for the kernels of
+    /// the library the array that every chunk shares, so that it stays in the cache.
+    item_forces: Option<Buffer<R>>,
     failure: Buffer<u32>,
     forces_kernel: Function,
     gather_kernel: Function,
@@ -194,12 +202,13 @@ enum Geometry<R> {
 /// The fields are dropped in order, so the buffers go before the kernels and the device.
 pub(crate) struct State<R: Real> {
     blocks: Vec<BlockState<R>>,
+    /// The forces of the elements of a chunk, which the kernels of the library share.
+    scratch: Option<Buffer<R>>,
     coordinates: Buffer<R>,
     reference_coordinates: Option<Buffer<R>>,
     forces: Buffer<R>,
     host: Vec<R>,
     nodes: usize,
-    library: bool,
     element_stride: u32,
     /// The kernels of the library, which every block and the steps use, loaded once: the driver
     /// compiles all of them when it loads them.
@@ -233,7 +242,31 @@ impl<R: Real> State<R> {
         let mut modules = Vec::with_capacity(blocks.len());
         let mut states = Vec::with_capacity(blocks.len());
         let mut makes_gradients = false;
-        for block in blocks {
+        // The blocks of the library go in chunks, each as a block of its own, and the kernels of the
+        // library write the forces of the elements of each to the same array.
+        let pieces = blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(origin, block)| {
+                if library {
+                    block
+                        .chunks(options.chunk)
+                        .into_iter()
+                        .map(|(first, chunk)| (origin, first, std::borrow::Cow::Owned(chunk)))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![(origin, 0, std::borrow::Cow::Borrowed(block))]
+                }
+            })
+            .collect::<Vec<_>>();
+        let scratch_size = pieces
+            .iter()
+            .filter(|_| library)
+            .map(|(_, _, block)| block.number_of_items() * block.nodes_per_item * 3)
+            .max()
+            .unwrap_or(0);
+        for (origin, first_item, block) in &pieces {
+            let block: &GpuItems = block;
             let (shear_modulus, bulk_modulus) = block.model.moduli();
             if !library && !matches!(block.model, GpuModel::NeoHookean { .. }) {
                 return Err(GpuError::Unsupported(
@@ -305,7 +338,14 @@ impl<R: Real> State<R> {
                 .expect("the module of a block");
             states.push(BlockState {
                 items: items as u32,
-                nodes_per_item: block.nodes_per_item as u32,
+                origin: *origin,
+                first_item: *first_item as u32,
+                node_list: if library {
+                    Some(device.buffer_of(&block.node_list)?)
+                } else {
+                    None
+                },
+                plane: (items * block.nodes_per_item) as u32,
                 nodes: (block.offsets.len() - 1) as u32,
                 shear_modulus: R::from_f64(shear_modulus),
                 bulk_modulus: R::from_f64(bulk_modulus),
@@ -313,7 +353,11 @@ impl<R: Real> State<R> {
                 geometry,
                 offsets: device.buffer_of(&block.offsets)?,
                 contributions: device.buffer_of(&layout.contributions)?,
-                item_forces: device.buffer(items * block.nodes_per_item * 3)?,
+                item_forces: if library {
+                    None
+                } else {
+                    Some(device.buffer(items * block.nodes_per_item * 3)?)
+                },
                 failure: device.buffer::<u32>(1)?,
                 forces_kernel: module.function(forces_name)?,
                 gather_kernel: module.function("gather")?,
@@ -322,6 +366,11 @@ impl<R: Real> State<R> {
         }
         Ok(Self {
             blocks: states,
+            scratch: if library {
+                Some(device.buffer(scratch_size)?)
+            } else {
+                None
+            },
             coordinates: device.buffer(3 * number_of_nodes)?,
             reference_coordinates: if makes_gradients {
                 Some(device.buffer_of(&to_device(reference_coordinates))?)
@@ -331,7 +380,6 @@ impl<R: Real> State<R> {
             forces: device.buffer(3 * number_of_nodes)?,
             host: vec![R::default(); 3 * number_of_nodes],
             nodes: number_of_nodes,
-            library,
             // Diagnostic: with `CONSPIRE_GPU_PROBE` set, every thread reads the first element, so
             // that what is left of the time is not that of reading the elements.
             element_stride: if std::env::var_os("CONSPIRE_GPU_PROBE").is_some() {
@@ -354,6 +402,11 @@ impl<R: Real> State<R> {
     /// forces on the device, without waiting for them.
     fn launch_forces(&self) -> Result<(), GpuError> {
         for block in &self.blocks {
+            let item_forces = block
+                .item_forces
+                .as_ref()
+                .or(self.scratch.as_ref())
+                .expect("the forces of the elements");
             match (&block.geometry, &self.reference_coordinates) {
                 (Geometry::Stored { reference }, _) => self.device.launch(
                     &block.forces_kernel,
@@ -364,7 +417,7 @@ impl<R: Real> State<R> {
                         &block.connectivity,
                         reference,
                         &self.coordinates,
-                        &block.item_forces,
+                        item_forces,
                         &block.failure,
                         &block.shear_modulus,
                         &block.bulk_modulus,
@@ -387,7 +440,7 @@ impl<R: Real> State<R> {
                         derivatives,
                         weights,
                         &self.coordinates,
-                        &block.item_forces,
+                        item_forces,
                         &block.failure,
                         &block.shear_modulus,
                         &block.bulk_modulus,
@@ -403,7 +456,7 @@ impl<R: Real> State<R> {
                         reference,
                         &block.connectivity,
                         &self.coordinates,
-                        &block.item_forces,
+                        item_forces,
                         &block.failure,
                         &block.shear_modulus,
                         &block.bulk_modulus,
@@ -426,7 +479,7 @@ impl<R: Real> State<R> {
                         weights,
                         &block.connectivity,
                         &self.coordinates,
-                        &block.item_forces,
+                        item_forces,
                         &block.failure,
                         &block.shear_modulus,
                         &block.bulk_modulus,
@@ -438,19 +491,20 @@ impl<R: Real> State<R> {
                     ))
                 }
             }?;
-            // The kernels of the library take the nodes of an element, as they are for any element.
-            if self.library {
+            // The kernels of the library gather the nodes that the chunk touches, and the kernels
+            // written for the device all of the nodes.
+            if let Some(node_list) = &block.node_list {
                 self.device.launch(
                     &block.gather_kernel,
                     block.nodes as usize,
                     THREADS_PER_BLOCK,
                     &[
                         &block.nodes,
-                        &block.items,
-                        &block.nodes_per_item,
+                        node_list,
+                        &block.plane,
                         &block.offsets,
                         &block.contributions,
-                        &block.item_forces,
+                        item_forces,
                         &self.forces,
                     ],
                 )?;
@@ -464,7 +518,7 @@ impl<R: Real> State<R> {
                         &block.items,
                         &block.offsets,
                         &block.contributions,
-                        &block.item_forces,
+                        item_forces,
                         &self.forces,
                     ],
                 )?;
@@ -475,13 +529,13 @@ impl<R: Real> State<R> {
     /// Fails with the first element that was found to be inverted since the failures were reset.
     /// Reading the marks waits for what was launched.
     fn check_failures(&self) -> Result<(), GpuError> {
-        for (index, block) in self.blocks.iter().enumerate() {
+        for block in &self.blocks {
             let mut failure = [u32::MAX];
             block.failure.download(&mut failure)?;
             if failure[0] != u32::MAX {
                 return Err(GpuError::Item {
-                    block: index,
-                    item: failure[0] as usize,
+                    block: block.origin,
+                    item: block.first_item as usize + failure[0] as usize,
                 });
             }
         }

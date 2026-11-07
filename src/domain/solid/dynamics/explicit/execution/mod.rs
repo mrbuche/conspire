@@ -49,7 +49,7 @@ pub(super) enum Run<S> {
     Serial,
     Parallel(Workers, S),
     #[cfg(feature = "gpu")]
-    Gpu(Resident),
+    Gpu(Box<Resident>),
 }
 
 impl Execution {
@@ -67,7 +67,7 @@ impl Execution {
                 return model
                     .gpu_blocks(&mut blocks)
                     .and_then(|()| Resident::new(options, &blocks, &model.coordinates))
-                    .map(Run::Gpu)
+                    .map(|resident| Run::Gpu(Box::new(resident)))
                     .map_err(|error| IntegrationError::Intermediate(error.to_string()));
             }
         };

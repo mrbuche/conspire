@@ -936,3 +936,44 @@ fn run_of_a_model_of_every_kind_of_element_and_two_models_follows_the_run_on_the
         "five kinds of elements, two models"
     );
 }
+
+/// A run in chunks of the elements of a block gives the results of the run in one chunk, to the
+/// bit, since each node is given the forces of its elements in the order of the elements either
+/// way.
+#[test]
+fn run_in_chunks_of_elements_gives_the_results_of_the_run_in_one_chunk() {
+    let (model, reference) = two_blocks();
+    let (coordinates, velocities) = (deformed(&reference), velocities(&reference));
+    let run = |gradients, chunk| {
+        model.integrate_on_device(
+            GpuOptions {
+                kernels: GpuKernels::Library,
+                gradients,
+                chunk,
+                ..GpuOptions::default()
+            },
+            Time::seconds(STEP),
+            STEPS,
+            (coordinates.clone(), velocities.clone()),
+            &BoundaryConditions::<Solid<3>>::new(),
+        )
+    };
+    for gradients in [GpuGradients::Stored, GpuGradients::OnTheFly] {
+        let whole = match run(gradients, 0) {
+            Ok(whole) => (components(&whole.0), components(&whole.1)),
+            Err(error) if no_device(&error) => return println!("skipped: {error:?}"),
+            Err(error) => panic!("{gradients:?}: {error:?}"),
+        };
+        for chunk in [1, 7, 100, 215, 216, 1000] {
+            let found = run(gradients, chunk).unwrap();
+            assert!(
+                components(&found.0) == whole.0,
+                "{gradients:?}, chunks of {chunk}: the coordinates are not those of one chunk"
+            );
+            assert!(
+                components(&found.1) == whole.1,
+                "{gradients:?}, chunks of {chunk}: the velocities are not those of one chunk"
+            );
+        }
+    }
+}

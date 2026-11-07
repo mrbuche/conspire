@@ -227,6 +227,7 @@ fn options(precision: GpuPrecision, gradients: GpuGradients, kernels: GpuKernels
         precision,
         gradients,
         kernels,
+        chunk: variable("CHUNK").unwrap_or(0),
     }
 }
 
