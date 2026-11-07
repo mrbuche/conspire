@@ -1,5 +1,6 @@
 pub mod internal_variables;
 
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic::Hyperelastic,
     fem::{
@@ -19,6 +20,7 @@ use crate::{
     math::{HessianAccumulate, Quantity},
     units::Energy,
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, R, H>
     HyperelasticElements<3> for Block<C, F, G, M, N, P, R, H>
@@ -40,8 +42,8 @@ where
                     &Self::element_coordinates(nodal_coordinates, nodes),
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_symmetric_into(
         &self,
@@ -71,7 +73,7 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }
 
@@ -95,8 +97,8 @@ where
                     &Self::element_coordinates(nodal_coordinates, nodes),
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_symmetric_into(
         &self,
@@ -126,6 +128,6 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

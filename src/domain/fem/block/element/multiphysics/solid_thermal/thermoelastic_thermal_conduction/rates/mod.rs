@@ -2,10 +2,11 @@
 pub mod test;
 
 use super::steady::temperature;
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{
-        ConstitutiveError, multiphysics::ThermoelasticThermalConduction,
-        solid::thermoelastic::Thermoelastic, thermal::conduction::ThermalConduction,
+        multiphysics::ThermoelasticThermalConduction, solid::thermoelastic::Thermoelastic,
+        thermal::conduction::ThermalConduction,
     },
     fem::block::element::{
         Element, ElementNodalCoordinates, ElementNodalVelocities, FiniteElement,
@@ -124,8 +125,8 @@ where
                         .collect::<ElementNodalForcesSolidThermal<N>>())
                 },
             )
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .sum_at_points()
+            .map_err(Into::into)
     }
     fn nodal_stiffnesses(
         &self,
@@ -245,8 +246,7 @@ where
                         ))
                     },
                 )
-                .sum::<Result<_, ConstitutiveError>>()
-                .map_err(|error| FiniteElementError::upstream(error, self))?;
+                .sum_at_points()?;
         Ok(((solid, coupling, thermal), heating_stiffnesses, heatings))
     }
 }

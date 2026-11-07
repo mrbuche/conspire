@@ -17,11 +17,10 @@ use sensitivities::{Iterate, Sensitivities};
 
 use super::ElasticPlastic;
 use crate::{
-    constitutive::ConstitutiveError,
     math::TensorRank2,
     mechanics::{FlowDirectionPlastic, Scalar},
 };
-use core::{array::from_fn, fmt::Debug};
+use core::array::from_fn;
 
 pub(crate) const SIZE: usize = 10;
 
@@ -29,10 +28,6 @@ type Unknowns = [Scalar; SIZE];
 
 fn basis<I, J>(a: usize, b: usize) -> TensorRank2<3, I, J> {
     from_fn(|i| from_fn(|j| if i == a && j == b { 1.0 } else { 0.0 })).into()
-}
-
-fn failure<C: ElasticPlastic>(model: &C, error: &dyn Debug) -> ConstitutiveError {
-    ConstitutiveError::custom(format!("{error:?}"), model)
 }
 
 fn increment(x: &Unknowns) -> FlowDirectionPlastic {

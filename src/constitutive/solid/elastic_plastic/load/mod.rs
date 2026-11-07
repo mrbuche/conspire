@@ -72,7 +72,7 @@ impl Load {
         let (deformation_gradient_new, local_new) = solver
             .root_block(
                 |global: &DeformationGradient, local: &Vector| {
-                    coupled::monolithic_plastic(model, previous_state, local)
+                    coupled::monolithic_plastic(previous_state, local)
                         .and_then(|plastic| model.first_piola_kirchhoff_stress(global, &plastic))
                         .map_err(|error| error.to_string())
                 },
@@ -90,10 +90,10 @@ impl Load {
                 None,
                 strategy.clone(),
             )
-            .map_err(|error| ConstitutiveError::upstream(error, model))?;
+            .map_err(ConstitutiveError::from)?;
         Ok((
             deformation_gradient_new,
-            coupled::monolithic_state(model, previous_state, &local_new)?,
+            coupled::monolithic_state(previous_state, &local_new)?,
         ))
     }
 }

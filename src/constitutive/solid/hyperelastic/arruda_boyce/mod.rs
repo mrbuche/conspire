@@ -59,10 +59,7 @@ impl Elastic for ArrudaBoyce {
             .sqrt()
             .value();
         if gamma >= 1.0 {
-            Err(ConstitutiveError::custom(
-                "Maximum extensibility reached.",
-                self,
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         } else {
             let gamma_0 = (1.0 / self.number_of_links()).sqrt();
             Ok(deviatoric_isochoric_left_cauchy_green_deformation
@@ -90,10 +87,7 @@ impl Elastic for ArrudaBoyce {
             .sqrt()
             .value();
         if gamma >= 1.0 {
-            Err(ConstitutiveError::custom(
-                "Maximum extensibility reached.",
-                self,
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         } else {
             let gamma_0 = (1.0 / self.number_of_links()).sqrt();
             let eta = inverse_langevin(gamma);
@@ -141,10 +135,7 @@ impl Hyperelastic for ArrudaBoyce {
                 .sqrt()
                 .value();
         if gamma >= 1.0 {
-            Err(ConstitutiveError::custom(
-                "Maximum extensibility reached.",
-                self,
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         } else {
             let eta = inverse_langevin(gamma);
             let gamma_0 = (1.0 / self.number_of_links()).sqrt();

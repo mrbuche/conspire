@@ -47,13 +47,9 @@ where
         nodal_fields: &NodalFields<C::Balance>,
     ) -> Result<Quantity<<C::Balance as Diffusive>::Energy>, VirtualElementError> {
         let stabilization = self.stabilization();
-        let projected = constitutive_model
-            .potential(&DiffusiveVirtualElement::<C::Balance>::gradient(
-                self,
-                nodal_fields,
-            ))
-            .map_err(|error| self.upstream(error))?
-            * (self.volume() * (1.0 - stabilization));
+        let projected = constitutive_model.potential(
+            &DiffusiveVirtualElement::<C::Balance>::gradient(self, nodal_fields),
+        )? * (self.volume() * (1.0 - stabilization));
         self.tetrahedra()
             .iter()
             .zip(DiffusiveVirtualElement::<C::Balance>::tetrahedra_fields(
@@ -70,7 +66,7 @@ where
                         )? * stabilization,
                 )
             })
-            .map_err(|error| self.upstream(error))
+            .map_err(Into::into)
     }
     fn nodal_forces(
         &self,
@@ -79,12 +75,10 @@ where
     ) -> Result<ElementNodalForces<C::Balance>, VirtualElementError> {
         let stabilization = self.stabilization();
         let inverse_num_nodes = 1.0 / nodal_fields.len() as Scalar;
-        let flux = constitutive_model
-            .flux(&DiffusiveVirtualElement::<C::Balance>::gradient(
-                self,
-                nodal_fields,
-            ))
-            .map_err(|error| self.upstream(error))?;
+        let flux = constitutive_model.flux(&DiffusiveVirtualElement::<C::Balance>::gradient(
+            self,
+            nodal_fields,
+        ))?;
         let weight = self.volume() * (1.0 - stabilization);
         let mut forces = self.gradient_vectors()[0]
             .iter()
@@ -107,8 +101,7 @@ where
                 forces[node_a] += nodal_forces[2] * stabilization;
                 center_force += nodal_forces[3];
                 Ok::<(), FiniteElementError>(())
-            })
-            .map_err(|error| self.upstream(error))?;
+            })?;
         self.faces_nodes()
             .iter()
             .zip(faces_forces.iter())
@@ -130,12 +123,9 @@ where
         let num_nodes = nodal_fields.len();
         let stabilization = self.stabilization();
         let inverse_num_nodes = 1.0 / num_nodes as Scalar;
-        let tangent = constitutive_model
-            .tangent(&DiffusiveVirtualElement::<C::Balance>::gradient(
-                self,
-                nodal_fields,
-            ))
-            .map_err(|error| self.upstream(error))?;
+        let tangent = constitutive_model.tangent(
+            &DiffusiveVirtualElement::<C::Balance>::gradient(self, nodal_fields),
+        )?;
         let weight = self.volume() * (1.0 - stabilization);
         let gradient_vectors = &self.gradient_vectors()[0];
         let mut stiffnesses = gradient_vectors
@@ -196,8 +186,7 @@ where
                 center_stiffness += nodal_stiffnesses[3][3]
                     * (stabilization * inverse_num_nodes * inverse_num_nodes);
                 Ok::<(), FiniteElementError>(())
-            })
-            .map_err(|error| self.upstream(error))?;
+            })?;
         self.faces_nodes()
             .iter()
             .zip(

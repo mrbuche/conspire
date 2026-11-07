@@ -34,33 +34,26 @@ enum Spectrum {
 }
 
 impl Spectrum {
-    fn new(tensor: &LeftCauchyGreenDeformation, model: &Ogden) -> Result<Self, ConstitutiveError> {
+    fn new(tensor: &LeftCauchyGreenDeformation) -> Result<Self, ConstitutiveError> {
         if tensor.is_diagonal() || (tensor - &IDENTITY).norm() < 1e-2 {
             Ok(Self::Fallback(tensor.clone()))
         } else {
-            let (eigenvalues, eigenvectors) = tensor
-                .eigen()
-                .map_err(|error| ConstitutiveError::upstream(error, model))?;
+            let (eigenvalues, eigenvectors) = tensor.eigen().map_err(ConstitutiveError::from)?;
             Ok(Self::Eigen(eigenvalues, eigenvectors))
         }
     }
-    fn powm(
-        &self,
-        exponent: Scalar,
-        model: &Ogden,
-    ) -> Result<LeftCauchyGreenDeformation, ConstitutiveError> {
+    fn powm(&self, exponent: Scalar) -> Result<LeftCauchyGreenDeformation, ConstitutiveError> {
         match self {
             Self::Eigen(eigenvalues, eigenvectors) => {
                 TensorRank2::powm_from_eigen(eigenvalues, eigenvectors, exponent)
             }
             Self::Fallback(tensor) => tensor.powm(exponent),
         }
-        .map_err(|error| ConstitutiveError::upstream(error, model))
+        .map_err(ConstitutiveError::from)
     }
     fn dpowm(
         &self,
         exponent: Scalar,
-        model: &Ogden,
     ) -> Result<TensorRank4<3, Current, Current, Current, Current>, ConstitutiveError> {
         match self {
             Self::Eigen(eigenvalues, eigenvectors) => {
@@ -68,7 +61,7 @@ impl Spectrum {
             }
             Self::Fallback(tensor) => tensor.dpowm(exponent),
         }
-        .map_err(|error| ConstitutiveError::upstream(error, model))
+        .map_err(ConstitutiveError::from)
     }
 }
 
@@ -94,11 +87,11 @@ impl Elastic for Ogden {
     ) -> Result<CauchyStress, ConstitutiveError> {
         let jacobian = self.jacobian(deformation_gradient)?;
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
-        let spectrum = Spectrum::new(&left_cauchy_green, self)?;
+        let spectrum = Spectrum::new(&left_cauchy_green)?;
         let mut cauchy_stress = IDENTITY * self.bulk_modulus() * 0.5 * (jacobian - 1.0 / jacobian);
         for (modulus, exponent) in self.shear_moduli.iter().zip(self.exponents.iter()) {
             let scaling = *modulus / jacobian.powf(exponent / 3.0 + 1.0);
-            cauchy_stress += spectrum.powm(exponent / 2.0, self)?.deviatoric() * scaling;
+            cauchy_stress += spectrum.powm(exponent / 2.0)?.deviatoric() * scaling;
         }
         Ok(cauchy_stress)
     }
@@ -109,7 +102,7 @@ impl Elastic for Ogden {
     ) -> Result<CauchyTangentStiffness, ConstitutiveError> {
         let jacobian = self.jacobian(deformation_gradient)?;
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
-        let spectrum = Spectrum::new(&left_cauchy_green, self)?;
+        let spectrum = Spectrum::new(&left_cauchy_green)?;
         let inverse_transpose_deformation_gradient = deformation_gradient.inverse_transpose();
         let mut cauchy_tangent_stiffness = TensorRank4::dyad_ij_kl(
             &(IDENTITY * (self.bulk_modulus() * 0.5 * (jacobian + 1.0 / jacobian))),
@@ -120,15 +113,15 @@ impl Elastic for Ogden {
             let scaling = *modulus / jacobian.powf(exponent / 3.0 + 1.0);
             let scaled_deformation_gradient = deformation_gradient * scaling;
             let raw = spectrum
-                .dpowm(half_exponent, self)?
+                .dpowm(half_exponent)?
                 .contract_third_fourth_with_first_second(
                     &(TensorRank4::dyad_il_jk(&scaled_deformation_gradient, &IDENTITY)
                         + TensorRank4::dyad_ik_jl(&IDENTITY, &scaled_deformation_gradient)),
                 );
-            let trace_term = spectrum.powm(half_exponent - 1.0, self)?
+            let trace_term = spectrum.powm(half_exponent - 1.0)?
                 * deformation_gradient
                 * (scaling * half_exponent * 2.0);
-            let cauchy_stress_n = spectrum.powm(half_exponent, self)?.deviatoric() * scaling;
+            let cauchy_stress_n = spectrum.powm(half_exponent)?.deviatoric() * scaling;
             cauchy_tangent_stiffness += raw
                 - TensorRank4::dyad_ij_kl(&(IDENTITY * (1.0 / 3.0)), &trace_term)
                 - TensorRank4::dyad_ij_kl(
@@ -148,13 +141,12 @@ impl Hyperelastic for Ogden {
     ) -> Result<Quantity<EnergyDensity>, ConstitutiveError> {
         let jacobian = self.jacobian(deformation_gradient)?;
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
-        let spectrum = Spectrum::new(&left_cauchy_green, self)?;
+        let spectrum = Spectrum::new(&left_cauchy_green)?;
         let mut helmholtz_free_energy_density =
             self.bulk_modulus() * 0.5 * (0.5 * (jacobian.powi(2) - 1.0) - jacobian.ln());
         for (modulus, exponent) in self.shear_moduli.iter().zip(self.exponents.iter()) {
             helmholtz_free_energy_density += (*modulus / *exponent)
-                * (spectrum.powm(exponent / 2.0, self)?.trace() / jacobian.powf(exponent / 3.0)
-                    - 3.0);
+                * (spectrum.powm(exponent / 2.0)?.trace() / jacobian.powf(exponent / 3.0) - 3.0);
         }
         Ok(helmholtz_free_energy_density)
     }

@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_plastic::HyperelasticPlastic,
     domain::{
@@ -12,14 +13,10 @@ use crate::{
     units::Energy,
     vem::{
         NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                VirtualElementError, solid::hyperelastic_plastic::HyperelasticPlasticVirtualElement,
-            },
-        },
+        block::{Block, element::solid::hyperelastic_plastic::HyperelasticPlasticVirtualElement},
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> HyperelasticPlasticElements<PlasticStateVariablesField<1>, 3> for Block<C, F, R>
 where
@@ -43,7 +40,7 @@ where
                     state_variables_element,
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

@@ -21,8 +21,8 @@ pub use norm::Norm;
 pub use quantity::{Is, Quantity};
 
 use super::{SquareMatrix, Vector};
-use crate::math::{Style, StyledError, styled_error};
 use crate::units::{Dimensionless, Time, UnitMul};
+use core::fmt;
 use core::{
     fmt::{Debug, Display},
     iter::Sum,
@@ -53,22 +53,27 @@ pub enum TensorError {
     SymmetricMatrixComplexEigenvalues,
 }
 
-impl StyledError for TensorError {
-    fn message(&self, style: &Style) -> String {
-        let h = style.headline;
+impl fmt::Display for TensorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotPositiveDefinite => format!("{h}Result is not positive definite."),
+            Self::NotPositiveDefinite => write!(f, "Result is not positive definite."),
             Self::SquareRootDidNotConverge => {
-                format!("{h}Matrix square root iteration did not converge.")
+                write!(f, "Matrix square root iteration did not converge.")
             }
             Self::SymmetricMatrixComplexEigenvalues => {
-                format!("{h}Symmetric matrix produced complex eigenvalues")
+                write!(f, "Symmetric matrix produced complex eigenvalues")
             }
         }
     }
 }
 
-styled_error!(TensorError);
+impl fmt::Debug for TensorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for TensorError {}
 
 /// A tensor that can be differentiated with respect to a variable of unit `T`.
 ///

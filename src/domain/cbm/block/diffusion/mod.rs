@@ -2,6 +2,7 @@ use super::{
     Block,
     node::{Node, diffusion::DiffusionNode},
 };
+use crate::domain::AtItems;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -13,6 +14,7 @@ use crate::{
     },
     math::Quantity,
 };
+use core::any::type_name;
 
 impl<L, C, R> DiffusionElements<L> for Block<C, R>
 where
@@ -27,8 +29,8 @@ where
         self.nodes
             .iter()
             .map(|node| node.potential(&self.constitutive_model, nodal_fields))
-            .sum::<Result<Quantity<L::Energy>, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items::<Quantity<L::Energy>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_forces_into(
         &self,
@@ -44,7 +46,7 @@ where
                     .for_each(|(force, &neighbor)| nodal_forces[neighbor] += force);
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -66,6 +68,6 @@ where
                     });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

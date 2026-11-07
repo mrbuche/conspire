@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::elastic::Elastic,
     domain::{
@@ -12,6 +13,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> DecomposableElements for Block<C, F, R>
 where
@@ -37,8 +39,8 @@ where
                     |a, b, i, j| stiffnesses[a][b][i][j].value(),
                 ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| ElementModelError::upstream(error, self))?;
+            .collect_at_items::<Vec<_>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))?;
         Ok(ElementSystems {
             positions: positions(nodal_coordinates),
             elements,

@@ -64,7 +64,10 @@ where
         Ok(self
             .0
             .helmholtz_free_energy(nodal_coordinates, state_variables)?
-            + self.1.helmholtz_free_energy(nodal_coordinates)?)
+            + self
+                .1
+                .helmholtz_free_energy(nodal_coordinates)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?)
     }
 }
 

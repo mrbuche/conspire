@@ -110,6 +110,6 @@ where
                 vec![EqualityConstraint::Linear(matrix, vector)],
                 None,
             )
-            .map_err(|error| ConstitutiveError::upstream(error, self))
+            .map_err(ConstitutiveError::from)
     }
 }

@@ -9,8 +9,7 @@ use crate::math::assert::FiniteDifference;
 use crate::units::Dimensionless;
 
 use crate::math::{
-    Hessian, Rank2, Scalar, Style, StyledError, Tensor, TensorRank2Vec2D, TensorVec, Vector,
-    styled_error, write_tensor_rank_0,
+    Hessian, Rank2, Scalar, Tensor, TensorRank2Vec2D, TensorVec, Vector, write_tensor_rank_0,
 };
 
 use alloc::vec::IntoIter;
@@ -29,16 +28,21 @@ pub enum SquareMatrixError {
     Singular,
 }
 
-impl StyledError for SquareMatrixError {
-    fn message(&self, style: &Style) -> String {
-        let h = style.headline;
+impl fmt::Display for SquareMatrixError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Singular => format!("{h}Matrix is singular."),
+            Self::Singular => write!(f, "Matrix is singular."),
         }
     }
 }
 
-styled_error!(SquareMatrixError);
+impl fmt::Debug for SquareMatrixError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for SquareMatrixError {}
 
 /// A square matrix.
 #[derive(Clone, Debug, PartialEq)]

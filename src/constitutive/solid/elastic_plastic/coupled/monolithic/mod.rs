@@ -1,5 +1,5 @@
 use super::{
-    ElasticPlastic, SIZE, Unknowns, basis, failure, increment,
+    ElasticPlastic, SIZE, Unknowns, basis, increment,
     linearization::Linearization,
     reference,
     sensitivities::{Iterate, Sensitivities},
@@ -16,27 +16,22 @@ use core::array::from_fn;
 
 /// The plastic deformation gradient of a monolithic trial state: the local unknowns
 /// are $`(\mathbf{E},\Delta\gamma)`$ and $`\mathbf{F}_\mathrm{p}=\exp(\mathbf{E})\mathbf{F}_\mathrm{p}^n`$.
-pub(crate) fn monolithic_plastic<C: ElasticPlastic>(
-    model: &C,
+pub(crate) fn monolithic_plastic(
     state: &PlasticStateVariables,
     local: &Vector,
 ) -> Result<DeformationGradientPlastic, ConstitutiveError> {
     let (f_p_n, _): (&DeformationGradientPlastic, &Quantity) = state.into();
     let x: Unknowns = from_fn(|i| local[i]);
-    Ok(increment(&x)
-        .expm()
-        .map_err(|error| failure(model, &error))?
-        * f_p_n)
+    Ok(increment(&x).expm()? * f_p_n)
 }
 
-pub(crate) fn monolithic_state<C: ElasticPlastic>(
-    model: &C,
+pub(crate) fn monolithic_state(
     state: &PlasticStateVariables,
     local: &Vector,
 ) -> Result<PlasticStateVariables, ConstitutiveError> {
     let (_, &strain_n): (&DeformationGradientPlastic, &Quantity) = state.into();
     Ok((
-        monolithic_plastic(model, state, local)?,
+        monolithic_plastic(state, local)?,
         strain_n + Quantity::new(local[SIZE - 1]),
     )
         .into())

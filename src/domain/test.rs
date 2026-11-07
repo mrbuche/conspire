@@ -136,10 +136,13 @@ fn three_blocks_two_fem_one_vem_combine_via_mesh() {
 
 #[test]
 fn element_error_messages_name_their_kind() {
+    use crate::constitutive::ConstitutiveError;
     use crate::fem::block::element::FiniteElementError;
     use crate::vem::block::element::VirtualElementError;
-    let fem_message = FiniteElementError::upstream("bad model", &"ctx").to_string();
-    let vem_message = VirtualElementError::upstream("bad model", &"ctx").to_string();
-    assert!(fem_message.contains("In finite element: \"ctx\"."));
-    assert!(vem_message.contains("In virtual element: \"ctx\"."));
+    let fem_message =
+        FiniteElementError::new(Some(2), ConstitutiveError::MaximumExtensibility).to_string();
+    let vem_message =
+        VirtualElementError::new(None, ConstitutiveError::MaximumExtensibility).to_string();
+    assert!(fem_message.contains("At integration point 2 of the finite element."));
+    assert!(vem_message.contains("In the virtual element."));
 }

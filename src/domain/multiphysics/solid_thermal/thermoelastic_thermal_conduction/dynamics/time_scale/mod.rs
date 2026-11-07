@@ -56,16 +56,14 @@ where
         nodal_coordinates: &NodalCoordinates<3>,
         nodal_temperatures: &NodalTemperatures,
     ) -> Result<(Quantity<Time>, Quantity<Time>), ElementModelError> {
-        let first = self.0.fastest_time_scales(
-            reference_coordinates,
-            nodal_coordinates,
-            nodal_temperatures,
-        )?;
-        let second = self.1.fastest_time_scales(
-            reference_coordinates,
-            nodal_coordinates,
-            nodal_temperatures,
-        )?;
+        let first = self
+            .0
+            .fastest_time_scales(reference_coordinates, nodal_coordinates, nodal_temperatures)
+            .map_err(|error| error.in_block(0))?;
+        let second = self
+            .1
+            .fastest_time_scales(reference_coordinates, nodal_coordinates, nodal_temperatures)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))?;
         Ok((first.0.min(second.0), first.1.min(second.1)))
     }
 }

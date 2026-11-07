@@ -39,9 +39,8 @@ impl Elastic for Hencky {
         let (deviatoric_strain, strain_trace) = (deformation_gradient
             .left_cauchy_green()
             .logm()
-            .map_err(|error| {
-            ConstitutiveError::upstream(error, self)
-        })? * 0.5)
+            .map_err(ConstitutiveError::from)?
+            * 0.5)
             .deviatoric_and_trace();
         Ok(deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
             + IDENTITY * (self.bulk_modulus() * strain_trace / jacobian))
@@ -53,15 +52,13 @@ impl Elastic for Hencky {
     ) -> Result<CauchyTangentStiffness, ConstitutiveError> {
         let jacobian = self.jacobian(deformation_gradient)?;
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
-        let (deviatoric_strain, strain_trace) = (left_cauchy_green
-            .logm()
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
-            * 0.5)
-            .deviatoric_and_trace();
+        let (deviatoric_strain, strain_trace) =
+            (left_cauchy_green.logm().map_err(ConstitutiveError::from)? * 0.5)
+                .deviatoric_and_trace();
         let scaled_deformation_gradient = deformation_gradient * self.shear_modulus() / jacobian;
         Ok((left_cauchy_green
             .dlogm()
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
+            .map_err(ConstitutiveError::from)?
             .contract_third_fourth_with_first_second(
                 &(TensorRank4::dyad_il_jk(&scaled_deformation_gradient, &IDENTITY)
                     + TensorRank4::dyad_ik_jl(&IDENTITY, &scaled_deformation_gradient)),
@@ -86,7 +83,7 @@ impl Hyperelastic for Hencky {
         let strain = deformation_gradient
             .left_cauchy_green()
             .logm()
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
+            .map_err(ConstitutiveError::from)?
             * 0.5;
         Ok(self.shear_modulus() * strain.squared_trace()
             + 0.5

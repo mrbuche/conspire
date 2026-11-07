@@ -181,7 +181,7 @@ where
                     vec![EqualityConstraint::Linear(matrix.clone(), vector.clone())]
                 },
             )
-            .map_err(|error| ConstitutiveError::upstream(error, self))?;
+            .map_err(ConstitutiveError::from)?;
         Ok((times, deformation_gradients, state_variables))
     }
 }
@@ -359,7 +359,7 @@ where
                 equality_constraint(time[0]),
                 None,
             )
-            .map_err(|error| ConstitutiveError::upstream(String::from(error), self))?;
+            .map_err(ConstitutiveError::from)?;
         let mut times = Times::new();
         let mut deformation_gradients = DeformationGradients::new();
         let mut state_variables = ViscoplasticStateVariablesHistory::new();
@@ -391,7 +391,7 @@ where
                 equality_constraint,
                 None,
             )
-            .map_err(|error| ConstitutiveError::upstream(error, self))?;
+            .map_err(ConstitutiveError::from)?;
             state = advanced.0;
             deformation_gradient = advanced.1;
             carry = advanced.2;
@@ -453,7 +453,7 @@ where
                 equality_constraint(time[0]),
                 None,
             )
-            .map_err(|error| ConstitutiveError::upstream(String::from(error), self))?;
+            .map_err(ConstitutiveError::from)?;
         let (times, state_variables, deformation_gradients) = integrate_rkmk_dae_adaptive_root::<
             <Self as StateEvolution<Time, Y>>::Field,
             Tab,
@@ -475,7 +475,7 @@ where
             equality_constraint,
             None,
         )
-        .map_err(|error| ConstitutiveError::upstream(error, self))?;
+        .map_err(ConstitutiveError::from)?;
         Ok((times, deformation_gradients, state_variables))
     }
 }

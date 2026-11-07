@@ -1,7 +1,8 @@
 pub use crate::domain::block::element::solid::viscoelastic::ViscoelasticElement;
 
+use crate::domain::block::element::AtPoints;
 use crate::{
-    constitutive::solid::viscoelastic::Viscoelastic,
+    constitutive::{ConstitutiveError, Unavailable, solid::viscoelastic::Viscoelastic},
     fem::block::element::{
         Element, ElementNodalCoordinates, ElementNodalVelocities, FiniteElement,
         FiniteElementError, GradientVectors,
@@ -96,8 +97,7 @@ where
                     deformation_gradient_rate,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -148,8 +148,7 @@ where
                     deformation_gradient_rate,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffRateTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffRateTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_rate_tangent_stiffnesses
             .iter()
             .zip(
@@ -217,11 +216,9 @@ where
         nodal_velocities: &ElementNodalVelocities<N>,
     ) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError> {
         if !nodal_velocities.is_zero() {
-            return Err(FiniteElementError::upstream(
-                "The stiffnesses of a surface element are only available at zero velocities, \
-                as its deformation gradient rate depends on the coordinates",
-                self,
-            ));
+            return Err(
+                ConstitutiveError::Unavailable(Unavailable::StiffnessesAtNonzeroVelocity).into(),
+            );
         }
         let first_piola_kirchhoff_tangent_stiffnesses = self
             .deformation_gradients(nodal_coordinates)
@@ -236,8 +233,7 @@ where
                     deformation_gradient_rate,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_tangent_stiffnesses
             .iter()
             .zip(
@@ -308,8 +304,7 @@ where
                     deformation_gradient_rate,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffRateTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffRateTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_rate_tangent_stiffnesses
             .iter()
             .zip(
@@ -394,8 +389,7 @@ where
             constitutive_model
                 .first_piola_kirchhoff_stress(deformation_gradient, deformation_gradient_rate)
         })
-        .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))?;
+        .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
     Ok(first_piola_kirchhoff_stresses
         .iter()
         .zip(gradient_vectors.iter().zip(element.integration_weights()))

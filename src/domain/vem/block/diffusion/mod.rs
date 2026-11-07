@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::diffusion::{Diffusion, Diffusive},
     domain::{
@@ -10,6 +11,7 @@ use crate::{
         element::{VirtualElementError, diffusion::DiffusionVirtualElement},
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> Block<C, F, R> {
     pub(crate) fn element_fields<L>(
@@ -42,8 +44,8 @@ where
                     &Self::element_fields::<L>(nodes, nodal_fields),
                 )
             })
-            .sum::<Result<Quantity<L::Energy>, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items::<Quantity<L::Energy>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_forces_into(
         &self,
@@ -64,7 +66,7 @@ where
                     .for_each(|(&nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -91,6 +93,6 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

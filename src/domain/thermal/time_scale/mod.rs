@@ -51,7 +51,8 @@ where
             .fastest_diffusive_time_scale(reference_coordinates, nodal_temperatures)?
             .min(
                 self.1
-                    .fastest_diffusive_time_scale(reference_coordinates, nodal_temperatures)?,
+                    .fastest_diffusive_time_scale(reference_coordinates, nodal_temperatures)
+                    .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
             ))
     }
 }

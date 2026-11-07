@@ -117,9 +117,11 @@ where
         nodal_forces: &mut NodalForcesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_forces_into(nodal_coordinates, nodal_velocities, nodal_forces)?;
+            .nodal_forces_into(nodal_coordinates, nodal_velocities, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_forces_into(nodal_coordinates, nodal_velocities, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -128,9 +130,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_coordinates, nodal_velocities, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_coordinates, nodal_velocities, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_coordinates, nodal_velocities, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_dampings_into(
         &self,
@@ -139,9 +143,11 @@ where
         nodal_dampings: &mut NodalDampingsSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_dampings_into(nodal_coordinates, nodal_velocities, nodal_dampings)?;
+            .nodal_dampings_into(nodal_coordinates, nodal_velocities, nodal_dampings)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_dampings_into(nodal_coordinates, nodal_velocities, nodal_dampings)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }
 

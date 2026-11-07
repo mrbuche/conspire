@@ -16,11 +16,12 @@ use crate::{
         },
     },
     math::{
-        Current, Differentiable, Quantity, Scalar, Style, StyledError, Tensor, TensorRank1Vec,
-        TensorRank2SparseVec2D, Vector, assert::AssertionError, optimize::Lanczos, styled_error,
+        Current, Differentiable, Quantity, Scalar, Tensor, TensorRank1Vec, TensorRank2SparseVec2D,
+        Vector, assert::AssertionError, optimize::Lanczos,
     },
     units::Rate,
 };
+use core::fmt;
 use core::fmt::Display;
 
 /// The natural frequencies of a solid and the shapes it vibrates in.
@@ -355,24 +356,31 @@ impl ModalError {
     }
 }
 
-impl StyledError for ModalError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for ModalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Indefinite(value) => format!(
-                "{h}The solid has a mode of negative squared frequency ({value:?}).{c}\n\
+            Self::Indefinite(value) => write!(
+                f,
+                "The solid has a mode of negative squared frequency ({value:?}).\n\
                 The stiffness is not positive definite about this state."
             ),
-            Self::Unverified(residual) => format!(
-                "{h}A mode does not satisfy the eigenproblem (relative residual {residual:e}).{c}\n\
+            Self::Unverified(residual) => write!(
+                f,
+                "A mode does not satisfy the eigenproblem (relative residual {residual:e}).\n\
                 The frequency to search near may be a natural frequency of the solid."
             ),
-            Self::Upstream(error, context) => format!("{error}{c}\nIn {context}."),
+            Self::Upstream(error, context) => write!(f, "{error}\nIn {context}."),
         }
     }
 }
 
-styled_error!(ModalError);
+impl fmt::Debug for ModalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for ModalError {}
 
 impl From<ModalError> for AssertionError {
     fn from(error: ModalError) -> Self {

@@ -51,7 +51,8 @@ where
             .fastest_time_scale(reference_coordinates, nodal_coordinates)?
             .min(
                 self.1
-                    .fastest_time_scale(reference_coordinates, nodal_coordinates)?,
+                    .fastest_time_scale(reference_coordinates, nodal_coordinates)
+                    .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
             ))
     }
 }

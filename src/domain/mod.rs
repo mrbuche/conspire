@@ -4,6 +4,8 @@
 mod test;
 
 pub(crate) mod block;
+mod error;
+pub use error::{AtItems, ElementModelError, ForEachAtItems, ItemError, Locate, Source};
 #[cfg_attr(not(any(feature = "fem", feature = "vem")), allow(dead_code))]
 pub(crate) mod boundary;
 #[cfg(feature = "cbm")]
@@ -51,15 +53,13 @@ use crate::{
         mesh::{NodeSets, SideSets},
     },
     math::{
-        Current, Reference, Style, StyledError, Tensor, TensorRank1Vec, TensorRank1Vec2D,
-        assert::AssertionError,
+        Current, Reference, Tensor, TensorRank1Vec, TensorRank1Vec2D,
         optimize::{EqualityConstraint, Optimization, OptimizationError, RootFinding},
         sparse::SparseSolver,
-        styled_error,
     },
     units::{Acceleration, Length, Velocity},
 };
-use core::fmt::{Debug, Display};
+use core::fmt::Debug;
 
 pub(crate) fn nodal_coordinates<const D: usize>(
     coordinates: Coordinates<D>,
@@ -133,6 +133,9 @@ where
     fn node_neighbors(&self, neighbors: &mut [Vec<usize>]) {
         self.blocks.node_neighbors(neighbors)
     }
+    fn number_of_blocks(&self) -> usize {
+        self.blocks.number_of_blocks()
+    }
 }
 
 impl<B1, B2> Elements for Blocks<B1, B2>
@@ -144,6 +147,9 @@ where
         self.0.node_neighbors(neighbors);
         self.1.node_neighbors(neighbors)
     }
+    fn number_of_blocks(&self) -> usize {
+        self.0.number_of_blocks() + self.1.number_of_blocks()
+    }
 }
 
 impl<B1, B2> Elements for ElasticViscoplasticAndElastic<B1, B2>
@@ -154,6 +160,9 @@ where
     fn node_neighbors(&self, neighbors: &mut [Vec<usize>]) {
         self.0.node_neighbors(neighbors);
         self.1.node_neighbors(neighbors)
+    }
+    fn number_of_blocks(&self) -> usize {
+        self.0.number_of_blocks() + self.1.number_of_blocks()
     }
 }
 
@@ -204,36 +213,6 @@ where
     }
 }
 
-pub enum ElementModelError {
-    Upstream(String, String),
-}
-
-impl ElementModelError {
-    pub fn upstream(error: impl Display, context: &(impl Debug + ?Sized)) -> Self {
-        Self::Upstream(format!("{error}"), format!("{context:?}"))
-    }
-}
-
-impl From<ElementModelError> for String {
-    fn from(error: ElementModelError) -> Self {
-        error.message(&Style::detect())
-    }
-}
-
-impl StyledError for ElementModelError {
-    fn message(&self, style: &Style) -> String {
-        let c = style.frame;
-        match self {
-            Self::Upstream(error, model) => format!(
-                "{error}{c}\n\
-                In element model: {model}."
-            ),
-        }
-    }
-}
-
-styled_error!(ElementModelError);
-
 #[cfg_attr(not(any(feature = "fem", feature = "vem")), allow(dead_code))]
 pub trait Root<F, J, X>
 where
@@ -275,14 +254,6 @@ impl<B, const D: usize> From<(B, NodalReferenceCoordinates<D>)> for Model<B, D> 
             coordinates,
             node_sets: NodeSets::new(),
             side_sets: SideSets::new(),
-        }
-    }
-}
-
-impl From<ElementModelError> for AssertionError {
-    fn from(error: ElementModelError) -> Self {
-        Self {
-            message: error.to_string(),
         }
     }
 }

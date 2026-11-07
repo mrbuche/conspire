@@ -1,12 +1,14 @@
 use super::super::{Block, node::solid::hyperelastic_plastic::HyperelasticPlasticElement};
+use crate::domain::AtItems;
 use crate::{
-    constitutive::{ConstitutiveError, solid::hyperelastic_plastic::HyperelasticPlastic},
+    constitutive::solid::hyperelastic_plastic::HyperelasticPlastic,
     domain::{
         ElementModelError, NodalCoordinates, block::solid::plastic::PlasticStateVariablesField,
     },
     math::Quantity,
     units::Energy,
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::hyperelastic_plastic::HyperelasticPlasticElements;
 
@@ -29,7 +31,7 @@ where
                     state_variables_node,
                 )
             })
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

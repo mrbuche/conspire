@@ -13,6 +13,7 @@ use crate::{
     math::{Quantity, Scalar},
     units::Time,
 };
+use core::any::type_name;
 
 impl<C, R> TimeScaleElements<3> for Block<C, R>
 where
@@ -47,6 +48,6 @@ where
                 )))
             })
             .map(time_scale_from_eigenvalue)
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

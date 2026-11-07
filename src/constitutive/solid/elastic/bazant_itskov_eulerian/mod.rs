@@ -47,21 +47,17 @@ impl Elastic for BazantItskovEulerian {
         let jacobian = self.jacobian(deformation_gradient)?;
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
         let (deviatoric_strain, strain_trace) = if self.exponent() == 0.0 {
-            (left_cauchy_green
-                .logm()
-                .map_err(|error| ConstitutiveError::upstream(error, self))?
-                * 0.5)
+            (left_cauchy_green.logm().map_err(ConstitutiveError::from)? * 0.5)
                 .deviatoric_and_trace()
         } else {
             let half_exponent = 0.5 * self.exponent();
-            let spectrum = Spectrum::new(&left_cauchy_green)
-                .map_err(|error| ConstitutiveError::upstream(error, self))?;
+            let spectrum = Spectrum::new(&left_cauchy_green).map_err(ConstitutiveError::from)?;
             ((spectrum
                 .powm(half_exponent)
-                .map_err(|error| ConstitutiveError::upstream(error, self))?
+                .map_err(ConstitutiveError::from)?
                 - spectrum
                     .powm(-half_exponent)
-                    .map_err(|error| ConstitutiveError::upstream(error, self))?)
+                    .map_err(ConstitutiveError::from)?)
                 / (2.0 * self.exponent()))
             .deviatoric_and_trace()
         };
@@ -77,16 +73,14 @@ impl Elastic for BazantItskovEulerian {
         let left_cauchy_green = deformation_gradient.left_cauchy_green();
         let inverse_transpose_deformation_gradient = deformation_gradient.inverse_transpose();
         if self.exponent() == 0.0 {
-            let (deviatoric_strain, strain_trace) = (left_cauchy_green
-                .logm()
-                .map_err(|error| ConstitutiveError::upstream(error, self))?
-                * 0.5)
-                .deviatoric_and_trace();
+            let (deviatoric_strain, strain_trace) =
+                (left_cauchy_green.logm().map_err(ConstitutiveError::from)? * 0.5)
+                    .deviatoric_and_trace();
             let scaled_deformation_gradient =
                 deformation_gradient * (self.shear_modulus() / jacobian);
             return Ok((left_cauchy_green
                 .dlogm()
-                .map_err(|error| ConstitutiveError::upstream(error, self))?
+                .map_err(ConstitutiveError::from)?
                 .contract_third_fourth_with_first_second(
                     &(TensorRank4::dyad_il_jk(&scaled_deformation_gradient, &IDENTITY)
                         + TensorRank4::dyad_ik_jl(&IDENTITY, &scaled_deformation_gradient)),
@@ -100,14 +94,13 @@ impl Elastic for BazantItskovEulerian {
                 ));
         }
         let half_exponent = 0.5 * self.exponent();
-        let spectrum = Spectrum::new(&left_cauchy_green)
-            .map_err(|error| ConstitutiveError::upstream(error, self))?;
+        let spectrum = Spectrum::new(&left_cauchy_green).map_err(ConstitutiveError::from)?;
         let (deviatoric_strain, strain_trace) = ((spectrum
             .powm(half_exponent)
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
+            .map_err(ConstitutiveError::from)?
             - spectrum
                 .powm(-half_exponent)
-                .map_err(|error| ConstitutiveError::upstream(error, self))?)
+                .map_err(ConstitutiveError::from)?)
             / (2.0 * self.exponent()))
         .deviatoric_and_trace();
         let cauchy_stress = deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
@@ -116,18 +109,18 @@ impl Elastic for BazantItskovEulerian {
             deformation_gradient * (self.shear_modulus() / (self.exponent() * jacobian));
         let trace_term = (spectrum
             .powm(half_exponent - 1.0)
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
+            .map_err(ConstitutiveError::from)?
             + spectrum
                 .powm(-half_exponent - 1.0)
-                .map_err(|error| ConstitutiveError::upstream(error, self))?)
+                .map_err(ConstitutiveError::from)?)
             * deformation_gradient
             * 0.5;
         Ok((spectrum
             .dpowm(half_exponent)
-            .map_err(|error| ConstitutiveError::upstream(error, self))?
+            .map_err(ConstitutiveError::from)?
             - spectrum
                 .dpowm(-half_exponent)
-                .map_err(|error| ConstitutiveError::upstream(error, self))?)
+                .map_err(ConstitutiveError::from)?)
         .contract_third_fourth_with_first_second(
             &(TensorRank4::dyad_il_jk(&scaled_deformation_gradient, &IDENTITY)
                 + TensorRank4::dyad_ik_jl(&IDENTITY, &scaled_deformation_gradient)),

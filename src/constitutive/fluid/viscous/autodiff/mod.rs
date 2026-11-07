@@ -143,9 +143,8 @@ where
         _: &DeformationGradient,
         _: &DeformationGradientRate,
     ) -> Result<CauchyTangentStiffness, ConstitutiveError> {
-        Err(ConstitutiveError::custom(
-            "The tangent stiffness with respect to the deformation gradient is not available",
-            &self.0,
+        Err(ConstitutiveError::Unavailable(
+            Unavailable::TangentStiffnessWrtDeformationGradient,
         ))
     }
     fn viscous_second_piola_kirchhoff_tangent_stiffness(
@@ -153,9 +152,8 @@ where
         _: &DeformationGradient,
         _: &DeformationGradientRate,
     ) -> Result<SecondPiolaKirchhoffTangentStiffness, ConstitutiveError> {
-        Err(ConstitutiveError::custom(
-            "The tangent stiffness with respect to the deformation gradient is not available",
-            &self.0,
+        Err(ConstitutiveError::Unavailable(
+            Unavailable::TangentStiffnessWrtDeformationGradient,
         ))
     }
 }

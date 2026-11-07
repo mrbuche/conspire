@@ -660,12 +660,13 @@ fn monolithic_blocks_match_finite_difference_at_a_plastic_state() -> Result<(), 
         .iter()
         .enumerate()
         .for_each(|(index, value)| local[index] = *value);
-    let residual_global = |gradient: &DeformationGradient, local: &Vector| {
-        Ok::<_, AssertionError>(model.first_piola_kirchhoff_stress(
-            gradient,
-            &monolithic_plastic(&model, &previous_state, local)?,
-        )?)
-    };
+    let residual_global =
+        |gradient: &DeformationGradient, local: &Vector| {
+            Ok::<_, AssertionError>(model.first_piola_kirchhoff_stress(
+                gradient,
+                &monolithic_plastic(&previous_state, local)?,
+            )?)
+        };
     let residual_local = |gradient: &DeformationGradient, local: &Vector| {
         Ok::<_, AssertionError>(monolithic_residual_local(
             &model,

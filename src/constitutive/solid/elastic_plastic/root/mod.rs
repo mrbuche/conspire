@@ -86,8 +86,7 @@ where
     ) -> Result<(Times, DeformationGradients, PlasticStateVariablesHistory), ConstitutiveError>
     {
         let (mut load, time) = Load::new(applied_load);
-        let mut stepper =
-            Stepper::new(time).map_err(|error| ConstitutiveError::custom(error, self))?;
+        let mut stepper = Stepper::new(time)?;
         let mut state = self.initial_state();
         let mut deformation_gradient = DeformationGradient::identity();
         let mut times = vec![time[0]];
@@ -113,10 +112,7 @@ where
                 &state,
                 &state_next,
             )?;
-            match stepper
-                .judge(&step, error, abs_tol)
-                .map_err(|error| ConstitutiveError::custom(error, self))?
-            {
+            match stepper.judge(&step, error, abs_tol)? {
                 Outcome::Accepted { report } => {
                     deformation_gradient = deformation_gradient_next;
                     state = state_next;

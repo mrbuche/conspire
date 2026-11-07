@@ -21,11 +21,11 @@ use crate::{
     domain::ElementModelError,
     geometry::mesh::Decomposition,
     math::{
-        Quantity, Scalar, SquareMatrix, Style, StyledError, Vector,
+        Quantity, Scalar, SquareMatrix, Vector,
         optimize::{KrylovError, KrylovMethod},
-        styled_error,
     },
 };
+use core::fmt;
 
 /// Possible errors encountered when solving with FETI.
 pub enum SolveError {
@@ -45,19 +45,18 @@ pub enum SolveError {
     SingularCoarseProblem,
 }
 
-impl StyledError for SolveError {
-    fn message(&self, style: &Style) -> String {
+impl fmt::Display for SolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Element(error) => error.message(style),
+            Self::Element(error) => write!(f, "{}", error),
             Self::Decomposition(reason) => {
-                let (h, c) = (style.headline, style.frame);
-                format!("{h}The decomposition does not fit the model.{c}\n{reason}")
+                write!(f, "The decomposition does not fit the model.\n{reason}")
             }
-            Self::Krylov(error) => error.message(style),
+            Self::Krylov(error) => write!(f, "{}", error),
             Self::FloatingSubdomain { part, removed } => {
-                let (h, c) = (style.headline, style.frame);
-                format!(
-                    "{h}Subdomain {part} is left floating.{c}\n\
+                write!(
+                    f,
+                    "Subdomain {part} is left floating.\n\
                     Its corner nodes and pinned degrees of freedom remove only {removed} of its \
                     6 rigid-body modes, so its stiffness is singular. A subdomain needs three \
                     non-collinear corner nodes (nodes shared by three or more subdomains) or \
@@ -66,9 +65,9 @@ impl StyledError for SolveError {
                 )
             }
             Self::SingularSubdomain(part) => {
-                let (h, c) = (style.headline, style.frame);
-                format!(
-                    "{h}The stiffness of subdomain {part} is singular.{c}\n\
+                write!(
+                    f,
+                    "The stiffness of subdomain {part} is singular.\n\
                     Its corners and pinned degrees of freedom hold the subdomain as a whole, but \
                     some part of it is still free to move: a piece attached to the rest through \
                     only a node or an edge, or cut off from it altogether. Change the decomposition \
@@ -77,9 +76,9 @@ impl StyledError for SolveError {
                 )
             }
             Self::SingularInterior(part) => {
-                let (h, c) = (style.headline, style.frame);
-                format!(
-                    "{h}The interior of subdomain {part} is singular.{c}\n\
+                write!(
+                    f,
+                    "The interior of subdomain {part} is singular.\n\
                     The degrees of freedom of the subdomain away from the interface form a \
                     singular block, though the subdomain as a whole does not, which the \
                     Dirichlet preconditioner cannot handle. The tangent is likely not \
@@ -88,9 +87,9 @@ impl StyledError for SolveError {
                 )
             }
             Self::SingularCoarseProblem => {
-                let (h, c) = (style.headline, style.frame);
-                format!(
-                    "{h}The problem coupling the corners is singular.{c}\n\
+                write!(
+                    f,
+                    "The problem coupling the corners is singular.\n\
                     Pin enough degrees of freedom to remove every rigid-body mode of the \
                     whole block."
                 )
@@ -99,7 +98,13 @@ impl StyledError for SolveError {
     }
 }
 
-styled_error!(SolveError);
+impl fmt::Debug for SolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for SolveError {}
 
 impl From<ElementModelError> for SolveError {
     fn from(error: ElementModelError) -> Self {

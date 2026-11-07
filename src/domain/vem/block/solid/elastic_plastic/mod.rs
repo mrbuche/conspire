@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::elastic_plastic::{ElasticPlastic, StepError},
     domain::{
@@ -17,6 +18,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 use core::array::from_fn;
 
 impl<C, F, R> ElasticPlasticElements<PlasticStateVariablesField<1>, 3> for Block<C, F, R>
@@ -66,7 +68,7 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_elastic_stiffnesses_into(
         &self,
@@ -97,7 +99,7 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn updated_state(
         &self,
@@ -117,8 +119,8 @@ where
                     local_solver,
                 )
             })
-            .collect::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn step_error(
         &self,
@@ -145,6 +147,6 @@ where
                         .map(|error| worst.max(error))
                 },
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

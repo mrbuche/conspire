@@ -6,7 +6,8 @@ pub use factor::{CscLdl, CscLu};
 pub use matrix::CscMatrix;
 pub use solver::SparseSolver;
 
-use crate::math::{Style, StyledError, assert::AssertionError, styled_error};
+use crate::math::assert::AssertionError;
+use core::fmt;
 
 /// Possible errors for sparse data types.
 #[derive(PartialEq)]
@@ -15,17 +16,22 @@ pub enum SparseError {
     Unsymmetric,
 }
 
-impl StyledError for SparseError {
-    fn message(&self, style: &Style) -> String {
-        let h = style.headline;
+impl fmt::Display for SparseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Singular => format!("{h}Matrix is singular."),
-            Self::Unsymmetric => format!("{h}Matrix is not symmetric."),
+            Self::Singular => write!(f, "Matrix is singular."),
+            Self::Unsymmetric => write!(f, "Matrix is not symmetric."),
         }
     }
 }
 
-styled_error!(SparseError);
+impl fmt::Debug for SparseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for SparseError {}
 
 impl From<SparseError> for AssertionError {
     fn from(error: SparseError) -> Self {

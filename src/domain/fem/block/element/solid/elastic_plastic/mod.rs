@@ -1,3 +1,4 @@
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -79,8 +80,7 @@ where
                     .condensed(deformation_gradient, state_variable, local_solver)
                     .map(|(stress, tangent, _)| (stress, tangent))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<Vec<_>>()?;
         let first_piola_kirchhoff_stresses = evaluations
             .iter()
             .map(|(stress, _)| stress.clone())
@@ -156,8 +156,7 @@ where
                     &state_variable.0,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -204,8 +203,8 @@ where
                     .condensed(deformation_gradient, state_variable, local_solver)
                     .map(|(_, _, state)| state)
             })
-            .collect::<Result<_, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .collect_at_points()
+            .map_err(Into::into)
     }
     fn step_error(
         &self,
@@ -229,7 +228,7 @@ where
                         .map(|error| worst.max(error))
                 },
             )
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .map_err(Into::into)
     }
 }
 
@@ -343,8 +342,7 @@ where
                     })
                 });
                 Ok::<(), ConstitutiveError>(())
-            })
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            })?;
         Ok(element)
     }
 }

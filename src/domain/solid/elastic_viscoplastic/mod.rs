@@ -116,8 +116,11 @@ where
         nodal_forces: &mut NodalForcesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_forces_into(nodal_coordinates, state_variables, nodal_forces)?;
-        self.1.nodal_forces_into(nodal_coordinates, nodal_forces)
+            .nodal_forces_into(nodal_coordinates, state_variables, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
+        self.1
+            .nodal_forces_into(nodal_coordinates, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -126,9 +129,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_coordinates, state_variables, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_coordinates, state_variables, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_coordinates, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn state_variables_evolution(
         &self,
@@ -137,6 +142,7 @@ where
     ) -> Result<Derivative<S>, ElementModelError> {
         self.0
             .state_variables_evolution(nodal_coordinates, state_variables)
+            .map_err(|error| error.in_block(0))
     }
 }
 
@@ -160,9 +166,11 @@ where
         nodal_forces: &mut NodalForcesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_forces_into(nodal_coordinates, &state_variables.0, nodal_forces)?;
+            .nodal_forces_into(nodal_coordinates, &state_variables.0, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_forces_into(nodal_coordinates, &state_variables.1, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -171,9 +179,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_coordinates, &state_variables.0, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_coordinates, &state_variables.0, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_coordinates, &state_variables.1, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn state_variables_evolution(
         &self,
@@ -182,9 +192,11 @@ where
     ) -> Result<Derivative<TensorTuple<S1, S2>>, ElementModelError> {
         Ok((
             self.0
-                .state_variables_evolution(nodal_coordinates, &state_variables.0)?,
+                .state_variables_evolution(nodal_coordinates, &state_variables.0)
+                .map_err(|error| error.in_block(0))?,
             self.1
-                .state_variables_evolution(nodal_coordinates, &state_variables.1)?,
+                .state_variables_evolution(nodal_coordinates, &state_variables.1)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
         )
             .into())
     }
@@ -308,8 +320,12 @@ where
         flat: &<Self::Field as Integrable>::Point,
     ) -> Result<Derivative<<Self::Field as Integrable>::Increment, Time>, ElementModelError> {
         Ok((
-            self.0.dae_rate(t, nodal_coordinates, &flat.0)?,
-            self.1.dae_rate(t, nodal_coordinates, &flat.1)?,
+            self.0
+                .dae_rate(t, nodal_coordinates, &flat.0)
+                .map_err(|error| error.in_block(0))?,
+            self.1
+                .dae_rate(t, nodal_coordinates, &flat.1)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
         )
             .into())
     }
@@ -336,7 +352,9 @@ where
         nodal_coordinates: &NodalCoordinates<D>,
         flat: &<Self::Field as Integrable>::Point,
     ) -> Result<Derivative<<Self::Field as Integrable>::Increment, Time>, ElementModelError> {
-        self.0.dae_rate(t, nodal_coordinates, flat)
+        self.0
+            .dae_rate(t, nodal_coordinates, flat)
+            .map_err(|error| error.in_block(0))
     }
 }
 

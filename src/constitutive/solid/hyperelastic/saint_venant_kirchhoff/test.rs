@@ -23,5 +23,5 @@ fn biaxial_compression_is_not_a_minimum() {
         AppliedLoad::BiaxialStress(0.77, 0.88),
         NewtonRaphson::default(),
     );
-    assert!(result.is_err_and(|error| error.to_string().contains("not a minimum")))
+    assert!(result.is_err_and(|error| matches!(error, ConstitutiveError::Solver(_))))
 }

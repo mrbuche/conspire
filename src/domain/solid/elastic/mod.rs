@@ -191,8 +191,12 @@ where
         nodal_coordinates: &NodalCoordinates<D>,
         nodal_forces: &mut NodalForcesSolid<D>,
     ) -> Result<(), ElementModelError> {
-        self.0.nodal_forces_into(nodal_coordinates, nodal_forces)?;
-        self.1.nodal_forces_into(nodal_coordinates, nodal_forces)
+        self.0
+            .nodal_forces_into(nodal_coordinates, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
+        self.1
+            .nodal_forces_into(nodal_coordinates, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -200,9 +204,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_coordinates, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_coordinates, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_coordinates, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }
 
@@ -327,8 +333,10 @@ where
         nodal_forces: &mut NodalForcesSolid<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_forces_parallel_into(first, workers, nodal_coordinates, nodal_forces)?;
+            .nodal_forces_parallel_into(first, workers, nodal_coordinates, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_forces_parallel_into(second, workers, nodal_coordinates, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }

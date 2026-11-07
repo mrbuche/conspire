@@ -80,7 +80,7 @@ where
         let mut unbalanced_forces = self.nodal_forces(nodal_coordinates)?;
         applied_loads
             .subtract_at(time, nodal_coordinates, &mut unbalanced_forces)
-            .map_err(|error| ElementModelError::upstream(error, "the applied loads"))?;
+            .map_err(|error| ElementModelError::new("the applied loads", error))?;
         Ok(masses.nodal_accelerations(&unbalanced_forces))
     }
     fn integrate<C>(

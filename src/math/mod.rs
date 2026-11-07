@@ -25,17 +25,14 @@ mod graph;
 mod labels;
 mod matrix;
 mod simd;
-mod style;
 mod tensor;
-
-pub(crate) use style::{Style, StyledError, defeat_message, styled_error};
 
 pub use crate::hash::{FxHashMap, FxHashSet, FxHasher};
 pub use graph::{Graph, Incidence};
 pub use labels::Labels;
 pub use matrix::{
     Matrix,
-    square::{LdlDecomposition, LuDecomposition, SquareMatrix},
+    square::{LdlDecomposition, LuDecomposition, SquareMatrix, SquareMatrixError},
     vector::Vector,
 };
 pub use tensor::{

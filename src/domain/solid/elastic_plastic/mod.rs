@@ -75,7 +75,10 @@ impl MonolithicSystem {
 const MONOLITHIC_UNSUPPORTED: &str = "The monolithic solve is not supported for this domain.";
 
 fn monolithic_unsupported() -> ElementModelError {
-    ElementModelError::Upstream(MONOLITHIC_UNSUPPORTED.to_string(), String::new())
+    ElementModelError::new(
+        "the elastic-plastic model",
+        crate::domain::Source::Unsupported(MONOLITHIC_UNSUPPORTED),
+    )
 }
 
 /// Assembly for rate-independent elastic-plastic solids, with the local unknowns of the

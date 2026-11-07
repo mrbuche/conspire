@@ -10,6 +10,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> ViscoelasticElements<3> for Block<C, F, R>
 where
@@ -37,7 +38,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -67,7 +68,7 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_dampings_into(
         &self,
@@ -97,6 +98,6 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

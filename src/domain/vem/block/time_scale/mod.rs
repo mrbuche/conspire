@@ -17,6 +17,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> TimeScaleElements<3> for Block<C, F, R>
 where
@@ -49,6 +50,6 @@ where
                     )
                 },
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

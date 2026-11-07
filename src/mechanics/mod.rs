@@ -7,14 +7,14 @@ use crate::units::{
     PowerPerLengthTemperature, Rate, ReciprocalLength, Stress, StressPerTemperature,
     StressPerTemperatureSquared, TemperaturePerLength, Velocity, Viscosity,
 };
+use core::fmt;
 
 use crate::math::{Current, Intermediate, Reference};
 
 use crate::math::{
-    Rank2, Style, StyledError, Tensor, TensorRank1, TensorRank1List, TensorRank1List2D,
-    TensorRank1RefVec, TensorRank1Vec, TensorRank1Vec2D, TensorRank2, TensorRank2List,
-    TensorRank2List2D, TensorRank2Vec, TensorRank2Vec2D, TensorRank4, TensorRank4List,
-    TensorRank4Vec, styled_error,
+    Rank2, Tensor, TensorRank1, TensorRank1List, TensorRank1List2D, TensorRank1RefVec,
+    TensorRank1Vec, TensorRank1Vec2D, TensorRank2, TensorRank2List, TensorRank2List2D,
+    TensorRank2Vec, TensorRank2Vec2D, TensorRank4, TensorRank4List, TensorRank4Vec,
 };
 
 pub use crate::math::Scalar;
@@ -24,18 +24,23 @@ pub enum DeformationError {
     InvalidJacobian(Scalar),
 }
 
-impl StyledError for DeformationError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for DeformationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidJacobian(jacobian) => {
-                format!("{h}Invalid Jacobian: {jacobian:.6e}.{c}")
+                write!(f, "Invalid Jacobian: {jacobian:.6e}.")
             }
         }
     }
 }
 
-styled_error!(DeformationError);
+impl fmt::Debug for DeformationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for DeformationError {}
 
 /// Methods for deformation gradients.
 pub trait Deformation<I, J> {

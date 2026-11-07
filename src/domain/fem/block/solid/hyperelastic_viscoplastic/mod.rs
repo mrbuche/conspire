@@ -1,9 +1,10 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_viscoplastic::HyperelasticViscoplastic,
     fem::{
         ElementModelError, NodalCoordinates,
         block::{
-            Block, element::FiniteElementError,
+            Block,
             element::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticFiniteElement,
             solid::elastic_viscoplastic::ViscoplasticStateVariables,
         },
@@ -15,6 +16,7 @@ use crate::{
     math::{Differentiable, Quantity, Tensor},
     units::Energy,
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, Y, R, H>
     HyperelasticViscoplasticElements<ViscoplasticStateVariables<G, Y>, 3>
@@ -41,7 +43,7 @@ where
                     state_variables_element,
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

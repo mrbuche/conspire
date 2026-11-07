@@ -3,13 +3,13 @@ mod test;
 
 use crate::{
     math::{
-        ContractWith, Quantity, Scalar, Style, StyledError, Tensor,
+        ContractWith, Quantity, Scalar, Tensor,
         assert::AssertionError,
         optimize::{OptimizationError, Precondition},
-        styled_error,
     },
     units::{Dimensionless, UnitDiv},
 };
+use core::fmt;
 use core::{mem::replace, ops::Mul};
 
 const PATIENCE: usize = 30;
@@ -354,31 +354,40 @@ pub enum KrylovError {
     StoppedShortening(usize, Quantity),
 }
 
-impl StyledError for KrylovError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for KrylovError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MaximumStepsReached(steps, relative) => format!(
-                "{h}Maximum number of iterations ({steps}) reached.{c}\n\
+            Self::MaximumStepsReached(steps, relative) => write!(
+                f,
+                "Maximum number of iterations ({steps}) reached.\n\
                 Residual relative to the one started from: {relative:?}."
             ),
-            Self::NotPositiveDefinite(curvature) => format!(
-                "{h}The operator is not positive definite.{c}\n\
+            Self::NotPositiveDefinite(curvature) => write!(
+                f,
+                "The operator is not positive definite.\n\
                 Curvature along a direction, relative to the residual through the preconditioner: {curvature:?}."
             ),
-            Self::PreconditionerNotPositiveDefinite(squared) => format!(
-                "{h}The preconditioner is not positive definite.{c}\n\
+            Self::PreconditionerNotPositiveDefinite(squared) => write!(
+                f,
+                "The preconditioner is not positive definite.\n\
                 Squared length of a residual through it, relative to the first: {squared:?}."
             ),
-            Self::StoppedShortening(steps, relative) => format!(
-                "{h}The residual stopped shortening after {steps} iterations.{c}\n\
+            Self::StoppedShortening(steps, relative) => write!(
+                f,
+                "The residual stopped shortening after {steps} iterations.\n\
                 Residual relative to the one started from: {relative:?}."
             ),
         }
     }
 }
 
-styled_error!(KrylovError);
+impl fmt::Debug for KrylovError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for KrylovError {}
 
 impl From<KrylovError> for OptimizationError {
     fn from(error: KrylovError) -> Self {

@@ -1,10 +1,8 @@
 #[cfg(test)]
 mod test;
 
-use crate::math::{
-    Scalar, Style, StyledError, Tensor, Vector, assert::AssertionError,
-    optimize::OptimizationError, styled_error,
-};
+use crate::math::{Scalar, Tensor, Vector, assert::AssertionError, optimize::OptimizationError};
+use core::fmt;
 
 const CHECK: usize = 4;
 const TINY: Scalar = 1e-14;
@@ -318,32 +316,48 @@ pub enum LanczosError {
     ZeroStart,
 }
 
-impl StyledError for LanczosError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for LanczosError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidCount(count, size) => {
-                format!("{h}Cannot find {count} eigenpairs of a problem of size {size}.{c}")
+                write!(
+                    f,
+                    "Cannot find {count} eigenpairs of a problem of size {size}."
+                )
             }
-            Self::BasisTooSmall(count, steps) => format!(
-                "{h}Cannot find {count} eigenpairs with a Krylov basis of at most {steps} vectors.{c}"
+            Self::BasisTooSmall(count, steps) => write!(
+                f,
+                "Cannot find {count} eigenpairs with a Krylov basis of at most {steps} vectors."
             ),
             Self::MaximumStepsReached(steps) => {
-                format!("{h}The wanted eigenpairs did not converge in {steps} iterations.{c}")
+                write!(
+                    f,
+                    "The wanted eigenpairs did not converge in {steps} iterations."
+                )
             }
-            Self::Exhausted(steps, wanted) => format!(
-                "{h}The space was exhausted after {steps} steps, short of the {wanted} wanted eigenpairs.{c}\n\
+            Self::Exhausted(steps, wanted) => write!(
+                f,
+                "The space was exhausted after {steps} steps, short of the {wanted} wanted eigenpairs.\n\
                 The mass may be singular on what is left."
             ),
-            Self::Tridiagonal(size) => format!(
-                "{h}The eigenproblem of the Krylov basis of size {size} did not converge.{c}"
-            ),
-            Self::ZeroStart => format!("{h}The starting vector has no mass.{c}"),
+            Self::Tridiagonal(size) => {
+                write!(
+                    f,
+                    "The eigenproblem of the Krylov basis of size {size} did not converge."
+                )
+            }
+            Self::ZeroStart => write!(f, "The starting vector has no mass."),
         }
     }
 }
 
-styled_error!(LanczosError);
+impl fmt::Debug for LanczosError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for LanczosError {}
 
 impl From<LanczosError> for OptimizationError {
     fn from(error: LanczosError) -> Self {

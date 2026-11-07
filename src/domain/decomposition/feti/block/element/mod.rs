@@ -1,4 +1,5 @@
 use crate::{
+    domain::block::element::Elements,
     domain::{Blocks, ElementModelError, Model, NodalCoordinates},
     geometry::mesh::Decomposition,
     math::{FxHashMap, Scalar, SquareMatrix, Tensor, Vector},
@@ -81,17 +82,23 @@ where
 
 impl<B1, B2> DecomposableElements for Blocks<B1, B2>
 where
-    B1: DecomposableElements,
+    B1: DecomposableElements + Elements,
     B2: DecomposableElements,
 {
     fn element_systems(
         &self,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<ElementSystems, ElementModelError> {
-        let mut systems = self.0.element_systems(nodal_coordinates)?;
-        systems
-            .elements
-            .extend(self.1.element_systems(nodal_coordinates)?.elements);
+        let mut systems = self
+            .0
+            .element_systems(nodal_coordinates)
+            .map_err(|error| error.in_block(0))?;
+        systems.elements.extend(
+            self.1
+                .element_systems(nodal_coordinates)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?
+                .elements,
+        );
         Ok(systems)
     }
 }

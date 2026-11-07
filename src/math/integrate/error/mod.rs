@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test;
 
-use crate::math::{Scalar, Style, StyledError, assert::AssertionError, styled_error};
+use crate::math::{Scalar, assert::AssertionError};
+use core::fmt;
 use core::fmt::{Debug, Display};
 
 /// Possible errors encountered when integrating.
@@ -31,56 +32,64 @@ impl From<String> for IntegrationError {
     }
 }
 
-impl StyledError for IntegrationError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for IntegrationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InconsistentInitialConditions => {
-                format!("{h}The initial condition z_0 is not consistent with g(t_0, y_0).")
+                write!(
+                    f,
+                    "The initial condition z_0 is not consistent with g(t_0, y_0)."
+                )
             }
             Self::InitialTimeNotLessThanFinalTime => {
-                format!("{h}The initial time must precede the final time.")
+                write!(f, "The initial time must precede the final time.")
             }
             Self::InvalidNewmarkParameters(beta, gamma) => {
-                format!(
-                    "{h}The Newmark parameters (beta = {beta:?}, gamma = {gamma:?}) must satisfy 2 beta >= gamma >= 1/2 to be unconditionally stable."
+                write!(
+                    f,
+                    "The Newmark parameters (beta = {beta:?}, gamma = {gamma:?}) must satisfy 2 beta >= gamma >= 1/2 to be unconditionally stable."
                 )
             }
             Self::InvalidSafetyFactor(safety) => {
-                format!("{h}The safety factor ({safety:?}) must be in (0, 1].")
+                write!(f, "The safety factor ({safety:?}) must be in (0, 1].")
             }
-            Self::Intermediate(message) => message.to_string(),
+            Self::Intermediate(message) => write!(f, "{}", message),
             Self::LengthTimeLessThanTwo => {
-                format!("{h}The time must contain at least two entries.")
+                write!(f, "The time must contain at least two entries.")
             }
             Self::MinimumStepSizeReached(dt_min, integrator) => {
-                format!(
-                    "{h}Minimum time step ({dt_min:?}) reached.{c}\n\
+                write!(
+                    f,
+                    "Minimum time step ({dt_min:?}) reached.\n\
                     In integrator: {integrator}."
                 )
             }
             Self::MinimumStepSizeUpstream(dt_min, error, integrator) => {
-                format!(
-                    "{error}{c}\n\
-                    Causing error: {h}Minimum time step ({dt_min:?}) reached.{c}\n\
+                write!(
+                    f,
+                    "{error}\n\
+                    Causing error: Minimum time step ({dt_min:?}) reached.\n\
                     In integrator: {integrator}."
                 )
             }
             Self::TimeStepNotSet(t0, tf, integrator) => {
-                format!(
-                    "{h}A positive time step must be set within [{t0:?}, {tf:?}].{c}\n\
+                write!(
+                    f,
+                    "A positive time step must be set within [{t0:?}, {tf:?}].\n\
                     In integrator: {integrator}."
                 )
             }
             Self::UnstableTimeStep(dt, limit, integrator) => {
-                format!(
-                    "{h}The time step ({dt:?}) exceeds the stability limit ({limit:?}).{c}\n\
+                write!(
+                    f,
+                    "The time step ({dt:?}) exceeds the stability limit ({limit:?}).\n\
                     In integrator: {integrator}."
                 )
             }
             Self::Upstream(error, integrator) => {
-                format!(
-                    "{error}{c}\n\
+                write!(
+                    f,
+                    "{error}\n\
                     In integrator: {integrator}."
                 )
             }
@@ -88,7 +97,13 @@ impl StyledError for IntegrationError {
     }
 }
 
-styled_error!(IntegrationError);
+impl fmt::Debug for IntegrationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for IntegrationError {}
 
 impl From<IntegrationError> for String {
     fn from(error: IntegrationError) -> Self {

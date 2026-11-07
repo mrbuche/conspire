@@ -51,8 +51,7 @@ where
                     )
                 },
             )
-            .sum::<Result<Quantity<Power>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Power>, _>>()?;
         let polyhedron_dissipation = self
             .deformation_gradients(nodal_coordinates)
             .iter()
@@ -70,8 +69,7 @@ where
                     )
                 },
             )
-            .sum::<Result<Quantity<Power>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Power>, _>>()?;
         Ok(polyhedron_dissipation * (1.0 - self.stabilization())
             + tetrahedra_dissipation * self.stabilization())
     }
@@ -98,8 +96,7 @@ where
                     )
                 },
             )
-            .sum::<Result<Quantity<Power>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Power>, _>>()?;
         let polyhedron_potential = self
             .deformation_gradients(nodal_coordinates)
             .iter()
@@ -118,8 +115,7 @@ where
                     )
                 },
             )
-            .sum::<Result<Quantity<Power>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Power>, _>>()?;
         Ok(polyhedron_potential * (1.0 - self.stabilization())
             + tetrahedra_potential * self.stabilization())
     }

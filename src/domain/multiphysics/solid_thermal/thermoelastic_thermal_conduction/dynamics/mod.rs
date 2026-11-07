@@ -152,7 +152,7 @@ where
                 &join_states(nodal_coordinates, nodal_temperatures),
                 &mut nodal_forces,
             )
-            .map_err(|error| ElementModelError::upstream(error, "the applied loads"))?;
+            .map_err(|error| ElementModelError::new("the applied loads", error))?;
         let unbalanced_forces = nodal_forces.iter().map(|force| force.0.clone()).collect();
         let unbalanced_heating = nodal_forces.iter().map(|force| force.1).collect();
         Ok((

@@ -1,14 +1,10 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_plastic::HyperelasticPlastic,
     domain::block::solid::plastic::PlasticStateVariablesField,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError, solid::hyperelastic_plastic::HyperelasticPlasticFiniteElement,
-            },
-        },
+        block::{Block, element::solid::hyperelastic_plastic::HyperelasticPlasticFiniteElement},
         solid::{
             elastic_plastic::ElasticPlasticElements,
             hyperelastic_plastic::HyperelasticPlasticElements,
@@ -17,6 +13,7 @@ use crate::{
     math::Quantity,
     units::Energy,
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, R, H>
     HyperelasticPlasticElements<PlasticStateVariablesField<G>, 3> for Block<C, F, G, M, N, P, R, H>
@@ -41,7 +38,7 @@ where
                     state_variables_element,
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

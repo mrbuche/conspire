@@ -93,8 +93,7 @@ impl Element {
                 forces[node_a] += &nodal_forces[2] * stabilization;
                 center_force += &nodal_forces[3];
                 Ok::<(), FiniteElementError>(())
-            })
-            .map_err(|error| self.upstream(error))?;
+            })?;
         self.faces_nodes()
             .iter()
             .zip(faces_forces.iter())
@@ -185,8 +184,7 @@ impl Element {
                 center_stiffness += &nodal_stiffnesses[3][3]
                     * (stabilization * inverse_num_nodes * inverse_num_nodes);
                 Ok::<(), FiniteElementError>(())
-            })
-            .map_err(|error| self.upstream(error))?;
+            })?;
         self.faces_nodes()
             .iter()
             .zip(
@@ -250,8 +248,7 @@ where
                     .condensed(deformation_gradient, state_variable, local_solver)
                     .map(|(stress, tangent, _)| (stress, tangent))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .collect::<Result<Vec<_>, _>>()?;
         let stresses = evaluations
             .iter()
             .map(|(stress, _)| stress.clone())
@@ -272,8 +269,7 @@ where
                     local_solver,
                 )
             })
-            .collect::<Result<Vec<_>, FiniteElementError>>()
-            .map_err(|error| self.upstream(error))?;
+            .collect::<Result<Vec<_>, FiniteElementError>>()?;
         let num_nodes = nodal_coordinates.len();
         Ok((
             self.stabilized_forces(
@@ -310,8 +306,7 @@ where
                     &state_variable.0,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()?;
         let tetrahedra = self
             .tetrahedra()
             .iter()
@@ -323,8 +318,7 @@ where
                     state_variables,
                 )
             })
-            .collect::<Result<Vec<_>, FiniteElementError>>()
-            .map_err(|error| self.upstream(error))?;
+            .collect::<Result<Vec<_>, FiniteElementError>>()?;
         self.stabilized_stiffnesses(
             &tangents,
             &tetrahedra.iter().collect::<Vec<_>>(),
@@ -347,7 +341,7 @@ where
                     .map(|(_, _, state)| state)
             })
             .collect::<Result<_, _>>()
-            .map_err(|error| self.upstream(error))
+            .map_err(Into::into)
     }
     fn step_error(
         &self,
@@ -371,6 +365,6 @@ where
                         .map(|error| worst.max(error))
                 },
             )
-            .map_err(|error| self.upstream(error))
+            .map_err(Into::into)
     }
 }

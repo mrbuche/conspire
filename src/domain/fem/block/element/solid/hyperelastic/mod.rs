@@ -2,6 +2,7 @@
 pub mod autodiff;
 pub mod internal_variables;
 
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{ConstitutiveError, solid::hyperelastic::Hyperelastic},
     domain::block::element::solid::hyperelastic::HyperelasticElement,
@@ -90,6 +91,6 @@ where
                     * integration_weight,
             )
         })
-        .sum::<Result<_, ConstitutiveError>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))
+        .sum_at_points()
+        .map_err(Into::into)
 }

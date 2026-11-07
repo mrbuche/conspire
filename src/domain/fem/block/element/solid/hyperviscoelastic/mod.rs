@@ -3,6 +3,7 @@ pub mod autodiff;
 
 pub use crate::domain::block::element::solid::hyperviscoelastic::HyperviscoelasticElement;
 
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{ConstitutiveError, solid::hyperviscoelastic::Hyperviscoelastic},
     fem::block::element::{
@@ -90,6 +91,6 @@ where
                     * integration_weight,
             )
         })
-        .sum::<Result<_, ConstitutiveError>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))
+        .sum_at_points()
+        .map_err(Into::into)
 }

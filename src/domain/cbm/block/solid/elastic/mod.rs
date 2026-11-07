@@ -1,10 +1,12 @@
 use super::super::{Block, node::solid::elastic::ElasticElement};
+use crate::domain::ItemError;
 use crate::{
     constitutive::solid::elastic::Elastic,
     domain::{ElementModelError, NodalCoordinates, solid::elastic::ElasticItems},
     math::{Current, TensorRank1, TensorRank2},
     units::{Force, ForcePerLength},
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::elastic::ElasticElements;
 
@@ -24,7 +26,9 @@ where
     ) -> Result<Vec<NodalForce>, ElementModelError> {
         self.nodes[item]
             .nodal_forces(&self.constitutive_model, nodal_coordinates)
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
     fn stiffnesses_of(
         &self,
@@ -33,6 +37,8 @@ where
     ) -> Result<Vec<Vec<NodalStiffness>>, ElementModelError> {
         self.nodes[item]
             .nodal_stiffnesses(&self.constitutive_model, nodal_coordinates)
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
 }

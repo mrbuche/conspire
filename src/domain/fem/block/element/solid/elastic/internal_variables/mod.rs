@@ -1,3 +1,4 @@
+use crate::domain::block::element::AtPoints;
 use crate::math::{Erase, Quantity};
 use crate::units::{Dimensionless, Stress, UnitDiv};
 use core::ops::{Div, Mul};
@@ -145,7 +146,7 @@ where
             )],
             None,
         )
-        .map_err(|error| ConstitutiveError::custom(error, deformation_gradient))
+        .map_err(ConstitutiveError::from)
 }
 
 /// The nodal forces a list of stresses integrates to.
@@ -233,7 +234,7 @@ where
         constitutive_model.tangents(deformation_gradient, internal_variables)?;
     let eliminated = local_block(&tangent_vv, size, &unmap)
         .solve_lu(&reduced)
-        .map_err(|error| ConstitutiveError::custom(error, deformation_gradient))?;
+        .map_err(ConstitutiveError::from)?;
     let mut cross = SquareMatrix::zero(size);
     tangent_uv.fill_into_block(&mut cross, 0, 0);
     (0..3).for_each(|i| {
@@ -290,7 +291,7 @@ where
     });
     let solution = local_block(&tangent_vv, size, &unmap)
         .solve_lu(&reduced)
-        .map_err(|error| ConstitutiveError::custom(error, deformation_gradient))?;
+        .map_err(ConstitutiveError::from)?;
     let mut decrement = Vector::zero(size);
     unmap
         .iter()
@@ -325,7 +326,7 @@ where
     let unmap = free_indices(constitutive_model, size);
     let factorization = local_block(&tangent_vv, size, &unmap)
         .factorize_lu()
-        .map_err(|error| ConstitutiveError::custom(error, deformation_gradient))?;
+        .map_err(ConstitutiveError::from)?;
     let mut coupling = SquareMatrix::zero(size);
     tangent_vu.fill_into_block(&mut coupling, 0, 0);
     let mut cross = SquareMatrix::zero(size);
@@ -393,8 +394,8 @@ where
                     internal_variables_point,
                 )
             })
-            .collect::<Result<InternalVariables<G, V>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .collect_at_points::<InternalVariables<G, V>>()
+            .map_err(Into::into)
     }
     fn internal_variables_increment(
         &self,
@@ -419,8 +420,8 @@ where
                     )
                 },
             )
-            .collect::<Result<InternalVariables<G, V>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .collect_at_points::<InternalVariables<G, V>>()
+            .map_err(Into::into)
     }
     fn nodal_forces(
         &self,
@@ -436,8 +437,7 @@ where
                 constitutive_model
                     .first_piola_kirchhoff_stress(deformation_gradient, internal_variables_point)
             })
-            .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
         Ok(assemble_forces(
             stresses,
             self.gradient_vectors(),
@@ -461,8 +461,7 @@ where
                     internal_variables_point,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
         Ok(assemble_forces(
             stresses,
             self.gradient_vectors(),
@@ -486,8 +485,7 @@ where
                     internal_variables_point,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
         Ok(condensed
             .iter()
             .zip(

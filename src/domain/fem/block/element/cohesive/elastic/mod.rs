@@ -1,4 +1,5 @@
 use crate::constitutive::cohesive::elastic::StiffnessCohesive;
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::cohesive::elastic::Elastic,
     fem::block::element::{
@@ -46,8 +47,7 @@ where
             .into_iter()
             .zip(normals)
             .map(|(separation, normal)| constitutive_model.traction(separation, normal))
-            .collect::<Result<TractionList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<TractionList<G>>()?;
         Ok(tractions
             .into_iter()
             .zip(
@@ -77,8 +77,7 @@ where
             .into_iter()
             .zip(normals)
             .map(|(separation, normal)| constitutive_model.stiffness(separation, normal))
-            .collect::<Result<StiffnessCohesiveList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<StiffnessCohesiveList<G>>()?;
         Ok(stiffnesses
             .into_iter()
             .zip(

@@ -3,11 +3,12 @@ pub(crate) mod solid;
 pub(crate) mod test;
 
 use crate::{
-    domain::block::add_node_neighbors,
-    math::{Style, StyledError, assert::AssertionError, defeat_message},
+    constitutive::ConstitutiveError, domain::block::add_node_neighbors,
+    math::assert::AssertionError,
 };
 use core::{
     fmt::{self, Debug, Display, Formatter},
+    iter::Sum,
     marker::PhantomData,
 };
 
@@ -16,6 +17,10 @@ where
     Self: Debug,
 {
     fn node_neighbors(&self, neighbors: &mut [Vec<usize>]);
+    /// The number of blocks, being one for a single block.
+    fn number_of_blocks(&self) -> usize {
+        1
+    }
 }
 
 /// The structure of a block: the items it is made of, and the nodes of each.
@@ -48,13 +53,41 @@ pub trait ElementKind {
     const NAME: &'static str;
 }
 
-pub enum ElementError<K> {
-    Upstream(String, String, PhantomData<K>),
+/// An error in an element, with the integration point where it occurred, if known.
+///
+/// The error is plain data. The element and block that contain it are added by the
+/// layers that know them.
+pub struct ElementError<K> {
+    pub point: Option<usize>,
+    pub source: ConstitutiveError,
+    kind: PhantomData<K>,
 }
 
 impl<K> ElementError<K> {
-    pub fn upstream(error: impl Display, context: &(impl Debug + ?Sized)) -> Self {
-        Self::Upstream(format!("{error}"), format!("{context:?}"), PhantomData)
+    pub fn new(point: Option<usize>, source: ConstitutiveError) -> Self {
+        Self {
+            point,
+            source,
+            kind: PhantomData,
+        }
+    }
+}
+
+impl<K> PartialEq for ElementError<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.point == other.point && self.source == other.source
+    }
+}
+
+impl<K> From<ConstitutiveError> for ElementError<K> {
+    fn from(source: ConstitutiveError) -> Self {
+        Self::new(None, source)
+    }
+}
+
+impl<K> From<PointError> for ElementError<K> {
+    fn from(error: PointError) -> Self {
+        Self::new(Some(error.point), error.source)
     }
 }
 
@@ -66,38 +99,50 @@ impl<K: ElementKind> From<ElementError<K>> for AssertionError {
     }
 }
 
-impl<K: ElementKind> StyledError for ElementError<K> {
-    fn message(&self, style: &Style) -> String {
-        let c = style.frame;
-        match self {
-            Self::Upstream(error, element, _) => format!(
-                "{error}{c}\n\
-                In {}: {element}.",
-                K::NAME
-            ),
-        }
-    }
-}
-
 impl<K: ElementKind> Debug for ElementError<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let style = Style::detect();
-        write!(
-            f,
-            "\n{}\n{}{}{}\n",
-            self.message(&style),
-            style.footer,
-            defeat_message(),
-            style.reset
-        )
+        write!(f, "\n{self}\n")
     }
 }
 
 impl<K: ElementKind> Display for ElementError<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let style = Style::detect();
-        write!(f, "{}{}", self.message(&style), style.reset)
+        match self.point {
+            Some(point) => write!(
+                f,
+                "{}\nAt integration point {point} of the {}.",
+                self.source,
+                K::NAME
+            ),
+            None => write!(f, "{}\nIn the {}.", self.source, K::NAME),
+        }
     }
 }
 
 impl<K: ElementKind> core::error::Error for ElementError<K> {}
+
+/// An error at an integration point, before the element is known.
+pub struct PointError {
+    pub point: usize,
+    pub source: ConstitutiveError,
+}
+
+/// Collect or sum results over the integration points, recording the point of a failure.
+#[cfg_attr(not(any(feature = "fem", feature = "vem")), allow(dead_code))]
+pub(crate) trait AtPoints<T>
+where
+    Self: Iterator<Item = Result<T, ConstitutiveError>> + Sized,
+{
+    fn collect_at_points<C: FromIterator<T>>(self) -> Result<C, PointError> {
+        self.enumerate()
+            .map(|(point, result)| result.map_err(|source| PointError { point, source }))
+            .collect()
+    }
+    fn sum_at_points<S: Sum<T>>(self) -> Result<S, PointError> {
+        self.enumerate()
+            .map(|(point, result)| result.map_err(|source| PointError { point, source }))
+            .sum()
+    }
+}
+
+impl<I, T> AtPoints<T> for I where I: Iterator<Item = Result<T, ConstitutiveError>> {}
