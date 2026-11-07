@@ -51,8 +51,9 @@ pub enum GpuKernels {
     #[default]
     Handwritten,
     /// The code of the library itself, built to PTX in advance, which the driver compiles when
-    /// the run starts. It is double precision, with the stored gradient vectors of the elements,
-    /// and only for the models and elements that it has kernels for.
+    /// the run starts. It is double precision, with either way of getting the gradient vectors,
+    /// and only for the models and the sizes of elements that it has kernels for: the linear
+    /// hexahedron, tetrahedron, wedge and pyramid.
     Library,
 }
 

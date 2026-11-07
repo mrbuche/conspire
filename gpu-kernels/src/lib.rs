@@ -588,46 +588,6 @@ block_kernels!(
 );
 
 block_kernels!(
-    block_forces_neo_hookean_g4_n10,
-    block_forces_on_the_fly_neo_hookean_g4_n10,
-    NeoHookean,
-    4,
-    10
-);
-
-block_kernels!(
-    block_forces_neo_hookean_g18_n15,
-    block_forces_on_the_fly_neo_hookean_g18_n15,
-    NeoHookean,
-    18,
-    15
-);
-
-block_kernels!(
-    block_forces_neo_hookean_g27_n13,
-    block_forces_on_the_fly_neo_hookean_g27_n13,
-    NeoHookean,
-    27,
-    13
-);
-
-block_kernels!(
-    block_forces_neo_hookean_g27_n27,
-    block_forces_on_the_fly_neo_hookean_g27_n27,
-    NeoHookean,
-    27,
-    27
-);
-
-block_kernels!(
-    block_forces_neo_hookean_g27_n20,
-    block_forces_on_the_fly_neo_hookean_g27_n20,
-    NeoHookean,
-    27,
-    20
-);
-
-block_kernels!(
     block_forces_saint_venant_kirchhoff_g1_n4,
     block_forces_on_the_fly_saint_venant_kirchhoff_g1_n4,
     SaintVenantKirchhoff,
@@ -665,46 +625,6 @@ block_kernels!(
     SaintVenantKirchhoff,
     8,
     5
-);
-
-block_kernels!(
-    block_forces_saint_venant_kirchhoff_g4_n10,
-    block_forces_on_the_fly_saint_venant_kirchhoff_g4_n10,
-    SaintVenantKirchhoff,
-    4,
-    10
-);
-
-block_kernels!(
-    block_forces_saint_venant_kirchhoff_g18_n15,
-    block_forces_on_the_fly_saint_venant_kirchhoff_g18_n15,
-    SaintVenantKirchhoff,
-    18,
-    15
-);
-
-block_kernels!(
-    block_forces_saint_venant_kirchhoff_g27_n13,
-    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n13,
-    SaintVenantKirchhoff,
-    27,
-    13
-);
-
-block_kernels!(
-    block_forces_saint_venant_kirchhoff_g27_n27,
-    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n27,
-    SaintVenantKirchhoff,
-    27,
-    27
-);
-
-block_kernels!(
-    block_forces_saint_venant_kirchhoff_g27_n20,
-    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n20,
-    SaintVenantKirchhoff,
-    27,
-    20
 );
 
 /// The forces on `nodes` nodes, each the sum of the forces of the elements that have it, in the
