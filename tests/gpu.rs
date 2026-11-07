@@ -14,10 +14,10 @@ use conspire::{
             Block,
             element::linear::{Hexahedron, Pyramid, Tetrahedron, Wedge},
         },
-        boundary::{BoundaryConditions, ConstrainAt, Displacement, Solid},
+        boundary::{BoundaryConditions, ConstrainAt, Displacement, LoadAt, Loads, Solid},
         solid::{
             DeviceExplicitDynamics, ElasticExplicitDynamics, Execution, GpuGradients, GpuKernels,
-            GpuOptions, GpuPrecision, Lumped, Unchecked,
+            GpuOptions, GpuPrecision, Lumped, NodalForcesSolid, Unchecked,
         },
     },
     math::{Quantity, Tensor, integrate::VelocityVerlet},
@@ -226,6 +226,7 @@ fn run_on_the_device_follows_the_run_on_the_calling_thread() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &BoundaryConditions::<Solid<3>>::new(),
         );
         let (found_coordinates, found_velocities) = match run {
@@ -263,6 +264,7 @@ fn run_with_the_code_of_the_library_follows_the_run_on_the_calling_thread() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &BoundaryConditions::<Solid<3>>::new(),
         );
         let (found_coordinates, found_velocities) = match run {
@@ -442,6 +444,7 @@ fn run_of_a_model_of_two_blocks_follows_the_run_on_the_calling_thread() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &BoundaryConditions::<Solid<3>>::new(),
         );
         let (found_coordinates, found_velocities) = match run {
@@ -495,6 +498,7 @@ fn run_of_a_model_of_two_models_follows_the_run_on_the_calling_thread() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &BoundaryConditions::<Solid<3>>::new(),
         );
         let (found_coordinates, found_velocities) = match run {
@@ -518,6 +522,7 @@ fn run_of_a_model_of_two_models_follows_the_run_on_the_calling_thread() {
         Time::seconds(STEP),
         STEPS,
         (coordinates, velocities),
+        &(),
         &BoundaryConditions::<Solid<3>>::new(),
     );
     let error = refused.expect_err("the kernels written for the device are for one model");
@@ -719,6 +724,7 @@ macro_rules! follows {
                 Time::seconds(STEP),
                 STEPS,
                 (coordinates.clone(), velocities.clone()),
+                &(),
                 &BoundaryConditions::<Solid<3>>::new(),
             );
             let (found_coordinates, found_velocities) = match run {
@@ -955,6 +961,7 @@ fn run_in_chunks_of_elements_gives_the_results_of_the_run_in_one_chunk() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &BoundaryConditions::<Solid<3>>::new(),
         )
     };
@@ -1029,6 +1036,7 @@ fn run_with_a_face_that_is_moved_follows_the_run_on_the_calling_thread() {
             Time::seconds(STEP),
             STEPS,
             (coordinates.clone(), velocities.clone()),
+            &(),
             &conditions,
         );
         let (found_coordinates, found_velocities) = match run {
@@ -1047,4 +1055,136 @@ fn run_with_a_face_that_is_moved_follows_the_run_on_the_calling_thread() {
             "{precision:?} {gradients:?} {kernels:?}: the velocities differ by {gap}"
         );
     }
+}
+
+/// Forces that are constant and forces that are a function of time are subtracted from those of the
+/// elements as they are on the calling thread, in every way that there is.
+#[test]
+fn run_with_loads_follows_the_run_on_the_calling_thread() {
+    let (model, reference) = model();
+    let (coordinates, velocities) = (deformed(&reference), velocities(&reference));
+    let nodes = NodalReferenceCoordinates::from(reference.clone());
+    let duration = STEPS as f64 * STEP;
+    let loads = Loads::<Solid<3>>::new()
+        .nodal_forces(
+            &nodes,
+            NodalForcesSolid::from(
+                (0..reference.len())
+                    .map(|node| {
+                        [
+                            1e6 * ((node % 7) as f64 - 3.0),
+                            5e5 * ((node % 5) as f64 - 2.0),
+                            -2e6,
+                        ]
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        .unwrap()
+        .body_force_with(&nodes, &model.nodal_volumes(), move |time| {
+            let fraction = time.value() / duration;
+            [1e9 * (6.0 * fraction).sin(), -5e8 * fraction, 2e9].into()
+        })
+        .unwrap();
+    let conditions = BoundaryConditions::<Solid<3>>::new();
+    let serial = |with_loads: bool| {
+        let time = [Time::seconds(0.0), Time::seconds(duration)];
+        let integrator = VelocityVerlet::new(Time::seconds(STEP));
+        let state = (coordinates.clone(), velocities.clone());
+        let run = if with_loads {
+            model.integrate(
+                Execution::Serial,
+                Unchecked,
+                Lumped,
+                &integrator,
+                &time,
+                state,
+                &loads,
+                &conditions,
+            )
+        } else {
+            model.integrate(
+                Execution::Serial,
+                Unchecked,
+                Lumped,
+                &integrator,
+                &time,
+                state,
+                &(),
+                &conditions,
+            )
+        }
+        .unwrap();
+        (
+            components(run.1.iter().last().unwrap()),
+            components(run.2.iter().last().unwrap()),
+        )
+    };
+    let (expected, free) = (serial(true), serial(false));
+    // The loads do something, so that a device that ignored them would be found out.
+    let effect = difference(&expected.1, &free.1).0;
+    assert!(effect > 1e-3, "the loads did not change the run: {effect}");
+    for (precision, gradients, kernels, tolerance) in EVERY_WAY {
+        let run = model.integrate_on_device(
+            GpuOptions {
+                precision,
+                gradients,
+                kernels,
+                ..GpuOptions::default()
+            },
+            Time::seconds(STEP),
+            STEPS,
+            (coordinates.clone(), velocities.clone()),
+            &loads,
+            &conditions,
+        );
+        let (found_coordinates, found_velocities) = match run {
+            Ok(run) => run,
+            Err(error) if no_device(&error) => return println!("skipped: {error:?}"),
+            Err(error) => panic!("{precision:?} {gradients:?} {kernels:?}: {error:?}"),
+        };
+        let (gap, scale) = difference(&components(&found_coordinates), &expected.0);
+        assert!(
+            gap < tolerance * scale.max(1.0),
+            "{precision:?} {gradients:?} {kernels:?}: the coordinates differ by {gap}"
+        );
+        let (gap, scale) = difference(&components(&found_velocities), &expected.1);
+        assert!(
+            gap < tolerance * scale.max(1.0),
+            "{precision:?} {gradients:?} {kernels:?}: the velocities differ by {gap}"
+        );
+    }
+}
+
+/// A load that follows the body, as a pressure does, cannot be tabulated before the run, so it is
+/// refused before anything is put on a device, which a load that is not a function of the state
+/// says that it is not.
+#[test]
+fn loads_that_depend_on_the_state_are_refused() {
+    struct Follower;
+    impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> for Follower {
+        fn subtract_at(
+            &self,
+            _: Quantity<Time>,
+            _: &NodalCoordinates<3>,
+            _: &mut NodalForcesSolid<3>,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+    }
+    let (model, reference) = model();
+    let error = model
+        .integrate_on_device(
+            GpuOptions::default(),
+            Time::seconds(STEP),
+            STEPS,
+            (deformed(&reference), velocities(&reference)),
+            &Follower,
+            &BoundaryConditions::<Solid<3>>::new(),
+        )
+        .expect_err("the load depends on the state");
+    assert!(
+        format!("{error:?}").contains("depend on the state"),
+        "the error is not that: {error:?}"
+    );
 }

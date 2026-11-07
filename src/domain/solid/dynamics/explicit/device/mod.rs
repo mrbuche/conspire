@@ -4,9 +4,10 @@ use super::super::motion::Motion;
 use crate::{
     domain::{
         Model, NodalCoordinates, NodalVelocities, Stepping,
-        boundary::{ConstrainAt, Solid},
-        gpu::{GpuOptions, Moved, Resident},
+        boundary::{ConstrainAt, DeviceForce, LoadAt, Solid},
+        gpu::{GpuOptions, Imposed, Loaded, Moved, Resident, Weighted},
         solid::{
+            NodalForcesSolid,
             elastic::ParallelElasticElements,
             mass::{Lumped, LumpedMassElements, MassChoice},
         },
@@ -38,17 +39,22 @@ pub trait DeviceExplicitDynamics {
     /// Takes `steps` steps of velocity Verlet of size `dt` on a device, with lumped masses.
     ///
     /// Degrees of freedom may be held where they are or moved, as the conditions say, and they
-    /// are held at what they are at the time of each step, as on the calling thread. There are no
-    /// loads. The coordinates and velocities at the end are returned.
+    /// are held at what they are at the time of each step, as on the calling thread.
+    ///
+    /// The loads are the external forces, which must not depend on the state: constant forces,
+    /// and forces that are a function of time alone, which are those that say so. Forces that
+    /// follow the body, such as a pressure, are an error. The coordinates and velocities at the
+    /// end are returned.
     fn integrate_on_device(
         &self,
         options: GpuOptions,
         dt: Quantity<Time>,
         steps: usize,
         initial_state: (NodalCoordinates<3>, NodalVelocities<3>),
+        applied_loads: &impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
         conditions: &impl ConstrainAt<Solid<3>>,
     ) -> Result<(NodalCoordinates<3>, NodalVelocities<3>), IntegrationError> {
-        self.integrate_on_device_timed(options, dt, steps, initial_state, conditions)
+        self.integrate_on_device_timed(options, dt, steps, initial_state, applied_loads, conditions)
             .map(|(state, _)| state)
     }
     /// Takes the steps of [`integrate_on_device`](Self::integrate_on_device), and also returns
@@ -62,6 +68,7 @@ pub trait DeviceExplicitDynamics {
         dt: Quantity<Time>,
         steps: usize,
         initial_state: (NodalCoordinates<3>, NodalVelocities<3>),
+        applied_loads: &impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
         conditions: &impl ConstrainAt<Solid<3>>,
     ) -> Result<((NodalCoordinates<3>, NodalVelocities<3>), Duration), IntegrationError>;
 }
@@ -76,8 +83,38 @@ where
         dt: Quantity<Time>,
         steps: usize,
         (mut coordinates, velocities): (NodalCoordinates<3>, NodalVelocities<3>),
+        applied_loads: &impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
         conditions: &impl ConstrainAt<Solid<3>>,
     ) -> Result<((NodalCoordinates<3>, NodalVelocities<3>), Duration), IntegrationError> {
+        let forces = applied_loads.device_forces().ok_or_else(|| {
+            IntegrationError::Intermediate(
+                "Loads that depend on the state are not supported on a device.".to_string(),
+            )
+        })?;
+        // The forces that do not change are one, and those that are a function of time are
+        // each held with the time of every step.
+        let mut constant: Vec<f64> = Vec::new();
+        let mut weighted = Vec::new();
+        for force in forces {
+            match force {
+                DeviceForce::Constant(values) if constant.is_empty() => constant = values,
+                DeviceForce::Constant(values) => constant
+                    .iter_mut()
+                    .zip(values)
+                    .for_each(|(sum, value)| *sum += value),
+                DeviceForce::Weighted {
+                    weights,
+                    components,
+                } => weighted.push(Weighted {
+                    weights,
+                    components: Box::new(move |step| {
+                        components(Quantity::new(step as f64 * dt.value()))
+                    }),
+                }),
+            }
+        }
+        let loaded =
+            (!constant.is_empty() || !weighted.is_empty()).then_some(Loaded { constant, weighted });
         let masses = Lumped.masses(self);
         let (inverse, velocities, motion) = Motion::held(
             &masses,
@@ -99,12 +136,18 @@ where
                 &flatten(&velocities),
                 dt.value(),
                 steps,
-                // The degrees of freedom that are moved are held at what they are at the time of
-                // each step, which the run of dynamics on the calling thread holds them at.
-                motion.moves().then(|| Moved {
-                    dofs: motion.moving().iter().map(|&dof| dof as u32).collect(),
-                    values: Box::new(|step| motion.values(Quantity::new(step as f64 * dt.value()))),
-                }),
+                Imposed {
+                    // The degrees of freedom that are moved are held at what they are at the
+                    // time of each step, which the run of dynamics on the calling thread holds
+                    // them at.
+                    moved: motion.moves().then(|| Moved {
+                        dofs: motion.moving().iter().map(|&dof| dof as u32).collect(),
+                        values: Box::new(|step| {
+                            motion.values(Quantity::new(step as f64 * dt.value()))
+                        }),
+                    }),
+                    loaded,
+                },
             )
             .map_err(error)?;
         let unflatten = |values: Vec<f64>| -> Vec<[f64; 3]> { values.as_chunks::<3>().0.to_vec() };

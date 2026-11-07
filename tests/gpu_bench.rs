@@ -262,6 +262,7 @@ fn compare(cells: usize) -> bool {
                 Time::seconds(STEP),
                 steps,
                 (current.clone(), velocities()),
+                &(),
                 &conditions,
             )
         };
@@ -337,6 +338,7 @@ fn compare(cells: usize) -> bool {
                     Time::seconds(STEP),
                     steps,
                     (current.clone(), velocities()),
+                    &(),
                     &conditions,
                 )
                 .unwrap();
@@ -550,7 +552,7 @@ fn $name(cells: usize) -> bool {
             options(GpuPrecision::F64, gradients, kernels),
             Time::seconds(STEP),
             short,
-            (current.clone(), velocities()),
+            (current.clone(), velocities()), &(),
             &conditions,
         );
         match run {
@@ -593,7 +595,7 @@ fn $name(cells: usize) -> bool {
                     options(precision, gradients, kernels),
                     Time::seconds(STEP),
                     steps,
-                    (current.clone(), velocities()),
+                    (current.clone(), velocities()), &(),
                     &conditions,
                 )
                 .unwrap();
@@ -735,7 +737,7 @@ macro_rules! element_row {
                 options(GpuPrecision::F64, gradients, kernels),
                 Time::seconds(STEP),
                 short,
-                (current.clone(), velocities()),
+                (current.clone(), velocities()), &(),
                 &conditions,
             );
             match run {
@@ -765,7 +767,7 @@ macro_rules! element_row {
                         options(GpuPrecision::F64, gradients, kernels),
                         Time::seconds(STEP),
                         steps,
-                        (current.clone(), velocities()),
+                        (current.clone(), velocities()), &(),
                         &conditions,
                     )
                     .unwrap();

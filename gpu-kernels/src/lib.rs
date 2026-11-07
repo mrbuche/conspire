@@ -729,6 +729,52 @@ pub unsafe extern "ptx-kernel" fn set_targets(
     }
 }
 
+/// Subtracts a force on each of `count` degrees of freedom, which does not change, from the
+/// forces on them, as the external forces are subtracted from the forces of the elements.
+///
+/// # Safety
+///
+/// `loads` and `forces` must have `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_constant(
+    count: u32,
+    loads: *const f64,
+    forces: *mut f64,
+) {
+    let index = thread();
+    if index < count as usize {
+        // SAFETY: the index is within the values that there are.
+        unsafe { *forces.add(index) -= *loads.add(index) };
+    }
+}
+
+/// Subtracts a force on each of `nodes` nodes that is a weight of the node times three components
+/// that are a function of time, from the forces on them: the components are `table[row * 3 + c]`.
+///
+/// # Safety
+///
+/// `weights` must have `nodes` values, `forces` three for each of them, and `table` the three
+/// components of a row.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_weighted(
+    nodes: u32,
+    weights: *const f64,
+    table: *const f64,
+    row: u32,
+    forces: *mut f64,
+) {
+    let node = thread();
+    if node < nodes as usize {
+        // SAFETY: the node is within the nodes that there are.
+        unsafe {
+            let weight = *weights.add(node);
+            (0..3).for_each(|c| {
+                *forces.add(3 * node + c) -= weight * *table.add(row as usize * 3 + c);
+            });
+        }
+    }
+}
+
 /// The accelerations that balance the forces, which are then cleared for the next step, and the
 /// velocity another half step on when `kick` is not zero.
 ///

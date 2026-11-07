@@ -11,6 +11,32 @@ mod test;
 
 pub(crate) use resident::Resident;
 
+/// What is imposed on a run of dynamics besides the elements: degrees of freedom that are moved,
+/// and external forces.
+#[derive(Default)]
+pub(crate) struct Imposed<'a> {
+    pub moved: Option<Moved<'a>>,
+    pub loaded: Option<Loaded<'a>>,
+}
+
+/// The external forces of a run, which do not depend on the state, as a device takes them.
+pub(crate) struct Loaded<'a> {
+    /// A force on each degree of freedom, as `3 * node + component`, that does not change, or
+    /// none if there is none.
+    pub constant: Vec<f64>,
+    /// Forces that are a weight of each node times three components that are a function of the
+    /// number of steps taken.
+    pub weighted: Vec<Weighted<'a>>,
+}
+
+/// A force on the nodes that is a weight of each times three components of the step.
+pub(crate) struct Weighted<'a> {
+    /// The weight of each node.
+    pub weights: Vec<f64>,
+    /// The three components after a number of steps.
+    pub components: Box<dyn Fn(usize) -> [f64; 3] + 'a>,
+}
+
 /// The degrees of freedom of a run that are moved, and where they are held at each step.
 ///
 /// What they are held at is a function of time that only the host can evaluate, so it is

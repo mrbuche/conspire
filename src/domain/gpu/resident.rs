@@ -1,7 +1,7 @@
 //! What a run keeps on the device, and the two passes that compute the nodal forces with it.
 
 use super::{
-    GpuError, GpuGradients, GpuItems, GpuKernels, GpuOptions, GpuPrecision, Moved,
+    GpuError, GpuGradients, GpuItems, GpuKernels, GpuOptions, GpuPrecision, Imposed,
     cuda::{Argument, Buffer, Device, Function, Module},
 };
 use crate::{
@@ -139,14 +139,14 @@ impl Resident {
         velocities: &[f64],
         dt: f64,
         steps: usize,
-        moved: Option<Moved<'_>>,
+        imposed: Imposed<'_>,
     ) -> Result<(Vec<f64>, Vec<f64>, Duration), GpuError> {
         match self {
             Self::Single(state) => {
-                state.integrate(masses, coordinates, velocities, dt, steps, moved)
+                state.integrate(masses, coordinates, velocities, dt, steps, imposed)
             }
             Self::Double(state) => {
-                state.integrate(masses, coordinates, velocities, dt, steps, moved)
+                state.integrate(masses, coordinates, velocities, dt, steps, imposed)
             }
         }
     }
@@ -567,8 +567,9 @@ impl<R: Real> State<R> {
         velocities: &[f64],
         dt: f64,
         steps: usize,
-        mut moved: Option<Moved<'_>>,
+        imposed: Imposed<'_>,
     ) -> Result<(Vec<f64>, Vec<f64>, Duration), GpuError> {
+        let Imposed { mut moved, loaded } = imposed;
         let count = 3 * self.nodes;
         if [masses.len(), coordinates.len(), velocities.len()] != [count; 3] {
             return Err(GpuError::Unsupported(format!(
@@ -608,13 +609,93 @@ impl<R: Real> State<R> {
             _ => (None, None),
         };
         let moved_count = moved_count as u32;
+        // The external forces that do not depend on the state: those that do not change, and
+        // those that are a weight of each node times three components of the step, which are
+        // copied for as many steps as the elements are checked at a time.
+        let load_rows = CHECK_EVERY;
+        let constant_loads = match loaded.as_ref() {
+            Some(loaded) if !loaded.constant.is_empty() => {
+                if loaded.constant.len() != count {
+                    return Err(GpuError::Unsupported(format!(
+                        "the loads are {} values, not {count}",
+                        loaded.constant.len()
+                    )));
+                }
+                Some(self.device.buffer_of(&to_device(&loaded.constant))?)
+            }
+            _ => None,
+        };
+        let weighted_loads = match loaded.as_ref() {
+            Some(loaded) => loaded
+                .weighted
+                .iter()
+                .map(|term| {
+                    if term.weights.len() != self.nodes {
+                        return Err(GpuError::Unsupported(format!(
+                            "the loads have {} weights, not {}",
+                            term.weights.len(),
+                            self.nodes
+                        )));
+                    }
+                    Ok((
+                        self.device.buffer_of(&to_device(&term.weights))?,
+                        self.device.buffer::<R>(3 * load_rows)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, GpuError>>()?,
+            None => Vec::new(),
+        };
+        let subtract_constant = module.function("subtract_constant")?;
+        let subtract_weighted = module.function("subtract_weighted")?;
         let (count, dt) = (count as u32, R::from_f64(dt));
         let (first, kick) = (0_u32, 1_u32);
+        // The components of the weighted forces for the steps from `base`, which are copied, and
+        // the subtracting of all the forces from those of the elements, with `row` the step in
+        // what is copied.
+        let refill = |base: usize| -> Result<(), GpuError> {
+            if let Some(loaded) = loaded.as_ref() {
+                for (term, (_, table)) in loaded.weighted.iter().zip(&weighted_loads) {
+                    let mut values = vec![R::default(); 3 * load_rows];
+                    for row in 0..load_rows.min((steps + 1).saturating_sub(base)) {
+                        for (slot, value) in values[3 * row..3 * row + 3]
+                            .iter_mut()
+                            .zip((term.components)(base + row))
+                        {
+                            *slot = R::from_f64(value);
+                        }
+                    }
+                    table.upload(&values)?;
+                }
+            }
+            Ok(())
+        };
+        let apply_loads = |row: usize| -> Result<(), GpuError> {
+            let (row, nodes) = (row as u32, self.nodes as u32);
+            if let Some(loads) = constant_loads.as_ref() {
+                self.device.launch(
+                    &subtract_constant,
+                    count as usize,
+                    THREADS_PER_BLOCK,
+                    &[&count, loads, &self.forces],
+                )?;
+            }
+            for (weights, table) in &weighted_loads {
+                self.device.launch(
+                    &subtract_weighted,
+                    self.nodes,
+                    THREADS_PER_BLOCK,
+                    &[&nodes, weights, table, &row, &self.forces],
+                )?;
+            }
+            Ok(())
+        };
         // Everything above is the setup of the run, which is waited for so that it is not timed.
         self.device.synchronize()?;
         let started = Instant::now();
         // The accelerations at the start, which do not change the velocities.
+        refill(0)?;
         self.launch_forces()?;
+        apply_loads(0)?;
         self.device.launch(
             &accelerate,
             count as usize,
@@ -649,6 +730,10 @@ impl<R: Real> State<R> {
                 }
                 table.upload(&values)?;
             }
+            // The same for the forces that are a function of time, for the steps from this one.
+            if (step + 1) % load_rows == 0 {
+                refill(step + 1)?;
+            }
             self.device.launch(
                 &kick_drift,
                 count as usize,
@@ -665,6 +750,7 @@ impl<R: Real> State<R> {
                 )?;
             }
             self.launch_forces()?;
+            apply_loads((step + 1) % load_rows)?;
             self.device.launch(
                 &accelerate,
                 count as usize,

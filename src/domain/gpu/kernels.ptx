@@ -18665,3 +18665,96 @@ $L__BB26_2:
 	ret;
                                         // -- End function
 }
+	// .globl	subtract_constant       // -- Begin function subtract_constant
+.visible .entry subtract_constant(
+	.param .u32 subtract_constant_param_0,
+	.param .u64 .ptr .align 1 subtract_constant_param_1,
+	.param .u64 .ptr .align 1 subtract_constant_param_2
+)                                       // @subtract_constant
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<4>;
+	.reg .b64 	%rd<15>;
+
+// %bb.0:
+	ld.param.b32 	%rd3, [subtract_constant_param_0];
+	ld.param.b64 	%rd4, [subtract_constant_param_1];
+	cvta.to.global.u64 	%rd5, %rd4;
+	ld.param.b64 	%rd6, [subtract_constant_param_2];
+	cvta.to.global.u64 	%rd7, %rd6;
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mul.wide.u32 	%rd8, %r1, %r2;
+	mov.u32 	%r3, %tid.x;
+	cvt.u64.u32 	%rd9, %r3;
+	add.s64 	%rd10, %rd8, %rd9;
+	setp.ge.u64 	%p1, %rd10, %rd3;
+	@%p1 bra 	$L__BB27_2;
+// %bb.1:
+	shl.b64 	%rd11, %rd10, 3;
+	add.s64 	%rd1, %rd5, %rd11;
+	add.s64 	%rd2, %rd7, %rd11;
+	ld.global.b64 	%rd12, [%rd1];
+	ld.global.b64 	%rd13, [%rd2];
+	sub.rn.f64 	%rd14, %rd13, %rd12;
+	st.global.b64 	[%rd2], %rd14;
+$L__BB27_2:
+	ret;
+                                        // -- End function
+}
+	// .globl	subtract_weighted       // -- Begin function subtract_weighted
+.visible .entry subtract_weighted(
+	.param .u32 subtract_weighted_param_0,
+	.param .u64 .ptr .align 1 subtract_weighted_param_1,
+	.param .u64 .ptr .align 1 subtract_weighted_param_2,
+	.param .u32 subtract_weighted_param_3,
+	.param .u64 .ptr .align 1 subtract_weighted_param_4
+)                                       // @subtract_weighted
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<5>;
+	.reg .b64 	%rd<29>;
+
+// %bb.0:
+	ld.param.b32 	%rd5, [subtract_weighted_param_0];
+	ld.param.b64 	%rd6, [subtract_weighted_param_1];
+	cvta.to.global.u64 	%rd1, %rd6;
+	ld.param.b64 	%rd7, [subtract_weighted_param_2];
+	cvta.to.global.u64 	%rd2, %rd7;
+	ld.param.b64 	%rd8, [subtract_weighted_param_4];
+	cvta.to.global.u64 	%rd3, %rd8;
+	mov.u32 	%r2, %ctaid.x;
+	mov.u32 	%r3, %ntid.x;
+	mul.wide.u32 	%rd9, %r2, %r3;
+	mov.u32 	%r4, %tid.x;
+	cvt.u64.u32 	%rd10, %r4;
+	add.s64 	%rd4, %rd9, %rd10;
+	setp.ge.u64 	%p1, %rd4, %rd5;
+	@%p1 bra 	$L__BB28_2;
+// %bb.1:
+	ld.param.b32 	%r1, [subtract_weighted_param_3];
+	shl.b64 	%rd11, %rd4, 3;
+	add.s64 	%rd12, %rd1, %rd11;
+	ld.global.b64 	%rd13, [%rd12];
+	mul.wide.u32 	%rd14, %r1, 24;
+	add.s64 	%rd15, %rd2, %rd14;
+	mad.lo.s64 	%rd16, %rd4, 24, %rd3;
+	ld.global.b64 	%rd17, [%rd15];
+	mul.rn.f64 	%rd18, %rd13, %rd17;
+	ld.global.b64 	%rd19, [%rd16];
+	sub.rn.f64 	%rd20, %rd19, %rd18;
+	st.global.b64 	[%rd16], %rd20;
+	ld.global.b64 	%rd21, [%rd15+8];
+	mul.rn.f64 	%rd22, %rd13, %rd21;
+	ld.global.b64 	%rd23, [%rd16+8];
+	sub.rn.f64 	%rd24, %rd23, %rd22;
+	st.global.b64 	[%rd16+8], %rd24;
+	ld.global.b64 	%rd25, [%rd15+16];
+	mul.rn.f64 	%rd26, %rd13, %rd25;
+	ld.global.b64 	%rd27, [%rd16+16];
+	sub.rn.f64 	%rd28, %rd27, %rd26;
+	st.global.b64 	[%rd16+16], %rd28;
+$L__BB28_2:
+	ret;
+                                        // -- End function
+}

@@ -926,6 +926,7 @@ fn run_that_stays_on_the_device_follows_the_run_on_the_calling_thread() {
                 Time::seconds(STEP),
                 STEPS,
                 (current.clone(), velocities.clone()),
+                &(),
                 &fixed_dofs(&held),
             )
             .unwrap();

@@ -40,6 +40,43 @@ extern "C" __global__ void set_targets(
     coordinates[dofs[i]] = table[(size_t)row * count + i];
 }
 
+// Subtracts a force on each of count degrees of freedom, which does not change, from the forces
+// on them, as the external forces are subtracted from the forces of the elements.
+extern "C" __global__ void subtract_constant(
+    const unsigned int count,
+    const REAL *__restrict__ loads,
+    REAL *__restrict__ forces)
+{
+    const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= count)
+    {
+        return;
+    }
+    forces[i] -= loads[i];
+}
+
+// Subtracts a force on each of nodes nodes that is a weight of the node times three components
+// that are a function of time, from the forces on them: the components are table[row * 3 + c].
+extern "C" __global__ void subtract_weighted(
+    const unsigned int nodes,
+    const REAL *__restrict__ weights,
+    const REAL *__restrict__ table,
+    const unsigned int row,
+    REAL *__restrict__ forces)
+{
+    const unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+    if (node >= nodes)
+    {
+        return;
+    }
+    const REAL weight = weights[node];
+#pragma unroll
+    for (int c = 0; c < 3; ++c)
+    {
+        forces[3 * (size_t)node + c] -= weight * table[(size_t)row * 3 + c];
+    }
+}
+
 // The accelerations that balance the forces, which are then cleared for the next step, and
 // the velocity another half step on when the step is not the first evaluation.
 extern "C" __global__ void accelerate(
