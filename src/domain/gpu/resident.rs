@@ -232,6 +232,7 @@ impl<R: Real> State<R> {
         };
         let mut modules = Vec::with_capacity(blocks.len());
         let mut states = Vec::with_capacity(blocks.len());
+        let mut makes_gradients = false;
         for block in blocks {
             let (shear_modulus, bulk_modulus) = block.model.moduli();
             if !library && !matches!(block.model, GpuModel::NeoHookean { .. }) {
@@ -243,19 +244,17 @@ impl<R: Real> State<R> {
             }
             let items = block.number_of_items();
             let layout = block.device_layout();
+            // A block makes its gradient vectors as it goes if they are asked to be and its
+            // elements can, which those of the library all can, and otherwise keeps them.
+            let shape = block.shape.as_ref().filter(|_| on_the_fly);
+            makes_gradients |= shape.is_some();
             let (module, geometry, forces_name) = if library {
                 let blocks_kernels = block.library.as_ref().ok_or_else(|| {
                     GpuError::Unsupported(
                         "the library has no kernels for this model and element".to_string(),
                     )
                 })?;
-                if on_the_fly {
-                    let shape = block.shape.as_ref().ok_or_else(|| {
-                        GpuError::Unsupported(
-                            "the elements cannot make their gradient vectors on the fly"
-                                .to_string(),
-                        )
-                    })?;
+                if let Some(shape) = shape {
                     (
                         None,
                         Geometry::LibraryOnTheFly {
@@ -279,20 +278,14 @@ impl<R: Real> State<R> {
                     format!("NODES={}", block.nodes_per_item),
                     format!("POINTS={}", block.points_per_item),
                 ];
-                if on_the_fly {
+                if shape.is_some() {
                     definitions.push("ON_THE_FLY".to_string());
                 }
                 if R::DOUBLE {
                     definitions.push("DOUBLE_PRECISION".to_string());
                 }
                 let module = device.module(KERNELS, &definitions, R::FUSED)?;
-                let geometry = if on_the_fly {
-                    let shape = block.shape.as_ref().ok_or_else(|| {
-                        GpuError::Unsupported(
-                            "the elements cannot make their gradient vectors on the fly"
-                                .to_string(),
-                        )
-                    })?;
+                let geometry = if let Some(shape) = shape {
                     Geometry::OnTheFly {
                         derivatives: device.buffer_of(&to_device(&shape.derivatives))?,
                         weights: device.buffer_of(&to_device(&shape.weights))?,
@@ -330,7 +323,7 @@ impl<R: Real> State<R> {
         Ok(Self {
             blocks: states,
             coordinates: device.buffer(3 * number_of_nodes)?,
-            reference_coordinates: if on_the_fly {
+            reference_coordinates: if makes_gradients {
                 Some(device.buffer_of(&to_device(reference_coordinates))?)
             } else {
                 None

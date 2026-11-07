@@ -32,14 +32,19 @@ pub enum GpuPrecision {
 /// Reading them costs memory traffic, and making them costs arithmetic, so which is faster
 /// depends on the device and the precision: a device that is limited by its memory does better to
 /// make them, and one that is limited by its arithmetic, as many are in `f64`, to read them.
+///
+/// On an H100 in `f64` making them is the faster for every element, by 20 to 25% for the
+/// kernels of the library, so that is the default. A device whose `f64` is slow, as those of
+/// many workstations and consumer cards are, may do better with [`Stored`](Self::Stored).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum GpuGradients {
     /// Each element keeps its own, which are read at every step.
-    #[default]
     Stored,
     /// They are made at every step from the reference coordinates of the nodes of the element,
     /// as an element makes them when it is made. Only elements of the three dimensions whose
-    /// shape functions are those of their nodes can do this.
+    /// shape functions are those of their nodes can do this, and the block of any other keeps
+    /// its own.
+    #[default]
     OnTheFly,
 }
 
