@@ -22,6 +22,52 @@ use std::{
     thread::{available_parallelism, scope},
 };
 
+/// The parts of a descent that are timed when profiling, apart from the function and the gradient.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum Part {
+    Decrement,
+    History,
+    Norm,
+    Slope,
+    Trial,
+    TwoLoop,
+}
+
+#[cfg(test)]
+pub(crate) mod profile {
+    use super::Part;
+    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+    pub(crate) const PARTS: usize = 6;
+    pub(crate) static NANOSECONDS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
+    pub(crate) static CALLS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
+    #[allow(dead_code)]
+    pub(crate) fn reset() {
+        NANOSECONDS
+            .iter()
+            .chain(&CALLS)
+            .for_each(|counter| counter.store(0, Relaxed));
+    }
+    pub(super) fn record(part: Part, started: std::time::Instant) {
+        NANOSECONDS[part as usize].fetch_add(started.elapsed().as_nanos() as u64, Relaxed);
+        CALLS[part as usize].fetch_add(1, Relaxed);
+    }
+}
+
+#[cfg(test)]
+fn timed<T>(part: Part, work: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let result = work();
+    profile::record(part, started);
+    result
+}
+
+#[cfg(not(test))]
+#[inline(always)]
+fn timed<T>(_: Part, work: impl FnOnce() -> T) -> T {
+    work()
+}
+
 const BLOCK: usize = 4096;
 const GRAIN: usize = 3 * BLOCK;
 const CURVATURE_FLOOR: Scalar = 1.0e-12;
@@ -265,7 +311,7 @@ where
         let mut steps = 0;
         let mut converged = false;
         while steps < self.max_steps {
-            let magnitude = residual.norm();
+            let magnitude = timed(Part::Norm, || residual.norm());
             let scale = *reference.get_or_insert(magnitude);
             if magnitude < self.abs_tol.residual()
                 || self
@@ -276,18 +322,22 @@ where
                 break;
             }
             steps += 1;
-            two_loop(
-                residual.as_flat(),
-                &*history,
-                (self.typical / magnitude).value(),
-                direction.as_mut_slice(),
-            );
-            let decrement: X = direction
-                .iter()
-                .map(|direction| -direction)
-                .collect::<Vector>()
-                .into();
-            let initial_slope = residual.contract_with(&decrement);
+            timed(Part::TwoLoop, || {
+                two_loop(
+                    residual.as_flat(),
+                    &*history,
+                    (self.typical / magnitude).value(),
+                    direction.as_mut_slice(),
+                )
+            });
+            let decrement: X = timed(Part::Decrement, || {
+                direction
+                    .iter()
+                    .map(|direction| -direction)
+                    .collect::<Vector>()
+                    .into()
+            });
+            let initial_slope = timed(Part::Slope, || residual.contract_with(&decrement));
             if initial_slope <= Quantity::default() {
                 history.clear();
                 continue;
@@ -298,13 +348,15 @@ where
                     return Ok(value);
                 }
                 let step = step.value();
-                trial
-                    .as_flat_mut()
-                    .iter_mut()
-                    .zip(solution.as_flat().iter().zip(&direction))
-                    .for_each(|(trial, (solution, direction))| {
-                        *trial = solution + direction * step
-                    });
+                timed(Part::Trial, || {
+                    trial
+                        .as_flat_mut()
+                        .iter_mut()
+                        .zip(solution.as_flat().iter().zip(&direction))
+                        .for_each(|(trial, (solution, direction))| {
+                            *trial = solution + direction * step
+                        })
+                });
                 let candidate = function(&trial)?;
                 accepted = Some((candidate, step));
                 Ok(candidate)
@@ -346,22 +398,24 @@ where
             };
             swap(&mut solution, &mut trial);
             let updated = gradient(&solution)?;
-            let (mut s, mut y) = if history.len() == self.history {
-                let (s, y, _) = history.pop_front().unwrap();
-                (s, y)
-            } else {
-                (Vector::zero(n), Vector::zero(n))
-            };
-            s.iter_mut()
-                .zip(direction.iter())
-                .for_each(|(s, direction)| *s = direction * step);
-            y.iter_mut()
-                .zip(updated.as_flat().iter().zip(residual.as_flat()))
-                .for_each(|(y, (updated, residual))| *y = updated - residual);
-            let curvature = dot(s.as_slice(), y.as_slice());
-            if curvature > CURVATURE_FLOOR * norm(s.as_slice()) * norm(y.as_slice()) {
-                history.push_back((s, y, 1.0 / curvature));
-            }
+            timed(Part::History, || {
+                let (mut s, mut y) = if history.len() == self.history {
+                    let (s, y, _) = history.pop_front().unwrap();
+                    (s, y)
+                } else {
+                    (Vector::zero(n), Vector::zero(n))
+                };
+                s.iter_mut()
+                    .zip(direction.iter())
+                    .for_each(|(s, direction)| *s = direction * step);
+                y.iter_mut()
+                    .zip(updated.as_flat().iter().zip(residual.as_flat()))
+                    .for_each(|(y, (updated, residual))| *y = updated - residual);
+                let curvature = dot(s.as_slice(), y.as_slice());
+                if curvature > CURVATURE_FLOOR * norm(s.as_slice()) * norm(y.as_slice()) {
+                    history.push_back((s, y, 1.0 / curvature));
+                }
+            });
             residual = updated;
             value = candidate;
         }

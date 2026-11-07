@@ -252,6 +252,34 @@ fn targets_are_mirror_symmetric() {
     }
 }
 
+/// The best rate, in GB/s, at which `threads` threads stream through three arrays that each
+/// overflow the caches, as `a = b + scalar * c` does (the STREAM triad).
+fn triad(threads: usize) -> f64 {
+    use std::time::Instant;
+    const LENGTH: usize = 1 << 25;
+    let b = vec![1.0_f64; LENGTH];
+    let c = vec![2.0_f64; LENGTH];
+    let mut a = vec![0.0_f64; LENGTH];
+    let chunk = LENGTH.div_ceil(threads);
+    (0..6)
+        .map(|_| {
+            let started = Instant::now();
+            std::thread::scope(|scope| {
+                a.chunks_mut(chunk)
+                    .zip(b.chunks(chunk).zip(c.chunks(chunk)))
+                    .for_each(|(a, (b, c))| {
+                        scope.spawn(move || {
+                            a.iter_mut()
+                                .zip(b.iter().zip(c))
+                                .for_each(|(a, (b, c))| *a = b + 3.0 * c)
+                        });
+                    })
+            });
+            3.0 * 8.0 * LENGTH as f64 / started.elapsed().as_secs_f64() * 1.0e-9
+        })
+        .fold(0.0, f64::max)
+}
+
 /// Where the time of an energy fit goes, on a mesh as large as `SCALE` makes it.
 ///
 /// Run alone and in release, so the numbers are not those of unoptimized code:
@@ -264,7 +292,7 @@ fn targets_are_mirror_symmetric() {
 #[ignore]
 fn profile_fit() {
     use super::{
-        Fitting, Freedom, Part,
+        Fitting, Freedom, HISTORY, Part,
         profile::{CALLS, NANOSECONDS, STEPS, UNKNOWNS, reset},
     };
     use crate::geometry::mesh::test::octahedron;
@@ -272,6 +300,7 @@ fn profile_fit() {
         mesh::Dualization,
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     };
+    use crate::math::optimize::{SolverPart, solver_profile};
     use core::sync::atomic::Ordering::Relaxed;
     use std::{env::var, time::Instant};
     let scale = var("SCALE")
@@ -302,7 +331,9 @@ fn profile_fit() {
     let built = started.elapsed();
     let nodes = mesh.number_of_nodes();
     let elements = mesh.iter().flatten().count();
+    let corners: usize = mesh.iter().flatten().map(|element| element.len()).sum();
     reset();
+    solver_profile::reset();
     let started = Instant::now();
     mesh.inflate(&target, freedom, Fitting::Soft).unwrap();
     let total = started.elapsed().as_secs_f64() * 1.0e3;
@@ -352,9 +383,83 @@ fn profile_fit() {
         "backtracks per step: {:.2}",
         calls(Part::Objective).saturating_sub(calls(Part::Descent)) as f64 / steps.max(1) as f64
     );
+
+    // The bandwidth the machine offers, on the threads this run has and on one.
+    let (peak, single) = (triad(threads), triad(1));
+    println!();
     println!(
-        "L-BFGS vectors: about {:.1} MB ({} bytes per unknown node)",
-        unknowns as f64 * 3.0 * 8.0 * 2.0 * 8.0 * 1.0e-6,
-        3 * 8 * 2 * 8
+        "memory bandwidth (triad): {peak:.1} GB/s on {threads} threads, {single:.1} GB/s on one"
     );
+
+    // The L-BFGS own work in parts. The traffic is the passes over whole vectors that each part
+    // makes, counted in 8-byte numbers, one pass reading or writing one vector of n numbers. The
+    // two-loop recursion works on blocks that each worker keeps in its cache, so only the
+    // corrections stream from memory: both vectors of a pair are read twice, once in each loop,
+    // and the newest pair is read twice more for the scaling.
+    let n = 3.0 * unknowns as f64;
+    let m = HISTORY as f64;
+    let solver_ms =
+        |part: SolverPart| solver_profile::NANOSECONDS[part as usize].load(Relaxed) as f64 * 1.0e-6;
+    let solver_calls = |part: SolverPart| solver_profile::CALLS[part as usize].load(Relaxed);
+    println!();
+    println!(
+        "L-BFGS own work, by part (n = {} numbers, history {})",
+        n as u64, HISTORY
+    );
+    println!(
+        "{:<22}{:>8}{:>12}{:>12}{:>9}{:>9}{:>8}",
+        "", "calls", "total ms", "ms/call", "passes", "GB/s", "peak"
+    );
+    let mut attributed = 0.0;
+    for (name, part, passes) in [
+        ("norm of the gradient", SolverPart::Norm, 1.0),
+        ("two-loop recursion", SolverPart::TwoLoop, 4.0 * m + 2.0),
+        ("negated direction", SolverPart::Decrement, 2.0),
+        ("slope", SolverPart::Slope, 2.0),
+        ("trial point", SolverPart::Trial, 3.0),
+        ("history update", SolverPart::History, 11.0),
+    ] {
+        let (time, number) = (solver_ms(part), solver_calls(part));
+        attributed += time;
+        let gigabytes = passes * n * 8.0 * 1.0e-9 / (time / number.max(1) as f64 * 1.0e-3);
+        println!(
+            "{name:<22}{number:>8}{time:>12.1}{:>12.3}{passes:>9.0}{gigabytes:>9.1}{:>7.0}%",
+            time / number.max(1) as f64,
+            100.0 * gigabytes / peak
+        );
+    }
+    println!(
+        "{:<22}{:>8}{:>12.1}",
+        "not attributed",
+        "",
+        own - attributed
+    );
+
+    // The objective and the derivative against the same bandwidth. The bytes are the least that
+    // must move with perfect caching: the connectivity and the coordinates once, and for the
+    // derivative the gradient once more, so the share of the bandwidth is a floor.
+    let coordinates = 3.0 * 8.0 * nodes as f64;
+    let connectivity = 8.0 * corners as f64;
+    println!();
+    println!("objective and derivative (traffic is a floor, perfect caching assumed)");
+    println!(
+        "{:<22}{:>12}{:>12}{:>9}{:>8}",
+        "", "ms/call", "MB/call", "GB/s", "peak"
+    );
+    for (name, part, bytes) in [
+        ("objective", Part::Objective, connectivity + coordinates),
+        (
+            "derivative",
+            Part::Derivative,
+            connectivity + 2.0 * coordinates,
+        ),
+    ] {
+        let time = milliseconds(part) / calls(part).max(1) as f64;
+        let gigabytes = bytes * 1.0e-9 / (time * 1.0e-3);
+        println!(
+            "{name:<22}{time:>12.3}{:>12.1}{gigabytes:>9.1}{:>7.0}%",
+            bytes * 1.0e-6,
+            100.0 * gigabytes / peak
+        );
+    }
 }

@@ -24,6 +24,9 @@ pub use nonlinear::{
     BarzilaiBorwein, BarzilaiBorweinStep, Conjugacy, ConjugateGradient, Corrections, Descent,
     GradientDescent, LimitedMemoryBFGS, NewtonRaphson, StepEstimator,
 };
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use nonlinear::{SolverPart, solver_profile};
 pub use preconditioning::{Jacobi, Precondition, Preconditioning, Scaled};
 pub use strategy::SolveStrategy;
 pub use tolerance::Tolerances;

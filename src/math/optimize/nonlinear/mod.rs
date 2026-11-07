@@ -7,6 +7,8 @@ mod step_size;
 pub use conjugate_gradient::{Conjugacy, ConjugateGradient};
 pub use gradient_descent::GradientDescent;
 pub use lbfgs::{Corrections, Descent, LimitedMemoryBFGS};
+#[cfg(test)]
+pub(crate) use lbfgs::{Part as SolverPart, profile as solver_profile};
 pub use newton_raphson::NewtonRaphson;
 pub use step_size::{BarzilaiBorwein, BarzilaiBorweinStep, StepEstimator};
 
