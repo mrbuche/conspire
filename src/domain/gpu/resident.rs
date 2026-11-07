@@ -17,6 +17,27 @@ const DYNAMICS: &str = include_str!("dynamics.cu");
 /// The code of the library for the device, built by `gpu-kernels/build.sh`.
 const LIBRARY: &str = include_str!("kernels.ptx");
 
+/// The PTX of the library as it is given to the driver.
+///
+/// The compiler writes the multiplications, additions and subtractions with the rounding mode
+/// named, `mul.rn.f64`, and the driver does not fuse an instruction whose rounding is named into
+/// a fused multiply-add, which is two operations in one for the arithmetic of a device. With
+/// `CONSPIRE_GPU_FMA` set the rounding is left unnamed, which lets the driver fuse them, as it
+/// does for the kernels written for the device. The results then differ in the last bits, as
+/// they do when a fused multiply-add is used on any processor.
+fn library_ptx() -> std::borrow::Cow<'static, str> {
+    if std::env::var_os("CONSPIRE_GPU_FMA").is_some() {
+        std::borrow::Cow::Owned(
+            LIBRARY
+                .replace("mul.rn.f64", "mul.f64")
+                .replace("add.rn.f64", "add.f64")
+                .replace("sub.rn.f64", "sub.f64"),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(LIBRARY)
+    }
+}
+
 /// Whether the library has a kernel of the name.
 pub(super) fn library_has(name: &str) -> bool {
     LIBRARY.contains(&format!(".visible .entry {name}("))
@@ -202,7 +223,7 @@ impl<R: Real> State<R> {
         device.bind()?;
         let to_device = |values: &[f64]| values.iter().map(|&x| R::from_f64(x)).collect::<Vec<_>>();
         let library_module = if library {
-            Some(device.module_from_ptx(LIBRARY)?)
+            Some(device.module_from_ptx(&library_ptx())?)
         } else {
             None
         };
