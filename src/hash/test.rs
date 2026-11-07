@@ -1,6 +1,9 @@
-use crate::hash::{FxHashMap, FxHashSet, FxHasher};
+use crate::hash::FxHasher;
+#[cfg(feature = "std")]
+use crate::hash::{FxHashMap, FxHashSet};
 use core::hash::Hasher;
 
+#[cfg(feature = "std")]
 #[test]
 fn map_inserts_and_reads() {
     let mut map = FxHashMap::<(usize, usize), usize>::default();
@@ -12,6 +15,7 @@ fn map_inserts_and_reads() {
     assert_eq!(map.len(), 2);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn set_deduplicates() {
     let mut set = FxHashSet::<usize>::default();

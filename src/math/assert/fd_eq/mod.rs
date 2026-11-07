@@ -24,6 +24,7 @@ pub(super) fn eq_within_fd_tol_impl<T: Display + FiniteDifference + Tensor>(
                 ),
             })
         } else {
+            #[cfg(feature = "std")]
             println!(
                 "Warning: \n\x1b[1;93mAssertion `left ≈= right` was weak in {count} places.\x1b[0m"
             );
