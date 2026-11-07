@@ -251,3 +251,110 @@ fn targets_are_mirror_symmetric() {
         }
     }
 }
+
+/// Where the time of an energy fit goes, on a mesh as large as `SCALE` makes it.
+///
+/// Run alone and in release, so the numbers are not those of unoptimized code:
+/// `cargo test --release -F geometry --lib profile_fit -- --ignored --nocapture`
+///
+/// - `SCALE` sets the size of the mesh, the number of cells growing about as its cube (5.0).
+/// - `FREEDOM` is `whole` to fit every node, or `shell` for the boundary and its neighbours.
+/// - The threads are those the process may run on, so `taskset -c 0-7` runs it on eight.
+#[test]
+#[ignore]
+fn profile_fit() {
+    use super::{
+        Fitting, Freedom, Part,
+        profile::{CALLS, NANOSECONDS, STEPS, UNKNOWNS, reset},
+    };
+    use crate::geometry::mesh::test::octahedron;
+    use crate::geometry::{
+        mesh::Dualization,
+        ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
+    };
+    use core::sync::atomic::Ordering::Relaxed;
+    use std::{env::var, time::Instant};
+    let scale = var("SCALE")
+        .ok()
+        .and_then(|scale| scale.parse().ok())
+        .unwrap_or(5.0);
+    let freedom = match var("FREEDOM").as_deref() {
+        Ok("shell") => Freedom::Shell,
+        _ => Freedom::Whole,
+    };
+    let target = octahedron(2);
+    let started = Instant::now();
+    let mut octree = Octree::<u16, usize>::from_features(
+        &target,
+        scale,
+        CurvatureSizing {
+            tolerance: None,
+            ..Default::default()
+        },
+        0,
+    )
+    .unwrap();
+    octree
+        .equilibrate(Balancing::Weak(1), Pairing::Regular)
+        .unwrap();
+    let mut mesh = octree.dualize();
+    target.trim(&mut mesh).unwrap();
+    let built = started.elapsed();
+    let nodes = mesh.number_of_nodes();
+    let elements = mesh.iter().flatten().count();
+    reset();
+    let started = Instant::now();
+    mesh.inflate(&target, freedom, Fitting::Soft).unwrap();
+    let total = started.elapsed().as_secs_f64() * 1.0e3;
+    let threads = std::thread::available_parallelism().map_or(1, |threads| threads.get());
+    let steps = STEPS.load(Relaxed);
+    let unknowns = UNKNOWNS.load(Relaxed);
+    let milliseconds = |part: Part| NANOSECONDS[part as usize].load(Relaxed) as f64 * 1.0e-6;
+    let calls = |part: Part| CALLS[part as usize].load(Relaxed);
+    println!();
+    println!("mesh: {nodes} nodes, {elements} elements, built in {built:?}");
+    println!(
+        "fit: {freedom:?}, {threads} threads, last sweep {unknowns} unknowns, {steps} steps in all"
+    );
+    println!("total {total:.1} ms");
+    println!(
+        "{:<22}{:>8}{:>12}{:>12}{:>8}",
+        "", "calls", "total ms", "ms/call", "share"
+    );
+    let row = |name: &str, number: u64, time: f64| {
+        println!(
+            "{name:<22}{number:>8}{time:>12.1}{:>12.3}{:>7.1}%",
+            time / number.max(1) as f64,
+            100.0 * time / total
+        )
+    };
+    let nested = [Part::Objective, Part::Derivative, Part::Assign];
+    for (name, part) in [
+        ("sizes", Part::Sizes),
+        ("targets (bvh)", Part::Targets),
+        ("measure", Part::Measure),
+        ("descent", Part::Descent),
+    ] {
+        row(name, calls(part), milliseconds(part));
+    }
+    println!("  of which");
+    for (name, part) in [
+        ("objective", Part::Objective),
+        ("derivative", Part::Derivative),
+        ("assign coordinates", Part::Assign),
+    ] {
+        row(name, calls(part), milliseconds(part));
+    }
+    let own =
+        milliseconds(Part::Descent) - nested.iter().map(|&part| milliseconds(part)).sum::<f64>();
+    row("L-BFGS own work", calls(Part::Descent), own);
+    println!(
+        "backtracks per step: {:.2}",
+        calls(Part::Objective).saturating_sub(calls(Part::Descent)) as f64 / steps.max(1) as f64
+    );
+    println!(
+        "L-BFGS vectors: about {:.1} MB ({} bytes per unknown node)",
+        unknowns as f64 * 3.0 * 8.0 * 2.0 * 8.0 * 1.0e-6,
+        3 * 8 * 2 * 8
+    );
+}

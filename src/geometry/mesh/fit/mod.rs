@@ -46,6 +46,56 @@ const TOLERANCE: Scalar = 1.0e-3;
 const WEIGHT_FLOOR: Quantity = Dimensionless::of(0.3);
 const WINDOW: usize = 3;
 
+/// The parts of a fit that are timed when profiling.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum Part {
+    Assign,
+    Derivative,
+    Descent,
+    Measure,
+    Objective,
+    Sizes,
+    Targets,
+}
+
+#[cfg(test)]
+pub(crate) mod profile {
+    use super::Part;
+    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+    pub(crate) const PARTS: usize = 7;
+    pub(crate) static NANOSECONDS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
+    pub(crate) static CALLS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
+    pub(crate) static UNKNOWNS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static STEPS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) fn reset() {
+        NANOSECONDS
+            .iter()
+            .chain(&CALLS)
+            .for_each(|c| c.store(0, Relaxed));
+        UNKNOWNS.store(0, Relaxed);
+        STEPS.store(0, Relaxed);
+    }
+    pub(super) fn record(part: Part, started: std::time::Instant) {
+        NANOSECONDS[part as usize].fetch_add(started.elapsed().as_nanos() as u64, Relaxed);
+        CALLS[part as usize].fetch_add(1, Relaxed);
+    }
+}
+
+#[cfg(test)]
+fn timed<T>(part: Part, work: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let result = work();
+    profile::record(part, started);
+    result
+}
+
+#[cfg(not(test))]
+#[inline(always)]
+fn timed<T>(_: Part, work: impl FnOnce() -> T) -> T {
+    work()
+}
+
 fn solver(typical: Quantity<Length>, residual: Scalar) -> LimitedMemoryBFGS<Armijo, Length> {
     LimitedMemoryBFGS {
         abs_tol: Tolerances {
@@ -229,7 +279,8 @@ impl Mesh<3> {
         let mut previous = Quantity::<Length>::new(Scalar::INFINITY);
         let mut window = VecDeque::<Quantity<Length>>::with_capacity(WINDOW);
         for sweep in 0..SWEEPS {
-            let (lengths, scales) = sizes(&neighbors, &elements, coordinates);
+            let (lengths, scales) =
+                timed(Part::Sizes, || sizes(&neighbors, &elements, coordinates));
             let mut state = Sweep {
                 element_chunk,
                 elements: &elements,
@@ -240,11 +291,13 @@ impl Mesh<3> {
                 nodes,
                 scales,
                 slot: &slot,
-                targets: oracle.targets(&faces, coordinates, face_chunk)?,
+                targets: timed(Part::Targets, || {
+                    oracle.targets(&faces, coordinates, face_chunk)
+                })?,
                 tracked: &tracked,
                 unknowns,
             };
-            let (quality, worst) = state.measure(coordinates);
+            let (quality, worst) = timed(Part::Measure, || state.measure(coordinates));
             if sweep > 0 {
                 epsilon = schedule(epsilon, quality, previous, worst);
                 state.epsilon = epsilon;
@@ -573,26 +626,37 @@ impl Sweep<'_> {
         let residual = CONVERGENCE * initial.norm().value().max(1.0);
         let shared = RefCell::new(coordinates);
         let assign = |x: &Coordinates<3>| {
-            let mut coordinates = shared.borrow_mut();
-            self.nodes
-                .iter()
-                .zip(x.iter())
-                .for_each(|(&node, entry)| coordinates[node] = entry.clone())
+            timed(Part::Assign, || {
+                let mut coordinates = shared.borrow_mut();
+                self.nodes
+                    .iter()
+                    .zip(x.iter())
+                    .for_each(|(&node, entry)| coordinates[node] = entry.clone())
+            })
         };
-        let descent = solver(typical, residual)
-            .descend(
+        let descent = timed(Part::Descent, || {
+            solver(typical, residual).descend(
                 |x| {
                     assign(x);
-                    Ok(self.objective(&shared.borrow()))
+                    Ok(timed(Part::Objective, || self.objective(&shared.borrow())))
                 },
                 |x| {
                     assign(x);
-                    Ok(self.derivative(&shared.borrow()))
+                    Ok(timed(Part::Derivative, || {
+                        self.derivative(&shared.borrow())
+                    }))
                 },
                 initial.clone(),
                 Vec::new(),
             )
-            .map_err(|_| "could not minimize the fit energy")?;
+        })
+        .map_err(|_| "could not minimize the fit energy")?;
+        #[cfg(test)]
+        {
+            use core::sync::atomic::Ordering::Relaxed;
+            profile::STEPS.fetch_add(descent.steps as u64, Relaxed);
+            profile::UNKNOWNS.store(self.nodes.len() as u64, Relaxed);
+        }
         assign(&descent.solution);
         let shift = self
             .nodes
