@@ -387,7 +387,10 @@ fn single_block_steps() {
 
 /// The lattice of two grids of `cells` cells on a side, side by side along one axis, and the cells
 /// of each, which share the plane of nodes between them.
-fn two_lattices(cells: usize) -> (Vec<[f64; 3]>, Vec<[usize; 8]>, Vec<[usize; 8]>) {
+/// The coordinates of the nodes and the nodes of the cells of each of two blocks.
+type TwoLattices = (Vec<[f64; 3]>, Vec<[usize; 8]>, Vec<[usize; 8]>);
+
+fn two_lattices(cells: usize) -> TwoLattices {
     let nodes_x = 2 * cells + 1;
     let index = move |i: usize, j: usize, k: usize| (k * (cells + 1) + j) * nodes_x + i;
     let coordinates = (0..=cells)

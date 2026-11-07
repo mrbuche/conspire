@@ -16,6 +16,11 @@ const KERNELS: &str = include_str!("kernel.cu");
 const DYNAMICS: &str = include_str!("dynamics.cu");
 /// The code of the library for the device, built by `gpu-kernels/build.sh`.
 const LIBRARY: &str = include_str!("kernels.ptx");
+
+/// Whether the library has a kernel of the name.
+pub(super) fn library_has(name: &str) -> bool {
+    LIBRARY.contains(&format!(".visible .entry {name}("))
+}
 const THREADS_PER_BLOCK: usize = 128;
 /// How many steps of a run on the device are taken between looks for an inverted element.
 const CHECK_EVERY: usize = 1024;
@@ -126,6 +131,8 @@ impl Resident {
 
 struct BlockState<R> {
     items: u32,
+    /// The nodes of each element.
+    nodes_per_item: u32,
     nodes: u32,
     shear_modulus: R,
     bulk_modulus: R,
@@ -223,7 +230,7 @@ impl<R: Real> State<R> {
                             derivatives: device.buffer_of(&to_device(&shape.derivatives))?,
                             weights: device.buffer_of(&to_device(&shape.weights))?,
                         },
-                        blocks_kernels.on_the_fly_kernel,
+                        blocks_kernels.on_the_fly_kernel.as_str(),
                     )
                 } else {
                     (
@@ -231,7 +238,7 @@ impl<R: Real> State<R> {
                         Geometry::Library {
                             reference: device.buffer_of(&to_device(&layout.reference))?,
                         },
-                        blocks_kernels.forces_kernel,
+                        blocks_kernels.forces_kernel.as_str(),
                     )
                 }
             } else {
@@ -267,6 +274,7 @@ impl<R: Real> State<R> {
             };
             states.push(BlockState {
                 items: items as u32,
+                nodes_per_item: block.nodes_per_item as u32,
                 nodes: (block.offsets.len() - 1) as u32,
                 shear_modulus: R::from_f64(shear_modulus),
                 bulk_modulus: R::from_f64(bulk_modulus),
@@ -398,19 +406,37 @@ impl<R: Real> State<R> {
                     ))
                 }
             }?;
-            self.device.launch(
-                &block.gather_kernel,
-                block.nodes as usize,
-                THREADS_PER_BLOCK,
-                &[
-                    &block.nodes,
-                    &block.items,
-                    &block.offsets,
-                    &block.contributions,
-                    &block.item_forces,
-                    &self.forces,
-                ],
-            )?;
+            // The kernels of the library take the nodes of an element, as they are for any element.
+            if self.library {
+                self.device.launch(
+                    &block.gather_kernel,
+                    block.nodes as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.nodes,
+                        &block.items,
+                        &block.nodes_per_item,
+                        &block.offsets,
+                        &block.contributions,
+                        &block.item_forces,
+                        &self.forces,
+                    ],
+                )?;
+            } else {
+                self.device.launch(
+                    &block.gather_kernel,
+                    block.nodes as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.nodes,
+                        &block.items,
+                        &block.offsets,
+                        &block.contributions,
+                        &block.item_forces,
+                        &self.forces,
+                    ],
+                )?;
+            }
         }
         Ok(())
     }

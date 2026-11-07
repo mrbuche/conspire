@@ -1,6 +1,6 @@
 use super::{GpuError, GpuGradients, GpuKernels, GpuOptions, GpuPrecision, Resident};
 use crate::{
-    constitutive::solid::{elastic::GpuModel, hyperelastic::NeoHookean},
+    constitutive::solid::hyperelastic::NeoHookean,
     domain::solid::{dynamics::test::fixed_dofs, mass::MassMatrix},
     fem::{
         Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
