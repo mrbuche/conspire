@@ -80,6 +80,8 @@ struct Api {
     module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
     module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
+    function_attribute: unsafe extern "C" fn(*mut c_int, c_int, *mut c_void) -> c_int,
+    occupancy: unsafe extern "C" fn(*mut c_int, *mut c_void, c_int, usize) -> c_int,
     launch: unsafe extern "C" fn(
         *mut c_void,
         c_uint,
@@ -143,6 +145,8 @@ impl Api {
             module_load: driver.function("cuModuleLoadData")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
+            function_attribute: driver.function("cuFuncGetAttribute")?,
+            occupancy: driver.function("cuOccupancyMaxActiveBlocksPerMultiprocessor")?,
             launch: driver.function("cuLaunchKernel")?,
             error_string: driver.function("cuGetErrorString")?,
             program_create: compiler.function("nvrtcCreateProgram")?,
@@ -538,7 +542,33 @@ impl Module {
             unsafe { (self.api.module_function)(&mut function, self.module, name.as_ptr()) },
             "cuModuleGetFunction",
         )?;
+        if std::env::var_os("CONSPIRE_GPU_VERBOSE").is_some() {
+            self.report(&name, function);
+        }
         Ok(Function(function))
+    }
+    /// Says what limits how many threads of a kernel the device runs at once: the registers that
+    /// each thread has, the bytes that it keeps in local memory, which is the memory of the
+    /// device and slow, and how many blocks of the threads that the library launches in fit on a
+    /// multiprocessor at once. The device can hold 2048 threads of a multiprocessor at most, in
+    /// the devices that this is for, so fewer than 16 blocks of 128 is a kernel that the device
+    /// has fewer threads for than it could to hide the latency of its memory and arithmetic.
+    fn report(&self, name: &CString, function: *mut c_void) {
+        const THREADS: c_int = 128;
+        let (mut registers, mut local, mut blocks) = (0, 0, 0);
+        // SAFETY: the function is one of this module, and the attributes are those of the driver.
+        let known = unsafe {
+            (self.api.function_attribute)(&mut registers, 4, function) == 0
+                && (self.api.function_attribute)(&mut local, 3, function) == 0
+                && (self.api.occupancy)(&mut blocks, function, THREADS, 0) == 0
+        };
+        if known {
+            eprintln!(
+                "{}: {registers} registers per thread, {local} bytes of local memory, {blocks} blocks of {THREADS} threads per multiprocessor ({} of 2048 threads)",
+                name.to_string_lossy(),
+                blocks * THREADS
+            );
+        }
     }
 }
 
