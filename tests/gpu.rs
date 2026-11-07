@@ -10,7 +10,10 @@ use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
-        block::{Block, element::linear::Hexahedron},
+        block::{
+            Block,
+            element::linear::{Hexahedron, Pyramid, Tetrahedron, Wedge},
+        },
         boundary::{BoundaryConditions, Solid},
         solid::{
             DeviceExplicitDynamics, ElasticExplicitDynamics, Execution, GpuGradients, GpuKernels,
@@ -23,6 +26,12 @@ use conspire::{
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Elastic = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
+type OnePoint = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
+type FourPoints = Block<NeoHookean, Tetrahedron<4>, 4, 3, 4, 4, Quantity<Density>>;
+type Prisms = Block<NeoHookean, Wedge, 6, 3, 6, 6, Quantity<Density>>;
+type Pyramids = Block<NeoHookean, Pyramid, 8, 3, 5, 5, Quantity<Density>>;
+type ElasticOnePoint = Block<SaintVenantKirchhoff, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
+type ElasticPrisms = Block<SaintVenantKirchhoff, Wedge, 6, 3, 6, 6, Quantity<Density>>;
 
 const CELLS: usize = 6;
 const STEPS: usize = 40;
@@ -276,7 +285,10 @@ fn run_with_the_code_of_the_library_follows_the_run_on_the_calling_thread() {
 
 /// A lattice twice as long in one direction, and the cells on each side of the plane in the middle
 /// of it, which the nodes of the two sides share.
-fn two_lattices() -> (Vec<[f64; 3]>, Vec<[usize; 8]>, Vec<[usize; 8]>) {
+/// The coordinates of the nodes and the nodes of the cells of each of two blocks.
+type TwoLattices = (Vec<[f64; 3]>, Vec<[usize; 8]>, Vec<[usize; 8]>);
+
+fn two_lattices() -> TwoLattices {
     let nodes_x = 2 * CELLS + 1;
     let index = move |i: usize, j: usize, k: usize| (k * (CELLS + 1) + j) * nodes_x + i;
     let coordinates = (0..=CELLS)
@@ -512,5 +524,415 @@ fn run_of_a_model_of_two_models_follows_the_run_on_the_calling_thread() {
     assert!(
         format!("{error:?}").contains("Neo-Hookean"),
         "the error is not that: {error:?}"
+    );
+}
+
+// The linear elements other than the hexahedron, cut from the cells of the lattice of the grid.
+//
+// The corners of a cell are numbered by their bits, `1` for the first axis, `2` for the second
+// and `4` for the third, so that the cell is `corner(c)` for `c` in `0..8`. The nodes of an
+// element are ordered as the element asks, which is checked from the volume that they make: the
+// elements of the library are on the side of the corners that gives them a positive Jacobian.
+
+/// The sign of the volume of the tetrahedron that four points make, in the order of the element.
+fn volume(coordinates: &[[f64; 3]], a: usize, b: usize, c: usize, d: usize) -> f64 {
+    let subtract = |x: usize, y: usize| {
+        [
+            coordinates[x][0] - coordinates[y][0],
+            coordinates[x][1] - coordinates[y][1],
+            coordinates[x][2] - coordinates[y][2],
+        ]
+    };
+    let (u, v, w) = (subtract(b, a), subtract(c, a), subtract(d, a));
+    (u[1] * v[2] - u[2] * v[1]) * w[0]
+        + (u[2] * v[0] - u[0] * v[2]) * w[1]
+        + (u[0] * v[1] - u[1] * v[0]) * w[2]
+}
+
+/// The elements of every kind in the cells of the grid whose first index is in `slab`, the nodes
+/// being those of the lattice and the center of each cell that has pyramids.
+#[derive(Default)]
+struct Cut {
+    tetrahedra: Vec<[usize; 4]>,
+    wedges: Vec<[usize; 6]>,
+    pyramids: Vec<[usize; 5]>,
+}
+
+/// The lattice, with the centers of the cells of `pyramids` after its nodes, and the elements.
+fn cut_lattice(
+    tetrahedra: std::ops::Range<usize>,
+    wedges: std::ops::Range<usize>,
+    pyramids: std::ops::Range<usize>,
+) -> (Vec<[f64; 3]>, Cut) {
+    let mut coordinates = lattice();
+    let mut cut = Cut::default();
+    for k in 0..CELLS {
+        for j in 0..CELLS {
+            for i in 0..CELLS {
+                let corner = |c: usize| index(i + (c & 1), j + ((c >> 1) & 1), k + (c >> 2));
+                if tetrahedra.contains(&i) {
+                    // The six paths along the edges of the cell from one corner to the opposite.
+                    for axes in [
+                        [1, 2, 4],
+                        [1, 4, 2],
+                        [2, 1, 4],
+                        [2, 4, 1],
+                        [4, 1, 2],
+                        [4, 2, 1],
+                    ] {
+                        let mut nodes = [
+                            corner(0),
+                            corner(axes[0]),
+                            corner(axes[0] | axes[1]),
+                            corner(7),
+                        ];
+                        if volume(&coordinates, nodes[0], nodes[1], nodes[2], nodes[3]) < 0.0 {
+                            nodes.swap(1, 2);
+                        }
+                        cut.tetrahedra.push(nodes);
+                    }
+                }
+                if wedges.contains(&i) {
+                    for corners in [[0, 1, 2, 4, 5, 6], [3, 2, 1, 7, 6, 5]] {
+                        let mut nodes = corners.map(corner);
+                        if volume(&coordinates, nodes[0], nodes[1], nodes[2], nodes[3]) < 0.0 {
+                            nodes.swap(1, 2);
+                            nodes.swap(4, 5);
+                        }
+                        cut.wedges.push(nodes);
+                    }
+                }
+                if pyramids.contains(&i) {
+                    let center = coordinates.len();
+                    let mut middle = [0.0; 3];
+                    (0..8).for_each(|c| {
+                        (0..3).for_each(|x| middle[x] += coordinates[corner(c)][x] / 8.0)
+                    });
+                    coordinates.push(middle);
+                    // The six faces of the cell, each the base of a pyramid on the center.
+                    for base in [
+                        [0, 1, 3, 2],
+                        [4, 5, 7, 6],
+                        [0, 1, 5, 4],
+                        [2, 3, 7, 6],
+                        [0, 2, 6, 4],
+                        [1, 3, 7, 5],
+                    ] {
+                        let mut nodes = [
+                            corner(base[0]),
+                            corner(base[1]),
+                            corner(base[2]),
+                            corner(base[3]),
+                            center,
+                        ];
+                        if volume(&coordinates, nodes[0], nodes[1], nodes[3], nodes[4]) < 0.0 {
+                            nodes.swap(1, 3);
+                        }
+                        cut.pyramids.push(nodes);
+                    }
+                }
+            }
+        }
+    }
+    (coordinates, cut)
+}
+
+/// The ways of running a model on a device, with the tolerance of each: every way that there is
+/// for a model that is all Neo-Hookean, and the library alone for any.
+const EVERY_WAY: [(GpuPrecision, GpuGradients, GpuKernels, f64); 5] = [
+    (
+        GpuPrecision::F64,
+        GpuGradients::Stored,
+        GpuKernels::Handwritten,
+        1e-9,
+    ),
+    (
+        GpuPrecision::F64,
+        GpuGradients::OnTheFly,
+        GpuKernels::Handwritten,
+        1e-9,
+    ),
+    (
+        GpuPrecision::F32,
+        GpuGradients::Stored,
+        GpuKernels::Handwritten,
+        1e-3,
+    ),
+    (
+        GpuPrecision::F64,
+        GpuGradients::Stored,
+        GpuKernels::Library,
+        1e-9,
+    ),
+    (
+        GpuPrecision::F64,
+        GpuGradients::OnTheFly,
+        GpuKernels::Library,
+        1e-9,
+    ),
+];
+const LIBRARY_WAYS: [(GpuPrecision, GpuGradients, GpuKernels, f64); 2] = [
+    (
+        GpuPrecision::F64,
+        GpuGradients::Stored,
+        GpuKernels::Library,
+        1e-9,
+    ),
+    (
+        GpuPrecision::F64,
+        GpuGradients::OnTheFly,
+        GpuKernels::Library,
+        1e-9,
+    ),
+];
+
+/// Checks that a model, which is given with the coordinates of its nodes, runs on a device in each
+/// of the ways as it does on the calling thread. A macro, so that the model can be of any blocks.
+macro_rules! follows {
+    ($model:expr, $reference:expr, $ways:expr, $what:expr) => {{
+        let (model, reference) = (&$model, &$reference);
+        let (coordinates, velocities) = (deformed(reference), velocities(reference));
+        let expected = model
+            .integrate(
+                Execution::Serial,
+                Unchecked,
+                Lumped,
+                &VelocityVerlet::new(Time::seconds(STEP)),
+                &[Time::seconds(0.0), Time::seconds(STEPS as f64 * STEP)],
+                (coordinates.clone(), velocities.clone()),
+                &(),
+                &BoundaryConditions::<Solid<3>>::new(),
+            )
+            .unwrap();
+        let expected = (
+            components(expected.1.iter().last().unwrap()),
+            components(expected.2.iter().last().unwrap()),
+        );
+        for (precision, gradients, kernels, tolerance) in $ways {
+            let run = model.integrate_on_device(
+                GpuOptions {
+                    precision,
+                    gradients,
+                    kernels,
+                    ..GpuOptions::default()
+                },
+                Time::seconds(STEP),
+                STEPS,
+                (coordinates.clone(), velocities.clone()),
+                &BoundaryConditions::<Solid<3>>::new(),
+            );
+            let (found_coordinates, found_velocities) = match run {
+                Ok(run) => run,
+                Err(error) if no_device(&error) => return println!("skipped: {error:?}"),
+                Err(error) => panic!(
+                    "{} {precision:?} {gradients:?} {kernels:?}: {error:?}",
+                    $what
+                ),
+            };
+            let (gap, scale) = difference(&components(&found_coordinates), &expected.0);
+            assert!(
+                gap < tolerance * scale.max(1.0),
+                "{} {precision:?} {gradients:?} {kernels:?}: the coordinates differ by {gap}",
+                $what
+            );
+            let (gap, scale) = difference(&components(&found_velocities), &expected.1);
+            assert!(
+                gap < tolerance * scale.max(1.0),
+                "{} {precision:?} {gradients:?} {kernels:?}: the velocities differ by {gap}",
+                $what
+            );
+        }
+    }};
+}
+
+fn soft() -> NeoHookean {
+    NeoHookean {
+        shear_modulus: Stress::pascals(1.0e9),
+        bulk_modulus: Stress::pascals(5.0e9),
+    }
+}
+
+fn stiff() -> NeoHookean {
+    NeoHookean {
+        shear_modulus: Stress::pascals(3.0e9),
+        bulk_modulus: Stress::pascals(13.0e9),
+    }
+}
+
+fn elastic() -> SaintVenantKirchhoff {
+    SaintVenantKirchhoff {
+        shear_modulus: Stress::pascals(2.0e9),
+        bulk_modulus: Stress::pascals(9.0e9),
+    }
+}
+
+#[test]
+fn run_of_tetrahedra_of_one_point_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(0..CELLS, 0..0, 0..0);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = OnePoint::from((
+        stiff(),
+        Density::kilograms_per_cubic_meter(7.8e3),
+        cut.tetrahedra,
+        &reference,
+    ));
+    let model: Model<OnePoint, 3> = (block, reference).into();
+    follows!(model, coordinates, EVERY_WAY, "tetrahedra of one point");
+}
+
+#[test]
+fn run_of_tetrahedra_of_four_points_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(0..CELLS, 0..0, 0..0);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = FourPoints::from((
+        stiff(),
+        Density::kilograms_per_cubic_meter(7.8e3),
+        cut.tetrahedra,
+        &reference,
+    ));
+    let model: Model<FourPoints, 3> = (block, reference).into();
+    follows!(model, coordinates, EVERY_WAY, "tetrahedra of four points");
+}
+
+#[test]
+fn run_of_wedges_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(0..0, 0..CELLS, 0..0);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = Prisms::from((
+        stiff(),
+        Density::kilograms_per_cubic_meter(7.8e3),
+        cut.wedges,
+        &reference,
+    ));
+    let model: Model<Prisms, 3> = (block, reference).into();
+    follows!(model, coordinates, EVERY_WAY, "wedges");
+}
+
+#[test]
+fn run_of_pyramids_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(0..0, 0..0, 0..CELLS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = Pyramids::from((
+        stiff(),
+        Density::kilograms_per_cubic_meter(7.8e3),
+        cut.pyramids,
+        &reference,
+    ));
+    let model: Model<Pyramids, 3> = (block, reference).into();
+    follows!(model, coordinates, EVERY_WAY, "pyramids");
+}
+
+/// Five blocks of five kinds of elements, in slabs of the grid that share the nodes of the planes
+/// between them: hexahedra, tetrahedra of one point and of four, wedges and pyramids.
+#[test]
+fn run_of_a_model_of_every_kind_of_element_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(2..3, 4..5, 5..6);
+    // The tetrahedra of one point are the first half of them and those of four the second.
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let (first, second): (Vec<_>, Vec<_>) = {
+        let half = cut.tetrahedra.len() / 2;
+        let mut all = cut.tetrahedra;
+        let second = all.split_off(half);
+        (all, second)
+    };
+    let slab = |cells: std::ops::Range<usize>| {
+        hexahedra()
+            .into_iter()
+            .enumerate()
+            .filter(|(cell, _)| cells.contains(&(cell % CELLS)))
+            .map(|(_, nodes)| nodes)
+            .collect::<Vec<_>>()
+    };
+    let blocks = Blocks(
+        Grid::from((
+            stiff(),
+            Density::kilograms_per_cubic_meter(7.8e3),
+            slab(0..2),
+            &reference,
+        )),
+        Blocks(
+            OnePoint::from((
+                soft(),
+                Density::kilograms_per_cubic_meter(2.7e3),
+                first,
+                &reference,
+            )),
+            Blocks(
+                FourPoints::from((
+                    stiff(),
+                    Density::kilograms_per_cubic_meter(7.8e3),
+                    second,
+                    &reference,
+                )),
+                Blocks(
+                    Prisms::from((
+                        soft(),
+                        Density::kilograms_per_cubic_meter(2.7e3),
+                        cut.wedges,
+                        &reference,
+                    )),
+                    Pyramids::from((
+                        stiff(),
+                        Density::kilograms_per_cubic_meter(7.8e3),
+                        cut.pyramids,
+                        &reference,
+                    )),
+                ),
+            ),
+        ),
+    );
+    let model: Model<_, 3> = (blocks, reference).into();
+    follows!(model, coordinates, EVERY_WAY, "five kinds of elements");
+}
+
+/// The same, with a different model in some of the blocks, which the library alone can run.
+#[test]
+fn run_of_a_model_of_every_kind_of_element_and_two_models_follows_the_run_on_the_calling_thread() {
+    let (coordinates, cut) = cut_lattice(2..4, 4..5, 5..6);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let slab = |cells: std::ops::Range<usize>| {
+        hexahedra()
+            .into_iter()
+            .enumerate()
+            .filter(|(cell, _)| cells.contains(&(cell % CELLS)))
+            .map(|(_, nodes)| nodes)
+            .collect::<Vec<_>>()
+    };
+    let blocks = Blocks(
+        Grid::from((
+            stiff(),
+            Density::kilograms_per_cubic_meter(7.8e3),
+            slab(0..2),
+            &reference,
+        )),
+        Blocks(
+            ElasticOnePoint::from((
+                elastic(),
+                Density::kilograms_per_cubic_meter(2.7e3),
+                cut.tetrahedra,
+                &reference,
+            )),
+            Blocks(
+                ElasticPrisms::from((
+                    elastic(),
+                    Density::kilograms_per_cubic_meter(2.7e3),
+                    cut.wedges,
+                    &reference,
+                )),
+                Pyramids::from((
+                    soft(),
+                    Density::kilograms_per_cubic_meter(7.8e3),
+                    cut.pyramids,
+                    &reference,
+                )),
+            ),
+        ),
+    );
+    let model: Model<_, 3> = (blocks, reference).into();
+    follows!(
+        model,
+        coordinates,
+        LIBRARY_WAYS,
+        "five kinds of elements, two models"
     );
 }

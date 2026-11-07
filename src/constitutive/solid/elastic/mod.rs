@@ -70,6 +70,13 @@ pub enum GpuModel {
 
 #[cfg(feature = "gpu")]
 impl GpuModel {
+    /// The name of the model in the names of its kernels.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::NeoHookean { .. } => "neo_hookean",
+            Self::SaintVenantKirchhoff { .. } => "saint_venant_kirchhoff",
+        }
+    }
     /// The shear modulus and the bulk modulus, which are the parameters of every model here.
     pub fn moduli(&self) -> (f64, f64) {
         match *self {

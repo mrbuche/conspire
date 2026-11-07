@@ -193,26 +193,26 @@ pub unsafe extern "ptx-kernel" fn neo_hookean_hexahedron_forces(
     }
 }
 
-// What follows is a block of hexahedra of a Neo-Hookean solid as the run of dynamics on a device
-// takes it: the forces of the elements, which are the code of the library, then the forces on the
+// What follows is a block of elements of a solid as the run of dynamics on a device takes it,
+// each with `N` nodes and `G` integration points: the forces of the elements, which are the code of the library, then the forces on the
 // nodes, and the steps of velocity Verlet. The data of the elements and the forces are laid out
 // with the element last, so that consecutive threads, which are consecutive elements, read
 // and write consecutive addresses:
 //   connectivity[position * items + item]
-//   forces[(component * 8 + position) * items + item]
+//   forces[(component * N + position) * items + item]
 
 /// The integration data of one element of a block, read from arrays that have the element last,
 ///   reference[value * items + item],
 /// where the values of an element are the gradient vectors of its nodes at each integration point
 /// (point, then node, then component) and then the weights of the points. The threads of a warp
 /// are consecutive elements, so they read consecutive addresses.
-struct Coalesced {
+struct Coalesced<const G: usize, const N: usize> {
     reference: *const f64,
     items: usize,
     item: usize,
 }
 
-impl Coalesced {
+impl<const G: usize, const N: usize> Coalesced<G, N> {
     fn value(&self, value: usize) -> f64 {
         // SAFETY: the value is one of those of the element, which `reference` has for each
         // of the `items` elements.
@@ -220,12 +220,12 @@ impl Coalesced {
     }
 }
 
-impl IntegrationData<8, 8> for Coalesced {
+impl<const G: usize, const N: usize> IntegrationData<G, N> for Coalesced<G, N> {
     fn gradient_vectors_at(
         &self,
         point: usize,
-    ) -> TensorRank1List<3, Reference, 8, ReciprocalLength> {
-        let mut gradient_vectors = [[0.0; 3]; 8];
+    ) -> TensorRank1List<3, Reference, N, ReciprocalLength> {
+        let mut gradient_vectors = [[0.0; 3]; N];
         gradient_vectors
             .iter_mut()
             .enumerate()
@@ -234,17 +234,17 @@ impl IntegrationData<8, 8> for Coalesced {
                     .iter_mut()
                     .enumerate()
                     .for_each(|(component, value)| {
-                        *value = self.value((point * 8 + node) * 3 + component)
+                        *value = self.value((point * N + node) * 3 + component)
                     })
             });
         gradient_vectors.into()
     }
     fn integration_weight_at(&self, point: usize) -> Quantity<Volume> {
-        Volume::cubic_meters(self.value(8 * 8 * 3 + point))
+        Volume::cubic_meters(self.value(G * N * 3 + point))
     }
 }
 
-/// The nodal forces of each of `items` hexahedra of a block, by the code of the library, one to a
+/// The nodal forces of each of `items` elements of a block, by the code of the library, one to a
 /// thread. The first element whose Jacobian is not positive is put in `failure`, which is
 /// all ones when none is, and its forces are zeros.
 ///
@@ -254,14 +254,14 @@ impl IntegrationData<8, 8> for Coalesced {
 ///
 /// # Safety
 ///
-/// `reference` must have the values of each of `items` hexahedra, which is one element if
-/// `stride` is zero, `connectivity` must be `8 * items` nodes that `coordinates` has, `forces`
-/// must have `24 * items` values, and `failure` must be one.
+/// `reference` must have the values of each of `items` elements, which is one element if
+/// `stride` is zero, `connectivity` must be `N * items` nodes that `coordinates` has, `forces`
+/// must have `3 * N * items` values, and `failure` must be one.
 ///
 /// A `stride` of zero has every thread read the first element, which is for finding how much of
 /// the time is that of reading the elements, and is otherwise one.
 #[inline(always)]
-unsafe fn stored_forces<M: Elastic>(
+unsafe fn stored_forces<M: Elastic, const G: usize, const N: usize>(
     items: u32,
     stride: u32,
     reference: *const f64,
@@ -274,25 +274,25 @@ unsafe fn stored_forces<M: Elastic>(
     let item = thread();
     let items = items as usize;
     if item < items {
-        let element = Coalesced {
+        let element = Coalesced::<G, N> {
             reference,
             // The spacing of the values of the arrays is the number of elements whichever
             // element is read, so the probe only changes which one that is.
             items,
             item: item * stride as usize,
         };
-        let mut positions = [[0.0; 3]; 8];
+        let mut positions = [[0.0; 3]; N];
         positions.iter_mut().enumerate().for_each(|(a, position)| {
             // SAFETY: the node is one that `coordinates` has.
             let node = unsafe { *connectivity.add(a * items + item) } as usize;
             (0..3).for_each(|i| position[i] = unsafe { *coordinates.add(3 * node + i) });
         });
-        let mut nodal_forces = [[0.0; 3]; 8];
-        match nodal_forces_from::<_, _, 8, 8>(
+        let mut nodal_forces = [[0.0; 3]; N];
+        match nodal_forces_from::<_, _, G, N>(
             &element,
             &(),
             model,
-            &ElementNodalCoordinates::<8>::from(positions),
+            &ElementNodalCoordinates::<N>::from(positions),
         ) {
             Ok(computed) => computed.iter().enumerate().for_each(|(a, force)| {
                 force
@@ -309,7 +309,7 @@ unsafe fn stored_forces<M: Elastic>(
         nodal_forces.iter().enumerate().for_each(|(a, force)| {
             force.iter().enumerate().for_each(|(i, &component)| {
                 // SAFETY: the index is within the forces that there are.
-                unsafe { *forces.add((i * 8 + a) * items + item) = component }
+                unsafe { *forces.add((i * N + a) * items + item) = component }
             })
         });
     }
@@ -324,16 +324,16 @@ unsafe fn stored_forces<M: Elastic>(
 /// element makes them when it is made.
 ///   derivatives[(point * 8 + node) * 3 + component]
 ///   weights[point]
-struct OnTheFly {
-    nodes: [[f64; 3]; 8],
+struct OnTheFly<const G: usize, const N: usize> {
+    nodes: [[f64; 3]; N],
     derivatives: *const f64,
     weights: *const f64,
 }
 
-impl OnTheFly {
+impl<const G: usize, const N: usize> OnTheFly<G, N> {
     fn derivative(&self, point: usize, node: usize, component: usize) -> f64 {
         // SAFETY: the derivative is one of those of the parametric element, which the table has.
-        unsafe { *self.derivatives.add((point * 8 + node) * 3 + component) }
+        unsafe { *self.derivatives.add((point * N + node) * 3 + component) }
     }
     /// The cofactors of J at an integration point, which are its determinant times its inverse
     /// transpose, and its determinant.
@@ -361,15 +361,15 @@ impl OnTheFly {
     }
 }
 
-impl IntegrationData<8, 8> for OnTheFly {
+impl<const G: usize, const N: usize> IntegrationData<G, N> for OnTheFly<G, N> {
     fn gradient_vectors_at(
         &self,
         point: usize,
-    ) -> TensorRank1List<3, Reference, 8, ReciprocalLength> {
+    ) -> TensorRank1List<3, Reference, N, ReciprocalLength> {
         let (cofactors, determinant) = self.cofactors(point);
         // The inverse transpose of J is the cofactors over the determinant, with one reciprocal.
         let reciprocal = 1.0 / determinant;
-        let mut gradient_vectors = [[0.0; 3]; 8];
+        let mut gradient_vectors = [[0.0; 3]; N];
         gradient_vectors
             .iter_mut()
             .enumerate()
@@ -392,7 +392,7 @@ impl IntegrationData<8, 8> for OnTheFly {
     }
 }
 
-/// The nodal forces of each of `items` hexahedra of a block, by the code of the library, with
+/// The nodal forces of each of `items` elements of a block, by the code of the library, with
 /// the gradient vectors and weights made as they are needed from the reference coordinates of the
 /// nodes (see [`OnTheFly`]) in place of being read for each element. The rest is as for
 /// [`stored_forces`].
@@ -400,9 +400,9 @@ impl IntegrationData<8, 8> for OnTheFly {
 /// # Safety
 ///
 /// `reference_coordinates` must have the nodes that `connectivity` names, `derivatives` must be
-/// `8 * 8 * 3` values and `weights` eight, and the rest as for [`stored_forces`].
+/// `G * N * 3` values and `weights` `G`, and the rest as for [`stored_forces`].
 #[inline(always)]
-unsafe fn on_the_fly_forces<M: Elastic>(
+unsafe fn on_the_fly_forces<M: Elastic, const G: usize, const N: usize>(
     items: u32,
     reference_coordinates: *const f64,
     derivatives: *const f64,
@@ -416,8 +416,8 @@ unsafe fn on_the_fly_forces<M: Elastic>(
     let item = thread();
     let items = items as usize;
     if item < items {
-        let mut positions = [[0.0; 3]; 8];
-        let mut nodes = [[0.0; 3]; 8];
+        let mut positions = [[0.0; 3]; N];
+        let mut nodes = [[0.0; 3]; N];
         positions
             .iter_mut()
             .zip(nodes.iter_mut())
@@ -430,17 +430,17 @@ unsafe fn on_the_fly_forces<M: Elastic>(
                     node_reference[i] = *reference_coordinates.add(3 * node + i);
                 });
             });
-        let element = OnTheFly {
+        let element = OnTheFly::<G, N> {
             nodes,
             derivatives,
             weights,
         };
-        let mut nodal_forces = [[0.0; 3]; 8];
-        match nodal_forces_from::<_, _, 8, 8>(
+        let mut nodal_forces = [[0.0; 3]; N];
+        match nodal_forces_from::<_, _, G, N>(
             &element,
             &(),
             model,
-            &ElementNodalCoordinates::<8>::from(positions),
+            &ElementNodalCoordinates::<N>::from(positions),
         ) {
             Ok(computed) => computed.iter().enumerate().for_each(|(a, force)| {
                 force
@@ -457,19 +457,23 @@ unsafe fn on_the_fly_forces<M: Elastic>(
         nodal_forces.iter().enumerate().for_each(|(a, force)| {
             force.iter().enumerate().for_each(|(i, &component)| {
                 // SAFETY: the index is within the forces that there are.
-                unsafe { *forces.add((i * 8 + a) * items + item) = component }
+                unsafe { *forces.add((i * N + a) * items + item) = component }
             })
         });
     }
 }
 
-/// The kernels of a block of hexahedra of a model, in the two ways of getting the gradient vectors:
-/// the forces of the elements by the code of the library (see [`stored_forces`] and
-/// [`on_the_fly_forces`]), for the model that `$model` makes of a shear modulus and a bulk modulus.
+/// The kernels of a block of elements of a model with `$nodes` nodes and `$points` integration
+/// points, in the two ways of getting the gradient vectors: the forces of the elements by the code
+/// of the library (see [`stored_forces`] and [`on_the_fly_forces`]), for the model that `$model`
+/// makes of a shear modulus and a bulk modulus.
+///
+/// The names say the model and the sizes, `block_forces_<model>_g<points>_n<nodes>`, which is how
+/// the host finds the kernels of a block.
 macro_rules! block_kernels {
-    ($stored:ident, $on_the_fly:ident, $model:ident) => {
-        /// The nodal forces of the hexahedra of a block of this model, with the gradient vectors
-        /// and weights stored (see [`stored_forces`]).
+    ($stored:ident, $on_the_fly:ident, $model:ident, $points:literal, $nodes:literal) => {
+        /// The nodal forces of the elements of a block, with the gradient vectors and weights
+        /// stored (see [`stored_forces`]).
         ///
         /// # Safety
         ///
@@ -488,7 +492,7 @@ macro_rules! block_kernels {
         ) {
             // SAFETY: as for the function that this calls.
             unsafe {
-                stored_forces(
+                stored_forces::<_, $points, $nodes>(
                     items,
                     stride,
                     reference,
@@ -503,8 +507,8 @@ macro_rules! block_kernels {
                 )
             }
         }
-        /// The nodal forces of the hexahedra of a block of this model, with the gradient vectors
-        /// and weights made on the fly (see [`on_the_fly_forces`]).
+        /// The nodal forces of the elements of a block, with the gradient vectors and weights
+        /// made on the fly (see [`on_the_fly_forces`]).
         ///
         /// # Safety
         ///
@@ -524,7 +528,7 @@ macro_rules! block_kernels {
         ) {
             // SAFETY: as for the function that this calls.
             unsafe {
-                on_the_fly_forces(
+                on_the_fly_forces::<_, $points, $nodes>(
                     items,
                     reference_coordinates,
                     derivatives,
@@ -543,11 +547,164 @@ macro_rules! block_kernels {
     };
 }
 
-block_kernels!(block_forces, block_forces_on_the_fly, NeoHookean);
 block_kernels!(
-    block_forces_saint_venant_kirchhoff,
-    block_forces_on_the_fly_saint_venant_kirchhoff,
-    SaintVenantKirchhoff
+    block_forces_neo_hookean_g1_n4,
+    block_forces_on_the_fly_neo_hookean_g1_n4,
+    NeoHookean,
+    1,
+    4
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g4_n4,
+    block_forces_on_the_fly_neo_hookean_g4_n4,
+    NeoHookean,
+    4,
+    4
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g8_n8,
+    block_forces_on_the_fly_neo_hookean_g8_n8,
+    NeoHookean,
+    8,
+    8
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g6_n6,
+    block_forces_on_the_fly_neo_hookean_g6_n6,
+    NeoHookean,
+    6,
+    6
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g8_n5,
+    block_forces_on_the_fly_neo_hookean_g8_n5,
+    NeoHookean,
+    8,
+    5
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g4_n10,
+    block_forces_on_the_fly_neo_hookean_g4_n10,
+    NeoHookean,
+    4,
+    10
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g18_n15,
+    block_forces_on_the_fly_neo_hookean_g18_n15,
+    NeoHookean,
+    18,
+    15
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g27_n13,
+    block_forces_on_the_fly_neo_hookean_g27_n13,
+    NeoHookean,
+    27,
+    13
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g27_n27,
+    block_forces_on_the_fly_neo_hookean_g27_n27,
+    NeoHookean,
+    27,
+    27
+);
+
+block_kernels!(
+    block_forces_neo_hookean_g27_n20,
+    block_forces_on_the_fly_neo_hookean_g27_n20,
+    NeoHookean,
+    27,
+    20
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g1_n4,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g1_n4,
+    SaintVenantKirchhoff,
+    1,
+    4
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g4_n4,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g4_n4,
+    SaintVenantKirchhoff,
+    4,
+    4
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g8_n8,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g8_n8,
+    SaintVenantKirchhoff,
+    8,
+    8
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g6_n6,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g6_n6,
+    SaintVenantKirchhoff,
+    6,
+    6
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g8_n5,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g8_n5,
+    SaintVenantKirchhoff,
+    8,
+    5
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g4_n10,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g4_n10,
+    SaintVenantKirchhoff,
+    4,
+    10
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g18_n15,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g18_n15,
+    SaintVenantKirchhoff,
+    18,
+    15
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g27_n13,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n13,
+    SaintVenantKirchhoff,
+    27,
+    13
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g27_n27,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n27,
+    SaintVenantKirchhoff,
+    27,
+    27
+);
+
+block_kernels!(
+    block_forces_saint_venant_kirchhoff_g27_n20,
+    block_forces_on_the_fly_saint_venant_kirchhoff_g27_n20,
+    SaintVenantKirchhoff,
+    27,
+    20
 );
 
 /// The forces on `nodes` nodes, each the sum of the forces of the elements that have it, in the
@@ -559,11 +716,12 @@ block_kernels!(
 /// # Safety
 ///
 /// The offsets must be `nodes + 1` and the contributions what they say, within the forces of
-/// the elements, which are `24 * items`.
+/// the elements, which are `3 * nodes_per_item * items`.
 #[unsafe(no_mangle)]
 pub unsafe extern "ptx-kernel" fn gather(
     nodes: u32,
     items: u32,
+    nodes_per_item: u32,
     offsets: *const u32,
     contributions: *const u32,
     forces: *const f64,
@@ -571,7 +729,7 @@ pub unsafe extern "ptx-kernel" fn gather(
 ) {
     let node = thread();
     if node < nodes as usize {
-        let plane = 8 * items as usize;
+        let plane = nodes_per_item as usize * items as usize;
         // SAFETY: the node is within the nodes that there are.
         let (first, last, mut sum) = unsafe {
             (

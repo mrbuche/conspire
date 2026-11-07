@@ -132,9 +132,25 @@ pub struct GpuItems {
 /// it, and the name of the kernel that makes the forces of its elements.
 pub struct LibraryBlock {
     /// The name of the kernel that computes the forces of the elements.
-    pub forces_kernel: &'static str,
+    pub forces_kernel: String,
     /// The name of the kernel that does so with the gradient vectors made on the fly.
-    pub on_the_fly_kernel: &'static str,
+    pub on_the_fly_kernel: String,
+}
+
+impl LibraryBlock {
+    /// The kernels of the library for a block of a model, in which each element has `nodes` nodes
+    /// and `points` integration points, if the library has them. They are named for the model
+    /// and the sizes, which are all that the code of the library asks of an element.
+    pub fn new(model: &GpuModel, points: usize, nodes: usize) -> Option<Self> {
+        let suffix = format!("{}_g{points}_n{nodes}", model.name());
+        let block = Self {
+            forces_kernel: format!("block_forces_{suffix}"),
+            on_the_fly_kernel: format!("block_forces_on_the_fly_{suffix}"),
+        };
+        (resident::library_has(&block.forces_kernel)
+            && resident::library_has(&block.on_the_fly_kernel))
+        .then_some(block)
+    }
 }
 
 /// The shape functions of the elements of a block, at the integration points of its parametric

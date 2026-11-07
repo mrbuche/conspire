@@ -21,12 +21,11 @@ use crate::{
 };
 #[cfg(feature = "gpu")]
 use crate::{
-    constitutive::solid::elastic::GpuModel,
     domain::{
         gpu::{GpuItems, LibraryBlock, ShapeTables},
         parallel::ItemIndex,
     },
-    fem::block::element::{ElementNodalCoordinates, linear::Hexahedron},
+    fem::block::element::ElementNodalCoordinates,
     math::{Quantity, Tensor},
 };
 
@@ -122,21 +121,9 @@ where
                 weights: F::parametric_weights().iter().copied().collect(),
             }
         });
-        // The kernels of the library are for the elements that they were built for, which are
-        // known by their types.
-        let library =
-            (core::any::type_name::<F>() == core::any::type_name::<Hexahedron>()).then(|| {
-                match model {
-                    GpuModel::NeoHookean { .. } => LibraryBlock {
-                        forces_kernel: "block_forces",
-                        on_the_fly_kernel: "block_forces_on_the_fly",
-                    },
-                    GpuModel::SaintVenantKirchhoff { .. } => LibraryBlock {
-                        forces_kernel: "block_forces_saint_venant_kirchhoff",
-                        on_the_fly_kernel: "block_forces_on_the_fly_saint_venant_kirchhoff",
-                    },
-                }
-            });
+        // The kernels of the library are for a model and the number of nodes and integration
+        // points of an element, which are all that the code of the library asks of the element.
+        let library = LibraryBlock::new(&model, G, N);
         Some(GpuItems {
             library,
             shape,
