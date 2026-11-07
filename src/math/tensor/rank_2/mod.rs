@@ -591,15 +591,19 @@ impl<const D: usize, I, J, U> Hessian for TensorRank2<D, I, J, U> {
     }
 }
 
+fn over_minus_dimension<const D: usize>(trace: TensorRank0) -> TensorRank0 {
+    trace * (-1.0 / D as TensorRank0)
+}
+
 impl<const D: usize, I, J, U> Rank2 for TensorRank2<D, I, J, U> {
     type Transpose = TensorRank2<D, J, I, U>;
     fn deviatoric(&self) -> Self {
-        Self::identity() * (self.trace().value() / -(D as TensorRank0)) + self
+        Self::identity() * over_minus_dimension::<D>(self.trace().value()) + self
     }
     fn deviatoric_and_trace(&self) -> (Self, Quantity<U>) {
         let trace = self.trace();
         (
-            Self::identity() * (trace.value() / -(D as TensorRank0)) + self,
+            Self::identity() * over_minus_dimension::<D>(trace.value()) + self,
             trace,
         )
     }
@@ -980,15 +984,19 @@ impl<const D: usize, I, J, U> Div<&TensorRank0> for &TensorRank2<D, I, J, U> {
     }
 }
 
+#[allow(clippy::suspicious_op_assign_impl)]
 impl<const D: usize, I, J, U> DivAssign<TensorRank0> for TensorRank2<D, I, J, U> {
     fn div_assign(&mut self, tensor_rank_0: TensorRank0) {
-        self.iter_mut().for_each(|self_i| *self_i /= &tensor_rank_0);
+        let reciprocal = 1.0 / tensor_rank_0;
+        self.iter_mut().for_each(|self_i| *self_i *= &reciprocal);
     }
 }
 
+#[allow(clippy::suspicious_op_assign_impl)]
 impl<const D: usize, I, J, U> DivAssign<&TensorRank0> for TensorRank2<D, I, J, U> {
     fn div_assign(&mut self, tensor_rank_0: &TensorRank0) {
-        self.iter_mut().for_each(|self_i| *self_i /= tensor_rank_0);
+        let reciprocal = 1.0 / tensor_rank_0;
+        self.iter_mut().for_each(|self_i| *self_i *= &reciprocal);
     }
 }
 
