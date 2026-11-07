@@ -60,6 +60,16 @@ impl Library {
     }
 }
 
+/// The most registers that a thread may have in the kernels that are compiled, if
+/// `CONSPIRE_GPU_MAX_REGISTERS` says. A thread has at most 255, and a kernel with so many has few
+/// threads on a multiprocessor to hide the latency of its arithmetic with, so fewer registers can
+/// make it faster though some of what it holds then goes to local memory.
+fn register_limit() -> Option<u32> {
+    std::env::var("CONSPIRE_GPU_MAX_REGISTERS")
+        .ok()
+        .and_then(|limit| limit.parse().ok())
+}
+
 /// The functions of the driver and of NVRTC.
 struct Api {
     _driver: Library,
@@ -78,6 +88,13 @@ struct Api {
     download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
     fill: unsafe extern "C" fn(DevicePointer, c_uint, usize) -> c_int,
     module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
+    module_load_options: unsafe extern "C" fn(
+        *mut *mut c_void,
+        *const c_void,
+        c_uint,
+        *mut c_int,
+        *mut *mut c_void,
+    ) -> c_int,
     module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
     function_attribute: unsafe extern "C" fn(*mut c_int, c_int, *mut c_void) -> c_int,
@@ -143,6 +160,7 @@ impl Api {
             download: driver.function("cuMemcpyDtoH_v2")?,
             fill: driver.function("cuMemsetD32_v2")?,
             module_load: driver.function("cuModuleLoadData")?,
+            module_load_options: driver.function("cuModuleLoadDataEx")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
             function_attribute: driver.function("cuFuncGetAttribute")?,
@@ -299,6 +317,9 @@ impl Device {
             format!("--fmad={fmad}"),
             "--std=c++14".to_string(),
         ];
+        if let Some(limit) = register_limit() {
+            options.push(format!("--maxrregcount={limit}"));
+        }
         // The registers that a kernel uses and the bytes that it spills to local memory, which
         // limit how many threads the device runs at once, are in the log of the compiler.
         let verbose = std::env::var_os("CONSPIRE_GPU_VERBOSE").is_some();
@@ -381,10 +402,23 @@ impl Device {
         let image = CString::new(ptx).expect("PTX without nul");
         let mut module = null_mut();
         // SAFETY: the image is a C string of PTX, which the driver compiles and loads.
-        self.api.check(
-            unsafe { (self.api.module_load)(&mut module, image.as_ptr().cast()) },
-            "cuModuleLoadData",
-        )?;
+        let loaded = match register_limit() {
+            // The first of the options of the compiler of the driver is the most registers that a
+            // thread may have, and its value is given where a pointer would be.
+            Some(limit) => unsafe {
+                let mut options = [0 as c_int];
+                let mut values = [limit as usize as *mut c_void];
+                (self.api.module_load_options)(
+                    &mut module,
+                    image.as_ptr().cast(),
+                    1,
+                    options.as_mut_ptr(),
+                    values.as_mut_ptr(),
+                )
+            },
+            None => unsafe { (self.api.module_load)(&mut module, image.as_ptr().cast()) },
+        };
+        self.api.check(loaded, "cuModuleLoadData")?;
         Ok(Module {
             api: self.api.clone(),
             module,
