@@ -144,13 +144,21 @@ impl Resident {
     }
     /// Computes the nodal forces for the coordinates on the device, and waits for them.
     pub fn compute(&self, coordinates: &NodalCoordinates<3>) -> Result<(), GpuError> {
+        self.set_coordinates(coordinates)?;
+        self.run()
+    }
+    /// Gives the device the coordinates of the nodes.
+    pub fn set_coordinates(&self, coordinates: &NodalCoordinates<3>) -> Result<(), GpuError> {
         let coordinates = flatten(coordinates);
         assert_eq!(
             coordinates.len(),
             3 * self.nodes,
             "a model is run with the nodes that it has"
         );
-        self.coordinates.upload(&coordinates)?;
+        self.coordinates.upload(&coordinates)
+    }
+    /// Computes the nodal forces for the coordinates that the device has, and waits for them.
+    pub fn run(&self) -> Result<(), GpuError> {
         self.nodal_forces.fill(0)?;
         for block in &self.blocks {
             block.failure.fill(u32::MAX)?;

@@ -6,6 +6,11 @@
 //! must give the nodal forces of the model to the bit. And the forces on a device, which need
 //! one.
 
+mod common;
+
+use common::{
+    agree, components, deformed, density, disjoint, lattice, on_device, rubber, slab, steel,
+};
 use conspire::{
     constitutive::solid::{
         elastic::{DeviceModel, Elastic},
@@ -15,19 +20,19 @@ use conspire::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
         element::{
-            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
-            FiniteElementError, OnTheFly,
+            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
+            OnTheFly,
             linear::{Hexahedron, LinearElement, Tetrahedron},
             solid::{
                 ElementNodalForcesSolid,
                 elastic::{ElasticElement, ElasticFiniteElement},
             },
         },
-        solid::{NodalForcesSolid, elastic::ElasticElements},
+        solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError, GpuError, Resident},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, Resident},
     math::{Quantity, Tensor},
-    units::{Density, Stress},
+    units::Density,
 };
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
@@ -36,78 +41,6 @@ type Tetrahedra = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density
 
 const COLUMNS: usize = 3;
 const LAYERS: usize = 4;
-
-fn density() -> Quantity<Density> {
-    Density::kilograms_per_cubic_meter(7.8e3)
-}
-
-fn rubber() -> NeoHookean {
-    NeoHookean {
-        shear_modulus: Stress::pascals(3.0e9),
-        bulk_modulus: Stress::pascals(13.0e9),
-    }
-}
-
-fn steel() -> SaintVenantKirchhoff {
-    SaintVenantKirchhoff {
-        shear_modulus: Stress::pascals(80.0e9),
-        bulk_modulus: Stress::pascals(160.0e9),
-    }
-}
-
-/// Hexahedra filling the layers `layers` of a grid of `COLUMNS` by `COLUMNS` columns.
-fn slab(layers: core::ops::Range<usize>) -> Vec<[usize; 8]> {
-    let index = |i: usize, j: usize, k: usize| (k * (COLUMNS + 1) + j) * (COLUMNS + 1) + i;
-    layers
-        .flat_map(|k| {
-            (0..COLUMNS).flat_map(move |j| {
-                (0..COLUMNS).map(move |i| {
-                    [
-                        index(i, j, k),
-                        index(i + 1, j, k),
-                        index(i + 1, j + 1, k),
-                        index(i, j + 1, k),
-                        index(i, j, k + 1),
-                        index(i + 1, j, k + 1),
-                        index(i + 1, j + 1, k + 1),
-                        index(i, j + 1, k + 1),
-                    ]
-                })
-            })
-        })
-        .collect()
-}
-
-fn lattice() -> Vec<[f64; 3]> {
-    (0..=LAYERS)
-        .flat_map(|k| {
-            (0..=COLUMNS).flat_map(move |j| {
-                (0..=COLUMNS).map(move |i| {
-                    [
-                        i as f64 / COLUMNS as f64,
-                        j as f64 / COLUMNS as f64,
-                        k as f64 / LAYERS as f64,
-                    ]
-                })
-            })
-        })
-        .collect()
-}
-
-/// A smooth, small displacement so that every element has a nonzero stress.
-fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
-    coordinates
-        .iter()
-        .map(|&[x, y, z]| {
-            [
-                x + 3e-2 * (3.0 * y).sin(),
-                y + 2e-2 * (2.0 * z).sin(),
-                z + 4e-2 * (4.0 * x).sin(),
-            ]
-        })
-        .collect::<Vec<_>>()
-        .into()
-}
 
 /// Two blocks, and what they were made of.
 struct TwoBlocks {
@@ -119,9 +52,9 @@ struct TwoBlocks {
 
 /// Two blocks that share the nodes of the layer between them: rubber below and steel above.
 fn two_blocks() -> TwoBlocks {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
-    let (below, above) = (slab(0..2), slab(2..LAYERS));
+    let (below, above) = (slab(COLUMNS, 0..2), slab(COLUMNS, 2..LAYERS));
     let blocks = Blocks(
         Grid::from((rubber(), density(), below.clone(), &reference)),
         Steel::from((steel(), density(), above.clone(), &reference)),
@@ -173,7 +106,7 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
 
 #[test]
 fn a_block_of_another_shape_is_described_the_same_way() {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates);
     // The six tetrahedra of a cube that share its diagonal.
     let connectivity = vec![
@@ -302,51 +235,6 @@ fn the_second_pass_from_the_layout_gives_the_nodal_forces_of_the_model_to_the_bi
 // `CONSPIRE_REQUIRE_GPU` is set, which makes a missing device or missing kernels a failure, so
 // that a run on a machine that has a device cannot pass by skipping them.
 
-fn skip<T>(why: &str) -> Option<T> {
-    assert!(
-        std::env::var_os("CONSPIRE_REQUIRE_GPU").is_none(),
-        "CONSPIRE_REQUIRE_GPU is set and {why}"
-    );
-    eprintln!("skipped: {why}");
-    None
-}
-
-/// The model on the first device, with the operations of the kernels fused or not.
-fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Resident> {
-    match Resident::new(0, model, fused) {
-        Ok(resident) => Some(resident),
-        Err(GpuError::Unavailable(message)) => skip(&format!("there is no device: {message}")),
-        Err(GpuError::KernelsNotBuilt) => skip("the kernels are not built"),
-        Err(error) => panic!("{error}"),
-    }
-}
-
-fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
-    forces
-        .iter()
-        .flat_map(|force| force.iter().map(|component| component.value()))
-        .collect()
-}
-
-/// That the forces agree to a fraction of the largest of them.
-fn agree(found: &[f64], expected: &[f64], tolerance: f64) {
-    assert_eq!(found.len(), expected.len());
-    let largest = expected
-        .iter()
-        .fold(0.0_f64, |largest, x| largest.max(x.abs()));
-    let worst = found
-        .iter()
-        .zip(expected)
-        .fold(0.0_f64, |worst, (found, expected)| {
-            worst.max((found - expected).abs())
-        });
-    assert!(largest > 1e3, "the forces are {largest}, which is nothing");
-    assert!(
-        worst <= tolerance * largest,
-        "the forces differ by {worst} of up to {largest}"
-    );
-}
-
 #[test]
 fn a_model_of_two_blocks_has_the_forces_of_the_host_on_a_device() {
     let TwoBlocks {
@@ -409,9 +297,9 @@ fn on_the_fly_element_forces(
 /// so a device does what the host does with the same code, and the forces are the same to the bit.
 #[test]
 fn a_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_device() {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
-    let (below, above) = (slab(0..2), slab(2..LAYERS));
+    let (below, above) = (slab(COLUMNS, 0..2), slab(COLUMNS, 2..LAYERS));
     let model: Model<Blocks<Steel, Steel>, 3> = (
         Blocks(
             Steel::from((steel(), density(), below.clone(), &reference)),
@@ -450,31 +338,6 @@ fn a_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_d
                 "{found} and {expected} at {k}"
             );
         });
-}
-
-/// Elements that share no nodes, each the parametric element of its shape moved and bent a little
-/// differently, which are valid by construction.
-fn disjoint<const G: usize, const N: usize>(count: usize) -> (Vec<[usize; N]>, Vec<[f64; 3]>)
-where
-    LinearElement<G, N>: FiniteElement<G, 3, N, N>,
-{
-    let parametric = <LinearElement<G, N> as FiniteElement<G, 3, N, N>>::parametric_reference();
-    let (mut connectivity, mut coordinates) = (Vec::new(), Vec::new());
-    for element in 0..count {
-        let mut nodes = [0; N];
-        for (a, xi) in parametric.iter().enumerate() {
-            let xi: [f64; 3] = core::array::from_fn(|k| xi[k].value());
-            nodes[a] = coordinates.len();
-            let wobble = |i: usize| 0.03 * (1.7 * a as f64 + i as f64 + element as f64).sin();
-            coordinates.push([
-                4.0 * element as f64 + 1.1 * xi[0] + 0.2 * xi[1] - 0.1 * xi[2] + wobble(0),
-                0.05 * xi[0] + 0.9 * xi[1] + 0.15 * xi[2] + wobble(1),
-                -0.1 * xi[0] + 0.12 * xi[1] + 1.2 * xi[2] + wobble(2),
-            ]);
-        }
-        connectivity.push(nodes);
-    }
-    (connectivity, coordinates)
 }
 
 /// A model of a block of elements of one shape and one model has the forces of the host on a
@@ -646,4 +509,30 @@ fn the_forces_of_a_call_do_not_depend_on_the_calls_before_it() {
         a.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
         again.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
     );
+}
+
+/// Giving the device the coordinates and running are the two halves of a computation, and a run
+/// starts from nothing each time, so running again gives the same forces.
+#[test]
+fn giving_the_coordinates_and_running_is_computing() {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let current = deformed(&coordinates);
+    let Some(resident) = on_device(&model, true) else {
+        return;
+    };
+    let bits = |resident: &Resident| {
+        components(&resident.download().expect("the forces"))
+            .iter()
+            .map(|x| x.to_bits())
+            .collect::<Vec<_>>()
+    };
+    resident.compute(&current).expect("the forces");
+    let computed = bits(&resident);
+    resident.set_coordinates(&current).expect("the coordinates");
+    resident.run().expect("the forces");
+    assert_eq!(bits(&resident), computed);
+    resident.run().expect("the forces");
+    assert_eq!(bits(&resident), computed);
 }
