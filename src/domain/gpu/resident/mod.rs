@@ -1,8 +1,11 @@
-//! The forces of a model on a device.
+//! The forces of a model on a device, and steps of dynamics with them.
 //!
 //! What does not change between calls lives on the device: the reference coordinates, and for
 //! each block the connectivity, the parameters of the model, what the elements share, and the
 //! second pass of the forces. A call gives the device the coordinates, and gets the nodal forces.
+//!
+//! A run of dynamics keeps its velocities and accelerations there as well, and takes steps of
+//! velocity Verlet without anything going between the device and the host.
 
 use super::{
     DeviceBlock, DeviceBlocks, GpuError,
@@ -10,13 +13,15 @@ use super::{
     kernels,
 };
 use crate::{
-    domain::{ElementModelError, Model, NodalCoordinates},
+    domain::{
+        ElementModelError, Model, NodalAccelerations, NodalCoordinates, NodalVelocities,
+        solid::mass::NodalLumpedMasses,
+    },
     fem::{
         element::Failure,
         solid::{NodalForcesSolid, elastic::ElasticElements},
     },
     math::{Tensor, TensorRank1Vec},
-    units::Length,
 };
 use core::fmt::{self, Debug, Display, Formatter};
 
@@ -102,7 +107,15 @@ impl BlockOnDevice {
     }
 }
 
-/// A model on a device: the nodal forces of its blocks.
+/// The state of a run of dynamics on the device, and what steps it.
+struct Dynamics {
+    velocities: Buffer<f64>,
+    accelerations: Buffer<f64>,
+    masses: Buffer<f64>,
+    held: Buffer<u32>,
+}
+
+/// A model on a device: the nodal forces of its blocks, and the steps of dynamics.
 pub struct Resident {
     device: Device,
     nodes: usize,
@@ -110,6 +123,9 @@ pub struct Resident {
     coordinates: Buffer<f64>,
     nodal_forces: Buffer<f64>,
     blocks: Vec<BlockOnDevice>,
+    kick_drift_kernel: Function,
+    accelerate_kernel: Function,
+    dynamics: Option<Dynamics>,
     _module: Module,
 }
 
@@ -136,6 +152,9 @@ impl Resident {
             coordinates: device.buffer(reference.len())?,
             nodal_forces: device.buffer(reference.len())?,
             blocks,
+            kick_drift_kernel: module.function("kick_drift")?,
+            accelerate_kernel: module.function("accelerate")?,
+            dynamics: None,
             _module: module,
             device,
         })
@@ -161,9 +180,21 @@ impl Resident {
     }
     /// Computes the nodal forces for the coordinates that the device has, and waits for them.
     pub fn run(&self) -> Result<(), GpuError> {
+        self.forget_failures()?;
+        self.launch_forces()?;
+        self.device.synchronize()
+    }
+    /// Clears the failures that the elements have found.
+    fn forget_failures(&self) -> Result<(), GpuError> {
+        self.blocks
+            .iter()
+            .try_for_each(|block| block.failure.fill(u32::MAX))
+    }
+    /// Starts the computation of the nodal forces for the coordinates that the device has, and
+    /// does not wait for it, so that what follows it on the device is in order after it.
+    fn launch_forces(&self) -> Result<(), GpuError> {
         self.nodal_forces.fill(0)?;
         for block in &self.blocks {
-            block.failure.fill(u32::MAX)?;
             self.device.launch(
                 &block.forces_kernel,
                 block.items as usize,
@@ -195,7 +226,138 @@ impl Resident {
                 ],
             )?;
         }
-        self.device.synchronize()
+        Ok(())
+    }
+    /// Starts a run of dynamics from the coordinates and velocities, with the masses of the
+    /// nodes, and the degrees of freedom `held`, which are indexed as `3 * node + component`, and
+    /// have no velocity and no acceleration, as in dynamics on the host. The accelerations are
+    /// those of the forces on the coordinates.
+    pub fn start_dynamics(
+        &mut self,
+        masses: &NodalLumpedMasses,
+        held: &[usize],
+        coordinates: &NodalCoordinates<3>,
+        velocities: &NodalVelocities<3>,
+    ) -> Result<(), GpuError> {
+        assert_eq!(
+            masses.len(),
+            self.nodes,
+            "a model is run with the nodes that it has"
+        );
+        assert_eq!(
+            velocities.len(),
+            self.nodes,
+            "a model is run with the nodes that it has"
+        );
+        let mut velocities = flatten(velocities);
+        let mut flags = vec![0_u32; 3 * self.nodes];
+        for &dof in held {
+            flags[dof] = 1;
+            velocities[dof] = 0.0;
+        }
+        self.set_coordinates(coordinates)?;
+        let masses = masses.iter().map(|mass| mass.value()).collect::<Vec<_>>();
+        self.dynamics = Some(Dynamics {
+            velocities: self.device.buffer_of(&velocities)?,
+            accelerations: self.device.buffer(3 * self.nodes)?,
+            masses: self.device.buffer_of(&masses)?,
+            held: self.device.buffer_of(&flags)?,
+        });
+        self.forget_failures()?;
+        self.launch_forces()?;
+        self.launch_accelerate(0.0, false)?;
+        self.device.synchronize()?;
+        self.failed()
+    }
+    /// Takes `steps` steps of velocity Verlet of size `dt`, on the device and without copying
+    /// anything between the device and the host, and waits for them.
+    ///
+    /// An element that fails is not noticed until the steps are done, and then it is an error,
+    /// and the state is of no use.
+    pub fn steps(&self, dt: f64, steps: usize) -> Result<(), GpuError> {
+        let dynamics = self.started()?;
+        let count = u32::try_from(3 * self.nodes)
+            .map_err(|_| GpuError::Cuda("a model is too large for a device".to_string()))?;
+        self.forget_failures()?;
+        for _ in 0..steps {
+            self.device.launch(
+                &self.kick_drift_kernel,
+                3 * self.nodes,
+                THREADS_PER_BLOCK,
+                &[
+                    &count,
+                    &self.coordinates,
+                    &dynamics.velocities,
+                    &dynamics.accelerations,
+                    &dt,
+                ],
+            )?;
+            self.launch_forces()?;
+            self.launch_accelerate(dt, true)?;
+        }
+        self.device.synchronize()?;
+        self.failed()
+    }
+    fn started(&self) -> Result<&Dynamics, GpuError> {
+        self.dynamics.as_ref().ok_or_else(|| {
+            GpuError::Cuda("a run of dynamics is started before it is stepped".to_string())
+        })
+    }
+    /// Starts the accelerations that balance the forces, and the velocities another half step on
+    /// if `kick`.
+    fn launch_accelerate(&self, dt: f64, kick: bool) -> Result<(), GpuError> {
+        let dynamics = self.started()?;
+        let count = u32::try_from(3 * self.nodes)
+            .map_err(|_| GpuError::Cuda("a model is too large for a device".to_string()))?;
+        self.device.launch(
+            &self.accelerate_kernel,
+            3 * self.nodes,
+            THREADS_PER_BLOCK,
+            &[
+                &count,
+                &self.nodal_forces,
+                &dynamics.masses,
+                &dynamics.held,
+                &dynamics.accelerations,
+                &dynamics.velocities,
+                &dt,
+                &u32::from(kick),
+            ],
+        )
+    }
+    /// An error if an element failed in the computations since the failures were cleared.
+    fn failed(&self) -> Result<(), GpuError> {
+        match self.failure()? {
+            Some((block, failure)) => Err(GpuError::Failed {
+                block,
+                item: failure.item(),
+                point: failure.point(),
+            }),
+            None => Ok(()),
+        }
+    }
+    /// The coordinates, velocities and accelerations of the run of dynamics.
+    pub fn dynamics_state(
+        &self,
+    ) -> Result<
+        (
+            NodalCoordinates<3>,
+            NodalVelocities<3>,
+            NodalAccelerations<3>,
+        ),
+        GpuError,
+    > {
+        let dynamics = self.started()?;
+        let download = |buffer: &Buffer<f64>| -> Result<Vec<[f64; 3]>, GpuError> {
+            let mut values = vec![0.0; 3 * self.nodes];
+            buffer.download(&mut values)?;
+            Ok(values.as_chunks::<3>().0.to_vec())
+        };
+        Ok((
+            download(&self.coordinates)?.into(),
+            download(&dynamics.velocities)?.into(),
+            download(&dynamics.accelerations)?.into(),
+        ))
     }
     /// What the kernels of each block need of a multiprocessor of the device, for the blocks of
     /// threads that they are launched in: the kernel of the forces of the elements, and then the
@@ -261,9 +423,9 @@ impl Resident {
     }
 }
 
-fn flatten<I>(coordinates: &TensorRank1Vec<3, I, Length>) -> Vec<f64> {
-    coordinates
+fn flatten<I, U>(components: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
+    components
         .iter()
-        .flat_map(|coordinate| coordinate.iter().map(|component| component.value()))
+        .flat_map(|node| node.iter().map(|component| component.value()))
         .collect()
 }

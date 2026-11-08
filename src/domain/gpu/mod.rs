@@ -39,6 +39,16 @@ pub enum GpuError {
         /// The integration point of the element.
         point: usize,
     },
+    /// An element of a block failed in the steps of a run of dynamics on the device. The steps
+    /// are not stopped when it does, so the state after them is of no use.
+    Failed {
+        /// The block, in the order of the model.
+        block: usize,
+        /// The element of the block.
+        item: usize,
+        /// The integration point of the element.
+        point: usize,
+    },
     /// The driver reported an error.
     Cuda(String),
 }
@@ -58,6 +68,10 @@ impl Display for GpuError {
             Self::Disagreement { block, item, point } => write!(
                 f,
                 "The device found that integration point {point} of element {item} of block {block} fails, and the host does not."
+            ),
+            Self::Failed { block, item, point } => write!(
+                f,
+                "Integration point {point} of element {item} of block {block} failed in the steps on the device."
             ),
             Self::Cuda(message) => write!(f, "CUDA: {message}"),
         }

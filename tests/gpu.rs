@@ -9,7 +9,8 @@
 mod common;
 
 use common::{
-    agree, components, deformed, density, disjoint, lattice, on_device, rubber, slab, steel,
+    agree, bits, components, deformed, density, disjoint, flat, lattice, on_device, rubber, slab,
+    steel,
 };
 use conspire::{
     constitutive::solid::{
@@ -17,8 +18,9 @@ use conspire::{
         hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     },
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
         block::Block,
+        boundary::{BoundaryConditions, ConstrainAt, Displacement, Solid},
         element::{
             ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
             OnTheFly,
@@ -28,11 +30,14 @@ use conspire::{
                 elastic::{ElasticElement, ElasticFiniteElement},
             },
         },
-        solid::elastic::ElasticElements,
+        solid::{
+            ElasticExplicitDynamics, Execution, Lumped, MassChoice, Unchecked,
+            elastic::ElasticElements,
+        },
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError, Resident},
-    math::{Quantity, Tensor},
-    units::Density,
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, GpuError, Resident},
+    math::{Quantity, Tensor, integrate::VelocityVerlet},
+    units::{Density, Time},
 };
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
@@ -564,4 +569,260 @@ fn the_kernels_report_what_they_need_of_a_multiprocessor() {
             "{name}"
         );
     }
+}
+
+/// A step that a time grid of these has is exact in binary, so that the steps of the integrator
+/// of the host, which takes each from the difference of times, are all this.
+const DT: f64 = 1.0 / 1_048_576.0;
+
+/// A block of steel on a grid, held at its bottom layer.
+struct Steelwork {
+    model: Model<Steel, 3>,
+    coordinates: Vec<[f64; 3]>,
+    held: Vec<usize>,
+}
+
+fn steelwork() -> Steelwork {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = Steel::from((steel(), density(), slab(COLUMNS, 0..LAYERS), &reference));
+    Steelwork {
+        model: (block, reference).into(),
+        held: (0..3 * (COLUMNS + 1) * (COLUMNS + 1)).collect(),
+        coordinates,
+    }
+}
+
+/// A velocity that varies from node to node.
+fn moving(coordinates: &[[f64; 3]]) -> NodalVelocities<3> {
+    coordinates
+        .iter()
+        .map(|&[x, y, z]| {
+            [
+                0.7 * (2.0 * y + z).sin(),
+                0.4 * (3.0 * z).cos(),
+                0.9 * x * y,
+            ]
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
+/// The first half of a step and the second, which the device does with its own kernels, are the
+/// operations of the integrator of the library, in the same order, so that from the state and the
+/// forces that the device has, the host makes the next state to the bit, whether or not the
+/// forces are the same as the host's: each step is checked against the forces that the device
+/// itself made.
+#[test]
+fn a_step_on_the_device_is_the_step_of_the_integrator_to_the_bit() {
+    let Steelwork {
+        model,
+        coordinates,
+        held,
+    } = steelwork();
+    let Some(mut resident) = on_device(&model, false) else {
+        return;
+    };
+    let masses = Lumped.masses(&model);
+    let per_node = masses.iter().map(|mass| mass.value()).collect::<Vec<_>>();
+    resident
+        .start_dynamics(
+            &masses,
+            &held,
+            &deformed(&coordinates),
+            &moving(&coordinates),
+        )
+        .expect("the start");
+    for step in 0..10 {
+        let (x, v, a) = resident.dynamics_state().expect("the state");
+        let (x, v, a) = (flat(&x), flat(&v), flat(&a));
+        resident.steps(DT, 1).expect("the step");
+        let (x_next, v_next, a_next) = resident.dynamics_state().expect("the state");
+        let forces = components(&resident.download().expect("the forces"));
+        let half = (0..x.len())
+            .map(|i| a[i] * (DT * 0.5) + v[i])
+            .collect::<Vec<_>>();
+        let expected_x = (0..x.len())
+            .map(|i| half[i] * DT + x[i])
+            .collect::<Vec<_>>();
+        let expected_a = (0..x.len())
+            .map(|i| {
+                if held.contains(&i) {
+                    0.0
+                } else {
+                    -forces[i] / per_node[i / 3]
+                }
+            })
+            .collect::<Vec<_>>();
+        let expected_v = (0..x.len())
+            .map(|i| expected_a[i] * (DT * 0.5) + half[i])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            bits(&flat(&x_next)),
+            bits(&expected_x),
+            "coordinates, step {step}"
+        );
+        assert_eq!(
+            bits(&flat(&a_next)),
+            bits(&expected_a),
+            "accelerations, step {step}"
+        );
+        assert_eq!(
+            bits(&flat(&v_next)),
+            bits(&expected_v),
+            "velocities, step {step}"
+        );
+    }
+}
+
+/// A run on the device is a run of the integrator of the library: the same steps from the same
+/// state, with the held degrees of freedom held, end where it ends, to the precision of the
+/// forces, which are made in another order of operations on the device.
+#[test]
+fn steps_on_the_device_are_those_of_the_integrator_of_the_host() {
+    let Steelwork {
+        model,
+        coordinates,
+        held,
+    } = steelwork();
+    let steps = 20;
+    let (start, velocities) = (deformed(&coordinates), moving(&coordinates));
+    let base = 0..(COLUMNS + 1) * (COLUMNS + 1);
+    let conditions = BoundaryConditions::<Solid<3>>::new()
+        .fix_nodes(Displacement::<0>, base.clone())
+        .fix_nodes(Displacement::<1>, base.clone())
+        .fix_nodes(Displacement::<2>, base);
+    let time = (0..=steps)
+        .map(|step| Time::seconds(step as f64 * DT))
+        .collect::<Vec<_>>();
+    let (_, x, v, a) = model
+        .integrate(
+            Execution::Serial,
+            Unchecked,
+            Lumped,
+            &VelocityVerlet::new(Time::seconds(DT)),
+            &time,
+            (start.clone(), velocities.clone()),
+            &(),
+            &conditions,
+        )
+        .expect("the run on the host");
+    let Some(mut resident) = on_device(&model, false) else {
+        return;
+    };
+    resident
+        .start_dynamics(&Lumped.masses(&model), &held, &start, &velocities)
+        .expect("the start");
+    resident.steps(DT, steps).expect("the steps");
+    let (found_x, found_v, found_a) = resident.dynamics_state().expect("the state");
+    let close = |found: &[f64], expected: &[f64], what: &str| {
+        let largest = expected
+            .iter()
+            .fold(0.0_f64, |largest, x| largest.max(x.abs()));
+        let worst = found
+            .iter()
+            .zip(expected)
+            .fold(0.0_f64, |worst, (found, expected)| {
+                worst.max((found - expected).abs())
+            });
+        assert!(largest > 0.0, "the {what} are nothing");
+        assert!(
+            worst <= 1e-9 * largest,
+            "the {what} differ by {worst} of up to {largest}"
+        );
+    };
+    close(
+        &flat(&found_x),
+        &flat(x.iter().last().expect("coordinates")),
+        "coordinates",
+    );
+    close(
+        &flat(&found_v),
+        &flat(v.iter().last().expect("velocities")),
+        "velocities",
+    );
+    close(
+        &flat(&found_a),
+        &flat(a.iter().last().expect("accelerations")),
+        "accelerations",
+    );
+    // And the held degrees of freedom are where they were.
+    let moved = flat(&found_x);
+    let started = flat(&start);
+    assert!(held.iter().all(|&dof| moved[dof] == started[dof]));
+}
+
+/// The steps that are taken in one call are those taken in many: nothing is kept between the
+/// calls but the state on the device.
+#[test]
+fn steps_taken_together_are_those_taken_one_at_a_time() {
+    let Steelwork {
+        model,
+        coordinates,
+        held,
+    } = steelwork();
+    let Some(mut resident) = on_device(&model, true) else {
+        return;
+    };
+    let masses = Lumped.masses(&model);
+    let (start, velocities) = (deformed(&coordinates), moving(&coordinates));
+    let state = |resident: &Resident| {
+        let (x, v, a) = resident.dynamics_state().expect("the state");
+        [bits(&flat(&x)), bits(&flat(&v)), bits(&flat(&a))]
+    };
+    resident
+        .start_dynamics(&masses, &held, &start, &velocities)
+        .expect("the start");
+    resident.steps(DT, 6).expect("the steps");
+    let together = state(&resident);
+    resident
+        .start_dynamics(&masses, &held, &start, &velocities)
+        .expect("the start");
+    for _ in 0..3 {
+        resident.steps(DT, 2).expect("the steps");
+    }
+    assert_eq!(state(&resident), together);
+    resident
+        .start_dynamics(&masses, &held, &start, &velocities)
+        .expect("the start");
+    for _ in 0..6 {
+        resident.steps(DT, 1).expect("the step");
+    }
+    assert_eq!(state(&resident), together);
+}
+
+/// An element that fails is an error when the run starts, and in the steps.
+#[test]
+fn an_element_that_fails_in_a_run_of_dynamics_is_an_error() {
+    let Steelwork {
+        model,
+        coordinates,
+        held,
+    } = steelwork();
+    let Some(mut resident) = on_device(&model, false) else {
+        return;
+    };
+    let masses = Lumped.masses(&model);
+    let velocities = moving(&coordinates);
+    let good = deformed(&coordinates);
+    let mut bad = good.clone();
+    // A node of the bottom layer moved through the elements that have it.
+    bad[1] = [0.9, 0.9, 0.9].into();
+    let error = resident
+        .start_dynamics(&masses, &held, &bad, &velocities)
+        .expect_err("the start fails");
+    assert!(matches!(error, GpuError::Failed { .. }), "{error}");
+    resident
+        .start_dynamics(&masses, &held, &good, &velocities)
+        .expect("the start");
+    resident.steps(DT, 2).expect("the steps");
+    // The coordinates are put where an element fails, as a step that does that would.
+    resident.set_coordinates(&bad).expect("the coordinates");
+    let error = resident.steps(DT, 1).expect_err("the step fails");
+    assert!(matches!(error, GpuError::Failed { .. }), "{error}");
+    // A run that has not been started cannot be stepped.
+    let Some(unstarted) = on_device(&model, false) else {
+        return;
+    };
+    assert!(unstarted.steps(DT, 1).is_err());
 }

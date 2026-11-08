@@ -55,6 +55,8 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
     }
     assert!(ptx.contains(".visible .entry squares("));
     assert!(ptx.contains(".visible .entry gather("));
+    assert!(ptx.contains(".visible .entry kick_drift("));
+    assert!(ptx.contains(".visible .entry accelerate("));
 }
 
 #[test]
@@ -178,6 +180,18 @@ fn a_failure_that_only_the_device_finds_says_where() {
     let message = error.to_string();
     assert!(message.contains("point 5") && message.contains("element 17"));
     assert!(message.contains("block 2"));
+}
+
+#[test]
+fn a_failure_in_the_steps_says_where() {
+    let error = GpuError::Failed {
+        block: 1,
+        item: 4,
+        point: 3,
+    };
+    let message = error.to_string();
+    assert!(message.contains("point 3") && message.contains("element 4"));
+    assert!(message.contains("block 1") && message.contains("steps"));
 }
 
 #[test]

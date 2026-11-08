@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-//! The meshes, models and checks that the tests of a device share.
-
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
@@ -10,12 +8,11 @@ use conspire::{
         solid::NodalForcesSolid,
     },
     gpu::{DeviceBlocks, GpuError, Resident},
-    math::{Quantity, Tensor},
+    math::{Quantity, Tensor, TensorRank1Vec},
     units::{Density, Stress},
 };
 use core::{array::from_fn, ops::Range};
 
-/// The nodes of a grid of `columns` by `columns` columns of hexahedra, in `layers` layers.
 pub fn lattice(columns: usize, layers: usize) -> Vec<[f64; 3]> {
     (0..=layers)
         .flat_map(|k| {
@@ -32,7 +29,6 @@ pub fn lattice(columns: usize, layers: usize) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// Hexahedra filling the layers `layers` of a grid of `columns` by `columns` columns.
 pub fn slab(columns: usize, layers: Range<usize>) -> Vec<[usize; 8]> {
     let index = |i: usize, j: usize, k: usize| (k * (columns + 1) + j) * (columns + 1) + i;
     layers
@@ -73,7 +69,6 @@ pub fn steel() -> SaintVenantKirchhoff {
     }
 }
 
-/// A smooth, small displacement so that every element has a nonzero stress.
 pub fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
     coordinates
         .iter()
@@ -88,13 +83,6 @@ pub fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
         .into()
 }
 
-/// Elements that share no nodes, each the parametric element of its shape bent a little
-/// differently, which are valid by construction.
-///
-/// They lie on top of each other, which does not matter as they share no nodes, and keeps the
-/// coordinates the size of an element. Far from the origin, in the size of an element, the
-/// deformation gradient is a sum that cancels, and the last bits of the coordinates become
-/// differences between the host and a device that fuses multiplications and additions.
 pub fn disjoint<const G: usize, const N: usize>(count: usize) -> (Vec<[usize; N]>, Vec<[f64; 3]>)
 where
     LinearElement<G, N>: FiniteElement<G, 3, N, N>,
@@ -127,7 +115,6 @@ pub fn skip<T>(why: &str) -> Option<T> {
     None
 }
 
-/// The model on the first device, with the operations of the kernels fused or not.
 pub fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Resident> {
     match Resident::new(0, model, fused) {
         Ok(resident) => Some(resident),
@@ -144,7 +131,17 @@ pub fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
         .collect()
 }
 
-/// That the forces agree to a fraction of the largest of them.
+pub fn flat<I, U>(nodes: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
+    nodes
+        .iter()
+        .flat_map(|node| node.iter().map(|component| component.value()))
+        .collect()
+}
+
+pub fn bits(values: &[f64]) -> Vec<u64> {
+    values.iter().map(|value| value.to_bits()).collect()
+}
+
 pub fn agree(found: &[f64], expected: &[f64], tolerance: f64) {
     assert_eq!(found.len(), expected.len());
     let largest = expected
