@@ -2,7 +2,7 @@
 //! `CONSPIRE_REQUIRE_GPU` is set, which makes a missing device or missing kernels a failure, so
 //! that a run on a machine that has a device cannot pass by skipping.
 
-use super::{Device, GpuError, kernels};
+use super::{Device, GpuError, Resources, kernels};
 
 fn skip<T>(why: &str) -> Option<T> {
     assert!(
@@ -178,4 +178,24 @@ fn a_failure_that_only_the_device_finds_says_where() {
     let message = error.to_string();
     assert!(message.contains("point 5") && message.contains("element 17"));
     assert!(message.contains("block 2"));
+}
+
+#[test]
+fn the_occupancy_is_the_fraction_of_the_threads_of_a_multiprocessor_that_the_blocks_have() {
+    let resources = Resources {
+        registers: 255,
+        local_bytes: 0,
+        threads_per_block: 128,
+        blocks_per_multiprocessor: 2,
+        threads_per_multiprocessor: 2048,
+    };
+    assert_eq!(resources.occupancy(), 0.125);
+    assert_eq!(
+        Resources {
+            blocks_per_multiprocessor: 16,
+            ..resources
+        }
+        .occupancy(),
+        1.0
+    );
 }

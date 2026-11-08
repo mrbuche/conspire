@@ -536,3 +536,32 @@ fn giving_the_coordinates_and_running_is_computing() {
     resident.run().expect("the forces");
     assert_eq!(bits(&resident), computed);
 }
+
+/// What the kernels need of a multiprocessor is what the driver says of them, so it is in bounds:
+/// a thread has at most 255 registers, and the blocks that fit are some of the threads that a
+/// multiprocessor has.
+#[test]
+fn the_kernels_report_what_they_need_of_a_multiprocessor() {
+    let TwoBlocks { model, .. } = two_blocks();
+    let Some(resident) = on_device(&model, true) else {
+        return;
+    };
+    let resources = resident.resources().expect("the resources of the kernels");
+    assert_eq!(
+        resources.len(),
+        4,
+        "the forces and the second pass of two blocks"
+    );
+    for (name, resources) in &resources {
+        eprintln!(
+            "{name}: {resources:?}, {:.0}% occupancy",
+            100.0 * resources.occupancy()
+        );
+        assert!((1..=255).contains(&resources.registers), "{name}");
+        assert!(resources.blocks_per_multiprocessor >= 1, "{name}");
+        assert!(
+            resources.occupancy() > 0.0 && resources.occupancy() <= 1.0,
+            "{name}"
+        );
+    }
+}

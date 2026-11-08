@@ -30,6 +30,9 @@ unsafe extern "C" {
 const RTLD_NOW: c_int = 2;
 const COMPUTE_CAPABILITY_MAJOR: c_int = 75;
 const COMPUTE_CAPABILITY_MINOR: c_int = 76;
+const MAX_THREADS_PER_MULTIPROCESSOR: c_int = 39;
+const FUNCTION_LOCAL_SIZE_BYTES: c_int = 3;
+const FUNCTION_NUM_REGISTERS: c_int = 4;
 
 type Result<T> = core::result::Result<T, GpuError>;
 type DevicePointer = u64;
@@ -116,6 +119,8 @@ struct Api {
         *mut *mut c_void,
         *mut *mut c_void,
     ) -> c_int,
+    function_attribute: unsafe extern "C" fn(*mut c_int, c_int, *mut c_void) -> c_int,
+    occupancy: unsafe extern "C" fn(*mut c_int, *mut c_void, c_int, usize) -> c_int,
     error_string: unsafe extern "C" fn(c_int, *mut *const c_char) -> c_int,
 }
 
@@ -145,6 +150,8 @@ impl Api {
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
             launch: driver.function("cuLaunchKernel")?,
+            function_attribute: driver.function("cuFuncGetAttribute")?,
+            occupancy: driver.function("cuOccupancyMaxActiveBlocksPerMultiprocessor")?,
             error_string: driver.function("cuGetErrorString")?,
             _driver: driver,
         })
@@ -488,7 +495,7 @@ impl Module {
             "cuModuleGetFunction",
         )?;
         Ok(Function {
-            _module: self.0.clone(),
+            module: self.0.clone(),
             handle,
         })
     }
@@ -496,6 +503,72 @@ impl Module {
 
 /// A kernel, which keeps the module that it is from loaded.
 pub struct Function {
-    _module: Arc<ModuleHandle>,
+    module: Arc<ModuleHandle>,
     handle: *mut c_void,
+}
+
+/// What a kernel needs of a multiprocessor of the device, which limits how many of its threads
+/// the device runs at once, and so how well it hides the latency of its memory and arithmetic.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Resources {
+    /// The registers of each thread, of at most 255, as the driver compiled the kernel for the
+    /// device.
+    pub registers: u32,
+    /// The bytes of local memory of each thread, which is the memory of the device, and slow.
+    pub local_bytes: u32,
+    /// The threads in a block that the figures below are for.
+    pub threads_per_block: u32,
+    /// How many of those blocks fit on a multiprocessor at once.
+    pub blocks_per_multiprocessor: u32,
+    /// The most threads that a multiprocessor has at once.
+    pub threads_per_multiprocessor: u32,
+}
+
+impl Resources {
+    /// The fraction of the threads of a multiprocessor that the kernel has at once.
+    pub fn occupancy(&self) -> f64 {
+        f64::from(self.blocks_per_multiprocessor * self.threads_per_block)
+            / f64::from(self.threads_per_multiprocessor.max(1))
+    }
+}
+
+impl Function {
+    /// What the kernel needs, for blocks of `threads` threads.
+    pub fn resources(&self, threads: usize) -> Result<Resources> {
+        let context = &self.module.context;
+        context.bind()?;
+        let api = &context.api;
+        let (mut registers, mut local, mut blocks, mut maximum) = (0, 0, 0, 0);
+        // SAFETY: the function is one of a loaded module, and the attributes are those of the
+        // driver; the pointers are to locals.
+        unsafe {
+            api.check(
+                (api.function_attribute)(&mut registers, FUNCTION_NUM_REGISTERS, self.handle),
+                "cuFuncGetAttribute",
+            )?;
+            api.check(
+                (api.function_attribute)(&mut local, FUNCTION_LOCAL_SIZE_BYTES, self.handle),
+                "cuFuncGetAttribute",
+            )?;
+            api.check(
+                (api.occupancy)(&mut blocks, self.handle, threads as c_int, 0),
+                "cuOccupancyMaxActiveBlocksPerMultiprocessor",
+            )?;
+            api.check(
+                (api.device_attribute)(
+                    &mut maximum,
+                    MAX_THREADS_PER_MULTIPROCESSOR,
+                    context.ordinal,
+                ),
+                "cuDeviceGetAttribute",
+            )?;
+        }
+        Ok(Resources {
+            registers: registers as u32,
+            local_bytes: local as u32,
+            threads_per_block: threads as u32,
+            blocks_per_multiprocessor: blocks as u32,
+            threads_per_multiprocessor: maximum as u32,
+        })
+    }
 }

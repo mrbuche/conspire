@@ -131,6 +131,22 @@ where
             .nodal_forces(model, current)
             .expect("the forces on the device");
         agree(&components(&found), &expected, 1e-10);
+        let mut reported = Vec::new();
+        for (name, resources) in resident.resources().expect("the resources of the kernels") {
+            if !reported.contains(&name) {
+                println!(
+                    "{:>30}  {name}: {} registers, {} bytes of local memory, {} blocks of {} threads on a multiprocessor, {:.0}% of {} threads",
+                    "",
+                    resources.registers,
+                    resources.local_bytes,
+                    resources.blocks_per_multiprocessor,
+                    resources.threads_per_block,
+                    100.0 * resources.occupancy(),
+                    resources.threads_per_multiprocessor,
+                );
+                reported.push(name);
+            }
+        }
         resident.set_coordinates(current).expect("the coordinates");
         let kernels = time_of(repetitions, || resident.run().expect("the forces"));
         let transfers = time_of(repetitions, || {
