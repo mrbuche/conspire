@@ -99,6 +99,7 @@ struct Api {
     free: unsafe extern "C" fn(DevicePointer) -> c_int,
     upload: unsafe extern "C" fn(DevicePointer, *const c_void, usize) -> c_int,
     download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
+    fill: unsafe extern "C" fn(DevicePointer, c_uint, usize) -> c_int,
     module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
     module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
@@ -139,6 +140,7 @@ impl Api {
             free: driver.function("cuMemFree_v2")?,
             upload: driver.function("cuMemcpyHtoD_v2")?,
             download: driver.function("cuMemcpyDtoH_v2")?,
+            fill: driver.function("cuMemsetD32_v2")?,
             module_load: driver.function("cuModuleLoadData")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
@@ -256,12 +258,10 @@ impl Device {
         }
     }
     /// The name of the device.
-    #[cfg(test)]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The compute capability of the device, as a major and a minor number.
-    #[cfg(test)]
     pub fn capability(&self) -> (i32, i32) {
         self.capability
     }
@@ -424,6 +424,19 @@ impl<T: Copy> Buffer<T> {
                 )
             },
             "cuMemcpyDtoH",
+        )
+    }
+}
+
+impl<T> Buffer<T> {
+    /// Sets every 32 bits of the buffer to `value`.
+    pub fn fill(&self, value: u32) -> Result<()> {
+        self.context.bind()?;
+        let words = (self.len * size_of::<T>()).div_ceil(4).max(1);
+        // SAFETY: the allocation is at least `words` of 32 bits, as it is at least one value.
+        self.context.api.check(
+            unsafe { (self.context.api.fill)(self.pointer, value, words) },
+            "cuMemsetD32",
         )
     }
 }

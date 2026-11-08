@@ -161,3 +161,21 @@ fn a_device_is_used_from_many_threads() {
         });
     });
 }
+
+#[test]
+fn a_kernel_that_the_library_does_not_have_says_which() {
+    let error = GpuError::NoKernel("block_forces_gent_g8_n8".to_string());
+    assert!(error.to_string().contains("block_forces_gent_g8_n8"));
+}
+
+#[test]
+fn a_failure_that_only_the_device_finds_says_where() {
+    let error = GpuError::Disagreement {
+        block: 2,
+        item: 17,
+        point: 5,
+    };
+    let message = error.to_string();
+    assert!(message.contains("point 5") && message.contains("element 17"));
+    assert!(message.contains("block 2"));
+}
