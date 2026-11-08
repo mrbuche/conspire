@@ -23,6 +23,7 @@ elements = ['constitutive']
 fem = ['elements', 'geometry']
 geometry = ['io', 'math']
 io = ['std']
+kernels = ['elements']
 math = []
 mechanics = ['math']
 nightly = []
@@ -43,3 +44,9 @@ strip = "symbols"
 [[example]]
 name = "book"
 required-features = ["constitutive", "doc"]
+
+[[example]]
+crate-type = ["cdylib"]
+name = "kernels"
+path = "kernels/lib.rs"
+required-features = ["kernels"]
