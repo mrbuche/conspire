@@ -5,6 +5,10 @@
     feature(core_float_math, prelude_import),
     allow(internal_features)
 )]
+#![cfg_attr(
+    all(not(feature = "std"), target_arch = "nvptx64"),
+    feature(stdarch_nvptx)
+)]
 #![cfg_attr(feature = "autodiff", feature(autodiff))]
 #![cfg_attr(feature = "nightly", feature(portable_simd))]
 #![warn(
