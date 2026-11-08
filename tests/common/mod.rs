@@ -88,8 +88,13 @@ pub fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
         .into()
 }
 
-/// Elements that share no nodes, each the parametric element of its shape moved and bent a little
+/// Elements that share no nodes, each the parametric element of its shape bent a little
 /// differently, which are valid by construction.
+///
+/// They lie on top of each other, which does not matter as they share no nodes, and keeps the
+/// coordinates the size of an element. Far from the origin, in the size of an element, the
+/// deformation gradient is a sum that cancels, and the last bits of the coordinates become
+/// differences between the host and a device that fuses multiplications and additions.
 pub fn disjoint<const G: usize, const N: usize>(count: usize) -> (Vec<[usize; N]>, Vec<[f64; 3]>)
 where
     LinearElement<G, N>: FiniteElement<G, 3, N, N>,
@@ -103,7 +108,7 @@ where
             nodes[a] = coordinates.len();
             let wobble = |i: usize| 0.03 * (1.7 * a as f64 + i as f64 + element as f64).sin();
             coordinates.push([
-                4.0 * element as f64 + 1.1 * xi[0] + 0.2 * xi[1] - 0.1 * xi[2] + wobble(0),
+                1.1 * xi[0] + 0.2 * xi[1] - 0.1 * xi[2] + wobble(0),
                 0.05 * xi[0] + 0.9 * xi[1] + 0.15 * xi[2] + wobble(1),
                 -0.1 * xi[0] + 0.12 * xi[1] + 1.2 * xi[2] + wobble(2),
             ]);
