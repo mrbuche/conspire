@@ -29,6 +29,50 @@ fn kernels_on(device: &Device, fused: bool) -> Option<super::Module> {
     }
 }
 
+fn built_ptx() -> Option<alloc::borrow::Cow<'static, str>> {
+    match kernels::ptx(false) {
+        Ok(ptx) => Some(ptx),
+        Err(GpuError::KernelsNotBuilt) => skip("the kernels are not built"),
+        Err(error) => panic!("{error}"),
+    }
+}
+
+#[test]
+fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_host_looks_for() {
+    use crate::constitutive::solid::{
+        elastic::DeviceModel,
+        hyperelastic::{NeoHookean, SaintVenantKirchhoff},
+    };
+    let Some(ptx) = built_ptx() else { return };
+    for model in [NeoHookean::NAME, SaintVenantKirchhoff::NAME] {
+        for (points, nodes) in [(1, 4), (4, 4), (8, 8), (6, 6), (8, 5)] {
+            let name = kernels::block_forces(model, points, nodes);
+            assert!(
+                ptx.contains(&format!(".visible .entry {name}(")),
+                "{name} is not in the PTX"
+            );
+        }
+    }
+    assert!(ptx.contains(".visible .entry squares("));
+}
+
+#[test]
+fn the_ptx_has_no_trap_but_that_of_a_panic_and_no_call_but_to_one() {
+    let Some(ptx) = built_ptx() else { return };
+    let traps = ptx.matches("trap;").count();
+    assert!(
+        traps <= 1,
+        "{traps} traps: a function that a device does not have is reached"
+    );
+    assert!(
+        !ptx.contains(".extern"),
+        "the PTX needs what it does not have"
+    );
+    ptx.lines()
+        .filter(|line| line.trim_start().starts_with("call"))
+        .for_each(|line| assert!(line.contains("panicking"), "{line}"));
+}
+
 #[test]
 fn the_device_is_opened_with_a_name_and_a_capability_that_the_kernels_are_built_for() {
     let Some(device) = device() else { return };

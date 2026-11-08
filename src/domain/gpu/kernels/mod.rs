@@ -8,6 +8,12 @@ use alloc::borrow::Cow;
 
 const BUILT: &str = include_str!(concat!(env!("OUT_DIR"), "/kernels.ptx"));
 
+/// The name of the kernel for the elements of a block of a model, with the given number of
+/// integration points and nodes, which `kernels/lib.rs` makes for every model and shape.
+pub(super) fn block_forces(model: &str, points: usize, nodes: usize) -> String {
+    format!("block_forces_{model}_g{points}_n{nodes}")
+}
+
 /// The PTX of the kernels of the library, with the multiplications, additions and subtractions
 /// fused if `fused`.
 ///
