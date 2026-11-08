@@ -30,6 +30,7 @@ unsafe extern "C" {
 const RTLD_NOW: c_int = 2;
 const COMPUTE_CAPABILITY_MAJOR: c_int = 75;
 const COMPUTE_CAPABILITY_MINOR: c_int = 76;
+const JIT_MAX_REGISTERS: c_int = 0;
 const MAX_THREADS_PER_MULTIPROCESSOR: c_int = 39;
 const FUNCTION_LOCAL_SIZE_BYTES: c_int = 3;
 const FUNCTION_NUM_REGISTERS: c_int = 4;
@@ -104,6 +105,13 @@ struct Api {
     download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
     fill: unsafe extern "C" fn(DevicePointer, c_uint, usize) -> c_int,
     module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
+    module_load_options: unsafe extern "C" fn(
+        *mut *mut c_void,
+        *const c_void,
+        c_uint,
+        *mut c_int,
+        *mut *mut c_void,
+    ) -> c_int,
     module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
     launch: unsafe extern "C" fn(
@@ -147,6 +155,7 @@ impl Api {
             download: driver.function("cuMemcpyDtoH_v2")?,
             fill: driver.function("cuMemsetD32_v2")?,
             module_load: driver.function("cuModuleLoadData")?,
+            module_load_options: driver.function("cuModuleLoadDataEx")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
             launch: driver.function("cuLaunchKernel")?,
@@ -221,8 +230,6 @@ impl Device {
         let api = Arc::new(Api::load()?);
         // SAFETY: the calls are those of the driver API, with pointers to locals.
         unsafe {
-            // That the driver does not start is that this node has no device to offer, or a driver
-            // that is not for it, and either way there is no device to use.
             api.check((api.init)(0), "cuInit")
                 .map_err(|error| GpuError::Unavailable(error.to_string()))?;
             let mut count = 0;
@@ -285,7 +292,6 @@ impl Device {
     pub fn buffer<T: Copy>(&self, len: usize) -> Result<Buffer<T>> {
         self.context.bind()?;
         let mut pointer = 0;
-        // A buffer is never empty, so that it always has an address.
         let bytes = len.max(1) * size_of::<T>();
         // SAFETY: `pointer` is written by the driver.
         self.context.api.check(
@@ -308,15 +314,37 @@ impl Device {
     /// Loads kernels that are PTX, such as those that Rust code is built to, which the driver
     /// compiles for this device when they are loaded.
     pub fn module_from_ptx(&self, ptx: &str) -> Result<Module> {
+        self.module_from_ptx_with(ptx, None)
+    }
+    /// As [`module_from_ptx`](Self::module_from_ptx), with the most registers that a thread may
+    /// have in the kernels that the driver compiles, if `max_registers` is given.
+    ///
+    /// A thread has at most 255, and a kernel with so many has few threads on a multiprocessor to
+    /// hide the latency of its memory and arithmetic with, so fewer registers can make it faster
+    /// though some of what it holds then goes to local memory, which is slow. Which is faster
+    /// depends on the device.
+    pub fn module_from_ptx_with(&self, ptx: &str, max_registers: Option<u32>) -> Result<Module> {
         self.context.bind()?;
         let image =
             CString::new(ptx).map_err(|_| GpuError::Cuda("the PTX has a nul in it".to_string()))?;
         let mut handle = null_mut();
+        let api = &self.context.api;
         // SAFETY: the image is a C string of PTX, which the driver compiles and loads.
-        self.context.api.check(
-            unsafe { (self.context.api.module_load)(&mut handle, image.as_ptr().cast()) },
-            "cuModuleLoadData",
-        )?;
+        let status = match max_registers {
+            Some(limit) => unsafe {
+                let mut options = [JIT_MAX_REGISTERS];
+                let mut values = [limit as usize as *mut c_void];
+                (api.module_load_options)(
+                    &mut handle,
+                    image.as_ptr().cast(),
+                    1,
+                    options.as_mut_ptr(),
+                    values.as_mut_ptr(),
+                )
+            },
+            None => unsafe { (api.module_load)(&mut handle, image.as_ptr().cast()) },
+        };
+        api.check(status, "cuModuleLoadData")?;
         Ok(Module(Arc::new(ModuleHandle {
             context: self.context.clone(),
             handle,

@@ -9,7 +9,7 @@ use conspire::{
         element::{FiniteElement, linear::LinearElement},
         solid::NodalForcesSolid,
     },
-    gpu::{DeviceBlocks, GpuError, Resident},
+    gpu::{DeviceBlocks, GpuError, Options, Resident},
     math::{Quantity, Tensor},
     units::{Density, Stress},
 };
@@ -129,7 +129,18 @@ pub fn skip<T>(why: &str) -> Option<T> {
 
 /// The model on the first device, with the operations of the kernels fused or not.
 pub fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Resident> {
-    match Resident::new(0, model, fused) {
+    on_device_with(
+        model,
+        &Options {
+            fused,
+            ..Options::default()
+        },
+    )
+}
+
+/// The model on the first device, with the kernels compiled as the options say.
+pub fn on_device_with<B: DeviceBlocks>(model: &Model<B, 3>, options: &Options) -> Option<Resident> {
+    match Resident::new(0, model, options) {
         Ok(resident) => Some(resident),
         Err(GpuError::Unavailable(message)) => skip(&format!("there is no device: {message}")),
         Err(GpuError::KernelsNotBuilt) => skip("the kernels are not built"),

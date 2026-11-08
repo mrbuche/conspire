@@ -21,7 +21,7 @@
 mod common;
 
 use common::{
-    agree, components, deformed, density, disjoint, lattice, on_device, rubber, slab, steel,
+    agree, components, deformed, density, disjoint, lattice, on_device_with, rubber, slab, steel,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
@@ -34,7 +34,7 @@ use conspire::{
             elastic::{ElasticElements, ParallelElasticElements, Workers},
         },
     },
-    gpu::DeviceBlocks,
+    gpu::{DeviceBlocks, Options},
     math::{Quantity, Tensor},
     units::Density,
 };
@@ -59,6 +59,20 @@ fn cells() -> Vec<usize> {
                 .collect()
         })
         .unwrap_or_else(|| vec![22, 46, 90])
+}
+
+/// The most registers that a thread may have, from `REGISTERS`, a list in which 0 is no limit.
+fn registers() -> Vec<Option<u32>> {
+    std::env::var("REGISTERS")
+        .ok()
+        .map(|registers| {
+            registers
+                .split(',')
+                .filter_map(|registers| registers.parse::<u32>().ok())
+                .map(|registers| (registers > 0).then_some(registers))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![None])
 }
 
 fn threads() -> usize {
@@ -121,9 +135,16 @@ where
         threads(),
         per_element(parallel),
     );
-    for fused in [false, true] {
+    let cases = registers()
+        .into_iter()
+        .flat_map(|max_registers| [false, true].map(|fused| (fused, max_registers)));
+    for (fused, max_registers) in cases {
         let start = Instant::now();
-        let Some(resident) = on_device(model, fused) else {
+        let options = Options {
+            fused,
+            max_registers,
+        };
+        let Some(resident) = on_device_with(model, &options) else {
             return;
         };
         let setup = start.elapsed().as_secs_f64() * 1e3;
@@ -153,10 +174,13 @@ where
             black_box(resident.nodal_forces(model, current).expect("the forces"));
         });
         println!(
-            "{:>30}  {} {:>7}: kernels {kernels:9.3} ms {:7.2} ns/element | with transfers {transfers:9.3} ms | setup {setup:8.1} ms | {:5.1}x serial {:5.1}x threads",
+            "{:>30}  {} {:>7} {:>9}: kernels {kernels:9.3} ms {:7.2} ns/element | with transfers {transfers:9.3} ms | setup {setup:8.1} ms | {:5.1}x serial {:5.1}x threads",
             "",
             resident.device_name(),
             if fused { "fused" } else { "unfused" },
+            max_registers.map_or("uncapped".to_string(), |registers| format!(
+                "cap {registers}"
+            )),
             per_element(kernels),
             serial / kernels,
             parallel / kernels,
