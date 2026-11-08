@@ -21,30 +21,6 @@ use core::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-/// How the kernels are compiled for a device.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Options {
-    /// Whether the driver may fuse the multiplications and additions of the kernels, which is
-    /// faster and differs from the host in the last bits (see `kernels::ptx`).
-    pub fused: bool,
-    /// The most registers that a thread may have, if there is a limit. A thread has at most 255,
-    /// and a kernel with so many has few threads on a multiprocessor to hide the latency of its
-    /// memory and arithmetic with, so fewer can be faster, though some of what it holds then goes
-    /// to local memory. Which is faster depends on the device, so it is the driver's choice unless
-    /// this says otherwise. It does not change the forces, being where values are kept and not
-    /// what is done to them.
-    pub max_registers: Option<u32>,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            fused: true,
-            max_registers: None,
-        }
-    }
-}
-
 /// Possible errors encountered on a device.
 pub enum GpuError {
     /// There is no CUDA, or no such device.

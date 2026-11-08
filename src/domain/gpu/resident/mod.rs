@@ -5,7 +5,7 @@
 //! second pass of the forces. A call gives the device the coordinates, and gets the nodal forces.
 
 use super::{
-    DeviceBlock, DeviceBlocks, GpuError, Options,
+    DeviceBlock, DeviceBlocks, GpuError,
     cuda::{Buffer, Device, Function, Module, Resources},
     kernels,
 };
@@ -114,15 +114,15 @@ pub struct Resident {
 }
 
 impl Resident {
-    /// Puts a model on the device of the given ordinal, with the kernels compiled as the options
-    /// say.
-    pub fn new<B>(ordinal: usize, model: &Model<B, 3>, options: &Options) -> Result<Self, GpuError>
+    /// Puts a model on the device of the given ordinal, with the operations of the kernels fused
+    /// if `fused`, which is faster and differs from the host in the last bits (see
+    /// [`ptx`](super::kernels::ptx)).
+    pub fn new<B>(ordinal: usize, model: &Model<B, 3>, fused: bool) -> Result<Self, GpuError>
     where
         B: DeviceBlocks,
     {
         let device = Device::new(ordinal)?;
-        let module =
-            device.module_from_ptx_with(&kernels::ptx(options.fused)?, options.max_registers)?;
+        let module = device.module_from_ptx(&kernels::ptx(fused)?)?;
         let reference = flatten(&model.coordinates);
         let mut described = Vec::new();
         model.device_blocks(&mut described);

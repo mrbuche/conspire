@@ -9,8 +9,7 @@
 mod common;
 
 use common::{
-    agree, components, deformed, density, disjoint, lattice, on_device, on_device_with, rubber,
-    slab, steel,
+    agree, components, deformed, density, disjoint, lattice, on_device, rubber, slab, steel,
 };
 use conspire::{
     constitutive::solid::{
@@ -31,7 +30,7 @@ use conspire::{
         },
         solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError, Options, Resident},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, Resident},
     math::{Quantity, Tensor},
     units::Density,
 };
@@ -564,36 +563,5 @@ fn the_kernels_report_what_they_need_of_a_multiprocessor() {
             resources.occupancy() > 0.0 && resources.occupancy() <= 1.0,
             "{name}"
         );
-    }
-}
-
-/// A limit on the registers of a thread changes where the kernels keep values and not what they
-/// do to them, so the forces are those of the kernels without the limit, to the bit, and the
-/// kernels have no more registers than the limit.
-#[test]
-fn a_limit_on_registers_is_kept_and_does_not_change_the_forces() {
-    let TwoBlocks {
-        model, coordinates, ..
-    } = two_blocks();
-    let Some(free) = on_device(&model, true) else {
-        return;
-    };
-    let limit = 64;
-    let Some(capped) = on_device_with(
-        &model,
-        &Options {
-            max_registers: Some(limit),
-            ..Options::default()
-        },
-    ) else {
-        return;
-    };
-    let current = deformed(&coordinates);
-    let expected = components(&free.nodal_forces(&model, &current).expect("the forces"));
-    let found = components(&capped.nodal_forces(&model, &current).expect("the forces"));
-    assert_eq!(found, expected, "the forces are the same to the bit");
-    for (name, resources) in capped.resources().expect("the resources of the kernels") {
-        eprintln!("{name}: {resources:?}");
-        assert!(resources.registers <= limit, "{name}");
     }
 }
