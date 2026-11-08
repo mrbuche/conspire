@@ -165,6 +165,60 @@ unsafe fn block_forces<M, const G: usize, const N: usize>(
     }
 }
 
+/// The second pass of the forces: the forces on `nodes` nodes, each the sum of the forces of the
+/// elements that have it, in the order of the elements, added to the forces that it has.
+///
+/// A thread is a node. The contributions to the node `node` are `contributions[offsets[node]..
+/// offsets[node + 1]]`, in the order of the elements, and each is where the force of an element
+/// is in each of the three planes of components of `forces`, which are `plane` values apart: the
+/// node `a` of an element `item` is `a * items + item`, as in [`block_forces`]. The forces on the
+/// nodes are `nodal_forces[3 * node + i]`.
+///
+/// The sum is only additions, in the order of the elements, so the forces are those that the
+/// host adds, whether the operations are fused or not.
+///
+/// # Safety
+///
+/// `offsets` must be `nodes + 1` values and `contributions` what they say, each within a plane,
+/// `forces` must be three planes of `plane` values, and `nodal_forces` must be `3 * nodes` values,
+/// at least.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn gather(
+    nodes: u32,
+    plane: u32,
+    offsets: *const u32,
+    contributions: *const u32,
+    forces: *const f64,
+    nodal_forces: *mut f64,
+) {
+    let node = thread();
+    if node < nodes as usize {
+        let plane = plane as usize;
+        // SAFETY: the offsets are those of the nodes, and the node is one of them.
+        let (first, last, mut sum) = unsafe {
+            (
+                *offsets.add(node),
+                *offsets.add(node + 1),
+                [
+                    *nodal_forces.add(3 * node),
+                    *nodal_forces.add(3 * node + 1),
+                    *nodal_forces.add(3 * node + 2),
+                ],
+            )
+        };
+        for k in first..last {
+            // SAFETY: the contribution is within the forces of the elements.
+            let contribution = unsafe { *contributions.add(k as usize) } as usize;
+            sum.iter_mut()
+                .enumerate()
+                .for_each(|(i, value)| *value += unsafe { *forces.add(i * plane + contribution) });
+        }
+        sum.iter()
+            .enumerate()
+            .for_each(|(i, &value)| unsafe { *nodal_forces.add(3 * node + i) = value });
+    }
+}
+
 const fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {

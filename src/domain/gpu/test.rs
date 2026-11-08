@@ -54,6 +54,7 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
         }
     }
     assert!(ptx.contains(".visible .entry squares("));
+    assert!(ptx.contains(".visible .entry gather("));
 }
 
 #[test]
