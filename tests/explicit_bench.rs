@@ -14,7 +14,7 @@ use conspire::{
         NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, Solid},
-        element::linear::Hexahedron,
+        element::linear::{Hexahedron, Tetrahedron},
         solid::{
             ElasticExplicitDynamics, Execution, Lumped, NodalForcesSolid, Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
@@ -27,6 +27,7 @@ use conspire::{
 use std::{hint::black_box, ops::Range, time::Instant};
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
+type Tets = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 
 const STEPS: usize = 50;
@@ -194,6 +195,75 @@ fn single_block() {
         let repetitions = (2_000_000 / cells.pow(3)).clamp(5, 200);
         compare(
             &format!("{} elements", cells.pow(3)),
+            &model,
+            &current,
+            repetitions,
+        );
+    }
+}
+
+/// Tetrahedra filling a cube of `cells` by `cells` by `cells` cells, six to a cell, around the
+/// diagonal of the cell, each positively oriented.
+fn tetrahedra(cells: usize, coordinates: &[[f64; 3]]) -> Vec<[usize; 4]> {
+    let index = |i: usize, j: usize, k: usize| (k * (cells + 1) + j) * (cells + 1) + i;
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let volume = |tetrahedron: &[usize; 4]| {
+        let point = |node: usize| coordinates[tetrahedron[node]];
+        let edge = |node: usize| {
+            let (a, b) = (point(0), point(node));
+            [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+        };
+        let (u, v, w) = (edge(1), edge(2), edge(3));
+        u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
+            + u[2] * (v[0] * w[1] - v[1] * w[0])
+    };
+    (0..cells)
+        .flat_map(|k| (0..cells).flat_map(move |j| (0..cells).map(move |i| [i, j, k])))
+        .flat_map(|[i, j, k]| {
+            orders.iter().map(move |order| {
+                let mut corner = [i, j, k];
+                let mut nodes = [index(i, j, k); 4];
+                for (step, &axis) in order.iter().enumerate() {
+                    corner[axis] += 1;
+                    nodes[step + 1] = index(corner[0], corner[1], corner[2]);
+                }
+                nodes
+            })
+        })
+        .map(|mut tetrahedron| {
+            if volume(&tetrahedron) < 0.0 {
+                tetrahedron.swap(1, 2);
+            }
+            tetrahedron
+        })
+        .collect()
+}
+
+#[test]
+#[ignore]
+fn single_block_tetrahedra() {
+    println!("\nthreads: {}", threads());
+    for cells in [6, 14, 28] {
+        let coordinates = lattice(cells, cells, cells);
+        let reference = NodalReferenceCoordinates::from(coordinates.clone());
+        let connectivity = tetrahedra(cells, &coordinates);
+        let elements = connectivity.len();
+        let model: Model<Tets, 3> = (
+            Tets::from((rubber(3.0e9, 13.0e9), density(), connectivity, &reference)),
+            reference,
+        )
+            .into();
+        let current = deformed(&coordinates);
+        let repetitions = (2_000_000 / elements).clamp(5, 400);
+        compare(
+            &format!("{elements} elements"),
             &model,
             &current,
             repetitions,

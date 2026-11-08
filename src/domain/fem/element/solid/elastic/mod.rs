@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 pub mod internal_variables;
 
 pub use crate::domain::block::element::solid::elastic::ElasticElement;
@@ -7,13 +10,16 @@ use crate::{
     constitutive::solid::elastic::Elastic,
     fem::element::{
         Element, ElementNodalCoordinates, FiniteElement, FiniteElementError, GradientVectors,
+        IntegrationData,
         solid::{
             ElementNodalForcesSolid, ElementNodalStiffnessesSolid, SolidElement, SolidFiniteElement,
         },
         surface::{SurfaceElement, SurfaceFiniteElement},
     },
     math::{ContractSecondFourthWithFirst, Current, IDENTITY, Quantity, Tensor, TensorRank2},
-    mechanics::{FirstPiolaKirchhoffStressList, FirstPiolaKirchhoffTangentStiffnessList},
+    mechanics::{
+        DeformationGradient, FirstPiolaKirchhoffStressList, FirstPiolaKirchhoffTangentStiffnessList,
+    },
     units::StressPerArea,
 };
 
@@ -28,6 +34,52 @@ where
             Error = FiniteElementError,
         >,
 {
+    /// The nodal forces of an element, with its integration data from `data`.
+    ///
+    /// This is one pass over the integration points, which adds to the forces as it goes, in
+    /// place of a list of the deformation gradients, a list of the stresses, and a list of
+    /// forces for each point that are then added: the same sums in the same order, so the same
+    /// forces, without the lists, which a device keeps in memory far from the arithmetic. What
+    /// `data` is does not change the arithmetic, so an element that a device keeps in another
+    /// order has the forces that the element has.
+    ///
+    /// The elements of the CPU do not use this for their own forces. It and the version with the
+    /// lists have the same forces to the bit, and which is faster depends on what else is in the
+    /// binary: with a hexahedron block alone this is 9% faster, and with tetrahedra in the binary
+    /// as well it is 19% slower for the hexahedra and 3% slower for the tetrahedra, while the
+    /// version with the lists changes by 5%. The test `single_block_tetrahedra` of
+    /// `explicit_bench` shows this.
+    fn nodal_forces_from<D>(
+        data: &D,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError>
+    where
+        D: IntegrationData<G, N>,
+    {
+        let mut nodal_forces = ElementNodalForcesSolid::default();
+        for point in 0..G {
+            let gradient_vectors = data.gradient_vectors_at(point);
+            let integration_weight = data.integration_weight_at(point);
+            let deformation_gradient = nodal_coordinates
+                .iter()
+                .zip(&gradient_vectors)
+                .map(|(nodal_coordinate, gradient_vector)| {
+                    DeformationGradient::from((nodal_coordinate, gradient_vector))
+                })
+                .sum();
+            let first_piola_kirchhoff_stress = constitutive_model
+                .first_piola_kirchhoff_stress(&deformation_gradient)
+                .map_err(|error| FiniteElementError::new(Some(point), error))?;
+            nodal_forces.iter_mut().zip(&gradient_vectors).for_each(
+                |(nodal_force, gradient_vector)| {
+                    *nodal_force +=
+                        (&first_piola_kirchhoff_stress * gradient_vector) * integration_weight
+                },
+            );
+        }
+        Ok(nodal_forces)
+    }
 }
 
 impl<T, C, const G: usize, const M: usize, const N: usize, const P: usize>
