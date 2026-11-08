@@ -12,4 +12,5 @@ target/
 **.svg
 **__pycache__/
 
+src/domain/gpu/kernels.d
 src/domain/gpu/kernels.ptx

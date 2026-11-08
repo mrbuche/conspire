@@ -10,9 +10,11 @@
 set -e
 cd "$(dirname "$0")/.."
 output=src/domain/gpu/kernels.ptx
+listing=src/domain/gpu/kernels.d
 cargo +nightly build --release --example kernels --target nvptx64-nvidia-cuda \
     --no-default-features --features kernels
 built=target/nvptx64-nvidia-cuda/release/examples/kernels.ptx
+sources=target/nvptx64-nvidia-cuda/release/examples/kernels.d
 echo "kernels:"
 grep -o "^\.visible \.entry [A-Za-z0-9_]*" "$built" | sed 's/^\.visible \.entry /  /'
 if [ "$1" = "--check" ]; then
@@ -25,5 +27,7 @@ if [ "$1" = "--check" ]; then
 else
     mkdir -p "$(dirname "$output")"
     cp "$built" "$output"
+    # The files that it was built from, with which the library knows when it is out of date.
+    cp "$sources" "$listing"
     echo "wrote $output"
 fi

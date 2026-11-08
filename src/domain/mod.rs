@@ -13,6 +13,9 @@ pub mod fem;
 #[cfg(feature = "fem")]
 #[path = "decomposition/feti/mod.rs"]
 pub mod feti;
+#[cfg(feature = "gpu")]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod gpu;
 pub(crate) mod time_scale;
 #[cfg(feature = "vem")]
 pub mod vem;

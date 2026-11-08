@@ -75,6 +75,12 @@ repos:
     -   id: clippy
         args: ['--features', 'all doc', '--tests', '--', '-D',  'warnings']
         name: cargo clippy doc tests
+    -   id: clippy
+        args: ['--features', 'gpu', '--', '-D',  'warnings']
+        name: cargo clippy gpu
+    -   id: clippy
+        args: ['--features', 'gpu', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy gpu tests
     -   id: fmt
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.5
