@@ -6,9 +6,11 @@ pub(crate) mod autodiff;
 pub mod cohesive;
 pub mod diffusion;
 pub mod electrical;
+mod failure;
 pub mod linear;
 pub mod mass;
 pub mod multiphysics;
+mod on_the_fly;
 pub mod planar;
 pub mod quadratic;
 pub mod serendipity;
@@ -16,6 +18,9 @@ pub mod solid;
 pub mod surface;
 pub mod thermal;
 pub mod time_scale;
+
+pub use failure::Failure;
+pub use on_the_fly::OnTheFly;
 
 use crate::{
     domain::block::element::{ElementError, ElementKind},

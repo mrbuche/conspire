@@ -4,7 +4,11 @@ mod test;
 use crate::{
     constitutive::{
         ConstitutiveError,
-        solid::{Solid, TWO_THIRDS, elastic::Elastic, hyperelastic::Hyperelastic},
+        solid::{
+            Solid, TWO_THIRDS,
+            elastic::{DeviceModel, Elastic},
+            hyperelastic::Hyperelastic,
+        },
     },
     math::{IDENTITY_00, Quantity, Rank2, TensorRank4},
     mechanics::{
@@ -29,6 +33,19 @@ impl Solid for SaintVenantKirchhoff {
     }
     fn shear_modulus(&self) -> Quantity<Stress> {
         self.shear_modulus
+    }
+}
+
+impl DeviceModel for SaintVenantKirchhoff {
+    const NAME: &'static str = "saint_venant_kirchhoff";
+    fn parameters(&self) -> Vec<f64> {
+        vec![self.shear_modulus.value(), self.bulk_modulus.value()]
+    }
+    fn from_parameters(parameters: &[f64]) -> Self {
+        Self {
+            shear_modulus: Stress::pascals(parameters[0]),
+            bulk_modulus: Stress::pascals(parameters[1]),
+        }
     }
 }
 
