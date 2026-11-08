@@ -15,7 +15,7 @@ pub mod fem;
 pub mod feti;
 #[cfg(feature = "gpu")]
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod gpu;
+pub mod gpu;
 pub(crate) mod time_scale;
 #[cfg(feature = "vem")]
 pub mod vem;

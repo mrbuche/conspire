@@ -56,6 +56,10 @@ pub use domain::fem;
 #[doc(hidden)]
 pub use domain::feti;
 
+#[cfg(feature = "gpu")]
+#[doc(hidden)]
+pub use domain::gpu;
+
 #[cfg(feature = "geometry")]
 pub mod geometry;
 
