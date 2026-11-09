@@ -394,3 +394,159 @@ pub unsafe fn sum_groups(
     }
     sums[item] = sum;
 }
+
+/// The first pass of the dot product of two vectors of `count` values: the thread `item` of
+/// `threads` adds up the products of the values that are `threads` apart from the one at `item`,
+/// in order, into `partials[item]`. The passes after it are those of [`sum_groups`] and
+/// [`sum_into`].
+///
+/// # Safety
+///
+/// `a` and `b` must be `count` values and `partials` must be `threads`.
+pub unsafe fn dot_strided(
+    item: usize,
+    count: usize,
+    threads: usize,
+    a: *const f64,
+    b: *const f64,
+    partials: *mut f64,
+) {
+    if item >= threads {
+        return;
+    }
+    let mut sum = 0.0;
+    let mut index = item;
+    while index < count {
+        // SAFETY: the index is among the `count` values.
+        sum += unsafe { *a.add(index) * *b.add(index) };
+        index += threads;
+    }
+    // SAFETY: there is a partial sum for each thread.
+    unsafe { *partials.add(item) = sum };
+}
+
+/// The last pass of a sum: the first thread adds up `count` values, in order, into `out[slot]`.
+///
+/// # Safety
+///
+/// `values` must be `count` values and `out` must have a value at `slot`.
+pub unsafe fn sum_into(item: usize, count: usize, values: *const f64, out: *mut f64, slot: usize) {
+    if item != 0 {
+        return;
+    }
+    let mut sum = 0.0;
+    for index in 0..count {
+        // SAFETY: the index is among the `count` values.
+        sum += unsafe { *values.add(index) };
+    }
+    // SAFETY: the slot is one of `out`.
+    unsafe { *out.add(slot) = sum };
+}
+
+/// The first thread sets `out[index]` to `factor` times `dots[dot]`, a number that is on the
+/// device and is not read back.
+///
+/// # Safety
+///
+/// `dots` must have a value at `dot` and `out` must have a value at `index`.
+pub unsafe fn times(
+    item: usize,
+    factor: f64,
+    dots: *const f64,
+    dot: usize,
+    out: *mut f64,
+    index: usize,
+) {
+    if item != 0 {
+        return;
+    }
+    // SAFETY: as the caller says.
+    unsafe { *out.add(index) = factor * *dots.add(dot) };
+}
+
+/// `out[item] = y[item] + alpha * x[item]`.
+///
+/// # Safety
+///
+/// `x`, `y` and `out` must be `count` values.
+pub unsafe fn axpy(
+    item: usize,
+    count: usize,
+    alpha: f64,
+    x: *const f64,
+    y: *const f64,
+    out: *mut f64,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *out.add(item) = *y.add(item) + alpha * *x.add(item) };
+}
+
+/// `out[item] = alpha * x[item]`.
+///
+/// # Safety
+///
+/// `x` and `out` must be `count` values.
+pub unsafe fn scale(item: usize, count: usize, alpha: f64, x: *const f64, out: *mut f64) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *out.add(item) = alpha * *x.add(item) };
+}
+
+/// `y[item] *= alpha`.
+///
+/// # Safety
+///
+/// `y` must be `count` values.
+pub unsafe fn scale_in_place(item: usize, count: usize, alpha: f64, y: *mut f64) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *y.add(item) *= alpha };
+}
+
+/// `y[item] -= scalars[index] * x[item]`, where the scalar is on the device.
+///
+/// # Safety
+///
+/// `x` and `y` must be `count` values and `scalars` must have a value at `index`.
+pub unsafe fn subtract_alpha(
+    item: usize,
+    count: usize,
+    scalars: *const f64,
+    index: usize,
+    x: *const f64,
+    y: *mut f64,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values, and the index is one of the scalars.
+    unsafe { *y.add(item) -= *scalars.add(index) * *x.add(item) };
+}
+
+/// `y[item] -= (alphas[index] + betas[index]) * x[item]`, where the scalars are on the device.
+///
+/// # Safety
+///
+/// `x` and `y` must be `count` values and `alphas` and `betas` must have a value at `index`.
+pub unsafe fn subtract_pair(
+    item: usize,
+    count: usize,
+    alphas: *const f64,
+    betas: *const f64,
+    index: usize,
+    x: *const f64,
+    y: *mut f64,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values, and the index is one of the scalars.
+    unsafe { *y.add(item) -= (*alphas.add(index) + *betas.add(index)) * *x.add(item) };
+}

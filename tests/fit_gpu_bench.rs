@@ -15,6 +15,11 @@
 //! against the host and, when there is no device, say so and pass, unless `CONSPIRE_REQUIRE_GPU`
 //! is set.
 //!
+//! The fit itself, the limited-memory BFGS, is in `fit_gpu_bench/solver.rs`, written once for a
+//! backend that has the vectors. Run on the arithmetic of the kernels on the host it is checked
+//! against a version made of plain loops, and run on the device it is checked against that too.
+//! `device_fit` times it with every vector on the device, whole and by the parts of a step.
+//!
 //! The energy is a sum over the elements of the regularized quality of each corner, weighted by
 //! the size of the element, and a term that holds each node of the boundary near the faces it is on:
 //!
@@ -36,10 +41,12 @@
 //! Run alone, in release mode, the host reference and then the device:
 //! `cargo test --release --test fit_gpu_bench -- host_reference --ignored --nocapture --test-threads=1`
 //! `kernels/fit.sh` and then
-//! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device --ignored --nocapture --test-threads=1`
+//! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_reference --ignored --nocapture --test-threads=1`
+//! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_fit --ignored --nocapture --test-threads=1`
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids, `22,46,90` by
-//! default, `REPETITIONS` is how many times each is timed, 5 by default, `DEVICE` is the ordinal of
+//! default, `STEPS` is the steps of the fit of `device_fit`, 100 by default, `REPETITIONS` is how
+//! many times each is timed, 5 by default, `DEVICE` is the ordinal of
 //! the device, `BLOCK` is the threads in a block of a launch, 128 by default, and `FIT_KERNELS` is
 //! the PTX of the kernels, where `kernels/fit.sh` builds it by default.
 
@@ -620,6 +627,10 @@ fn host_reference() {
 #[path = "../kernels/fit_shared.rs"]
 mod shared;
 
+/// The limited-memory BFGS of the fit, for a backend that has the vectors.
+#[path = "fit_gpu_bench/solver.rs"]
+mod solver;
+
 fn sqrt(x: f64) -> f64 {
     x.sqrt()
 }
@@ -871,8 +882,15 @@ fn the_kernels_run_on_the_host_are_the_reference() {
 
 #[cfg(feature = "gpu")]
 mod device {
-    use super::*;
-    use conspire::gpu::{Buffer, Device, Function, GpuError};
+    use super::{
+        GROUP, Layout, Point, Problem, SUMMERS, cells, disagreement, moved, planes, points_of,
+        repetitions, solver::*, time_of,
+    };
+    use conspire::gpu::{Argument, Buffer, Device, Function, GpuError};
+    use std::{
+        cell::{Cell, RefCell},
+        time::Instant,
+    };
 
     /// How many threads are in a block.
     fn block() -> usize {
@@ -900,6 +918,14 @@ mod device {
         gradient: Function,
         sum_strided: Function,
         sum_groups: Function,
+        dot_strided: Function,
+        sum_into: Function,
+        times: Function,
+        axpy: Function,
+        scale: Function,
+        scale_in_place: Function,
+        subtract_alpha: Function,
+        subtract_pair: Function,
     }
 
     impl Kernels {
@@ -937,6 +963,14 @@ mod device {
                 gradient: function("gradient"),
                 sum_strided: function("sum_strided"),
                 sum_groups: function("sum_groups"),
+                dot_strided: function("dot_strided"),
+                sum_into: function("sum_into"),
+                times: function("times"),
+                axpy: function("axpy"),
+                scale: function("scale"),
+                scale_in_place: function("scale_in_place"),
+                subtract_alpha: function("subtract_alpha"),
+                subtract_pair: function("subtract_pair"),
                 device,
             })
         }
@@ -964,6 +998,13 @@ mod device {
         partials: Buffer<f64>,
         groups: Buffer<f64>,
         total: Buffer<f64>,
+        dots: Buffer<f64>,
+        alphas: Buffer<f64>,
+        betas: Buffer<f64>,
+        /// Whether the phases of a step are waited for, to time them.
+        profiling: Cell<bool>,
+        started: Cell<Option<Instant>>,
+        phases: RefCell<[f64; PHASES]>,
     }
 
     impl<'a> OnDevice<'a> {
@@ -990,158 +1031,258 @@ mod device {
                 partials: device.buffer(SUMMERS).unwrap(),
                 groups: device.buffer(SUMMERS.div_ceil(GROUP)).unwrap(),
                 total: device.buffer(1).unwrap(),
+                dots: device.buffer(SLOTS).unwrap(),
+                alphas: device.buffer(HISTORY + 1).unwrap(),
+                betas: device.buffer(HISTORY + 1).unwrap(),
+                profiling: Cell::new(false),
+                started: Cell::new(None),
+                phases: RefCell::new([0.0; PHASES]),
             }
+        }
+        fn launch(&self, function: &Function, threads: usize, arguments: &[&dyn Argument]) {
+            self.kernels
+                .device
+                .launch(function, threads, self.block, arguments)
+                .unwrap();
+        }
+        fn wait(&self) {
+            self.kernels.device.synchronize().unwrap();
         }
         fn set_coordinates(&self, coordinates: &[f64]) {
             self.coordinates.upload(coordinates).unwrap();
         }
-        /// The first pass of the gradient.
-        fn corners(&self) {
+        /// The first pass of the gradient at `x`.
+        fn corners(&self, x: &Buffer<f64>) {
             let (elements, nodes) = (self.layout.elements as u32, self.layout.nodes as u32);
-            self.kernels
-                .device
-                .launch(
-                    &self.kernels.corner_contributions,
-                    self.layout.elements,
-                    self.block,
-                    &[
-                        &elements,
-                        &nodes,
-                        &self.connectivity,
-                        &self.coordinates,
-                        &self.scales,
-                        &self.layout.epsilon,
-                        &self.contributions,
-                    ],
-                )
-                .unwrap();
+            self.launch(
+                &self.kernels.corner_contributions,
+                self.layout.elements,
+                &[
+                    &elements,
+                    &nodes,
+                    &self.connectivity,
+                    x,
+                    &self.scales,
+                    &self.layout.epsilon,
+                    &self.contributions,
+                ],
+            );
         }
-        /// The second pass of the gradient.
-        fn gather(&self) {
+        /// The second pass of the gradient at `x`, into `gradient`.
+        fn gather(&self, x: &Buffer<f64>, gradient: &Buffer<f64>) {
             let (nodes, elements, faces) = (
                 self.layout.nodes as u32,
                 self.layout.elements as u32,
                 self.layout.faces as u32,
             );
-            self.kernels
-                .device
-                .launch(
-                    &self.kernels.gradient,
-                    self.layout.nodes,
-                    self.block,
-                    &[
-                        &nodes,
-                        &elements,
-                        &self.starts,
-                        &self.entries,
-                        &self.contributions,
-                        &self.face_starts,
-                        &self.face_entries,
-                        &faces,
-                        &self.points,
-                        &self.normals,
-                        &self.distances,
-                        &self.coordinates,
-                        &self.lengths,
-                        &self.gradient,
-                    ],
-                )
-                .unwrap();
+            self.launch(
+                &self.kernels.gradient,
+                self.layout.nodes,
+                &[
+                    &nodes,
+                    &elements,
+                    &self.starts,
+                    &self.entries,
+                    &self.contributions,
+                    &self.face_starts,
+                    &self.face_entries,
+                    &faces,
+                    &self.points,
+                    &self.normals,
+                    &self.distances,
+                    x,
+                    &self.lengths,
+                    gradient,
+                ],
+            );
         }
-        /// The energies of the elements and of the nodes, before they are added up.
-        fn energies(&self) {
+        /// The energies of the elements and of the nodes at `x`, before they are added up.
+        fn energies(&self, x: &Buffer<f64>) {
             let (elements, nodes, faces) = (
                 self.layout.elements as u32,
                 self.layout.nodes as u32,
                 self.layout.faces as u32,
             );
-            let device = &self.kernels.device;
-            device
-                .launch(
-                    &self.kernels.element_energies,
-                    self.layout.elements,
-                    self.block,
-                    &[
-                        &elements,
-                        &nodes,
-                        &self.connectivity,
-                        &self.coordinates,
-                        &self.scales,
-                        &self.layout.epsilon,
-                        &self.energies,
-                    ],
-                )
-                .unwrap();
-            device
-                .launch(
-                    &self.kernels.node_energies,
-                    self.layout.nodes,
-                    self.block,
-                    &[
-                        &nodes,
-                        &elements,
-                        &self.face_starts,
-                        &self.face_entries,
-                        &faces,
-                        &self.points,
-                        &self.normals,
-                        &self.distances,
-                        &self.coordinates,
-                        &self.lengths,
-                        &self.energies,
-                    ],
-                )
-                .unwrap();
+            self.launch(
+                &self.kernels.element_energies,
+                self.layout.elements,
+                &[
+                    &elements,
+                    &nodes,
+                    &self.connectivity,
+                    x,
+                    &self.scales,
+                    &self.layout.epsilon,
+                    &self.energies,
+                ],
+            );
+            self.launch(
+                &self.kernels.node_energies,
+                self.layout.nodes,
+                &[
+                    &nodes,
+                    &elements,
+                    &self.face_starts,
+                    &self.face_entries,
+                    &faces,
+                    &self.points,
+                    &self.normals,
+                    &self.distances,
+                    x,
+                    &self.lengths,
+                    &self.energies,
+                ],
+            );
         }
         /// The three passes that add the energies up.
         fn add_up(&self) {
-            let device = &self.kernels.device;
             let count = (self.layout.elements + self.layout.nodes) as u32;
             let (summers, group, groups) =
                 (SUMMERS as u32, GROUP as u32, SUMMERS.div_ceil(GROUP) as u32);
-            device
-                .launch(
-                    &self.kernels.sum_strided,
-                    SUMMERS,
-                    self.block,
-                    &[&count, &summers, &self.energies, &self.partials],
-                )
-                .unwrap();
-            device
-                .launch(
-                    &self.kernels.sum_groups,
-                    SUMMERS.div_ceil(GROUP),
-                    self.block,
-                    &[&summers, &group, &self.partials, &self.groups],
-                )
-                .unwrap();
-            device
-                .launch(
-                    &self.kernels.sum_groups,
-                    1,
-                    self.block,
-                    &[&groups, &group, &self.groups, &self.total],
-                )
-                .unwrap();
+            self.launch(
+                &self.kernels.sum_strided,
+                SUMMERS,
+                &[&count, &summers, &self.energies, &self.partials],
+            );
+            self.launch(
+                &self.kernels.sum_groups,
+                SUMMERS.div_ceil(GROUP),
+                &[&summers, &group, &self.partials, &self.groups],
+            );
+            self.launch(
+                &self.kernels.sum_groups,
+                1,
+                &[&groups, &group, &self.groups, &self.total],
+            );
         }
-        fn objective(&self) -> f64 {
-            self.energies();
+        fn objective_of(&self, x: &Buffer<f64>) -> f64 {
+            self.energies(x);
             self.add_up();
-            self.kernels.device.synchronize().unwrap();
+            self.wait();
             let mut total = [0.0];
             self.total.download(&mut total).unwrap();
             total[0]
         }
-        fn gradient(&self) -> Vec<Point> {
-            self.corners();
-            self.gather();
-            self.kernels.device.synchronize().unwrap();
-            let mut gradient = vec![0.0; 3 * self.layout.nodes];
-            self.gradient.download(&mut gradient).unwrap();
-            points_of(&gradient)
+        fn gradient_points(&self, x: &Buffer<f64>) -> Vec<Point> {
+            self.corners(x);
+            self.gather(x, &self.gradient);
+            self.wait();
+            points_of(&self.download(&self.gradient))
         }
-        fn wait(&self) {
-            self.kernels.device.synchronize().unwrap();
+    }
+
+    impl Backend for OnDevice<'_> {
+        type Vector = Buffer<f64>;
+        fn count(&self) -> usize {
+            3 * self.layout.nodes
+        }
+        fn vector(&self) -> Buffer<f64> {
+            self.kernels.device.buffer(self.count()).unwrap()
+        }
+        fn upload(&self, vector: &Buffer<f64>, planes: &[f64]) {
+            vector.upload(planes).unwrap();
+        }
+        fn download(&self, vector: &Buffer<f64>) -> Vec<f64> {
+            let mut values = vec![0.0; self.count()];
+            vector.download(&mut values).unwrap();
+            values
+        }
+        fn objective(&self, x: &Buffer<f64>) -> f64 {
+            self.objective_of(x)
+        }
+        fn gradient(&self, x: &Buffer<f64>, gradient: &Buffer<f64>) {
+            self.corners(x);
+            self.gather(x, gradient);
+        }
+        fn axpy(&self, alpha: f64, x: &Buffer<f64>, y: &Buffer<f64>, out: &Buffer<f64>) {
+            let count = self.count() as u32;
+            self.launch(
+                &self.kernels.axpy,
+                self.count(),
+                &[&count, &alpha, x, y, out],
+            );
+        }
+        fn scale(&self, alpha: f64, x: &Buffer<f64>, out: &Buffer<f64>) {
+            let count = self.count() as u32;
+            self.launch(&self.kernels.scale, self.count(), &[&count, &alpha, x, out]);
+        }
+        fn scale_in_place(&self, alpha: f64, y: &Buffer<f64>) {
+            let count = self.count() as u32;
+            self.launch(
+                &self.kernels.scale_in_place,
+                self.count(),
+                &[&count, &alpha, y],
+            );
+        }
+        fn dot(&self, a: &Buffer<f64>, b: &Buffer<f64>, slot: usize) {
+            let count = self.count() as u32;
+            let (summers, group, groups, slot) = (
+                SUMMERS as u32,
+                GROUP as u32,
+                SUMMERS.div_ceil(GROUP) as u32,
+                slot as u32,
+            );
+            self.launch(
+                &self.kernels.dot_strided,
+                SUMMERS,
+                &[&count, &summers, a, b, &self.partials],
+            );
+            self.launch(
+                &self.kernels.sum_groups,
+                SUMMERS.div_ceil(GROUP),
+                &[&summers, &group, &self.partials, &self.groups],
+            );
+            self.launch(
+                &self.kernels.sum_into,
+                1,
+                &[&groups, &self.groups, &self.dots, &slot],
+            );
+        }
+        fn read(&self) -> [f64; SLOTS] {
+            self.wait();
+            let mut values = [0.0; SLOTS];
+            self.dots.download(&mut values).unwrap();
+            values
+        }
+        fn times(&self, factor: f64, slot: usize, beta: bool, index: usize) {
+            let (slot, index) = (slot as u32, index as u32);
+            let out = if beta { &self.betas } else { &self.alphas };
+            self.launch(
+                &self.kernels.times,
+                1,
+                &[&factor, &self.dots, &slot, out, &index],
+            );
+        }
+        fn subtract_alpha(&self, index: usize, x: &Buffer<f64>, y: &Buffer<f64>) {
+            let (count, index) = (self.count() as u32, index as u32);
+            self.launch(
+                &self.kernels.subtract_alpha,
+                self.count(),
+                &[&count, &self.alphas, &index, x, y],
+            );
+        }
+        fn subtract_pair(&self, index: usize, x: &Buffer<f64>, y: &Buffer<f64>) {
+            let (count, index) = (self.count() as u32, index as u32);
+            self.launch(
+                &self.kernels.subtract_pair,
+                self.count(),
+                &[&count, &self.alphas, &self.betas, &index, x, y],
+            );
+        }
+        fn begin(&self, _: Phase) {
+            if self.profiling.get() {
+                self.wait();
+                self.started.set(Some(Instant::now()));
+            }
+        }
+        fn end(&self, phase: Phase) {
+            if self.profiling.get() {
+                self.wait();
+                if let Some(started) = self.started.take() {
+                    self.phases.borrow_mut()[phase as usize] +=
+                        started.elapsed().as_secs_f64() * 1.0e3;
+                }
+            }
         }
     }
 
@@ -1156,13 +1297,41 @@ mod device {
         let x = moved(&problem);
         on_device.set_coordinates(&planes(&x));
         let expected = problem.objective(&x);
-        let objective = on_device.objective();
+        let objective = on_device.objective_of(&on_device.coordinates);
         assert!(
             (objective - expected).abs() < 1.0e-11 * expected.abs(),
             "the objective is {objective} on the device and {expected} on the host"
         );
-        let error = disagreement(&problem.gradient(&x), &on_device.gradient());
+        let error = disagreement(
+            &problem.gradient(&x),
+            &on_device.gradient_points(&on_device.coordinates),
+        );
         assert!(error < 1.0e-11, "the gradients disagree by {error}");
+    }
+
+    /// The fit on the device takes the steps that the plain loops on the host do.
+    #[test]
+    fn the_device_solver_follows_the_reference() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let problem = Problem::new(6, 1.0);
+        let layout = Layout::new(&problem);
+        let on_device = OnDevice::new(&kernels, &layout);
+        let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+        let settings = Settings {
+            steps: 15,
+            ..Default::default()
+        };
+        let (expected, expected_x) = reference(&problem, &problem.coordinates, typical, settings);
+        let mut x = on_device.vector();
+        on_device.upload(&x, &planes(&problem.coordinates));
+        let trace = lbfgs(&on_device, &mut x, typical, settings);
+        let (difference, same_steps) = compare(&trace, &expected);
+        assert!(same_steps, "{:?} against {:?}", trace.steps, expected.steps);
+        assert!(difference < 1.0e-8, "the energies differ by {difference}");
+        let error = disagreement(&expected_x, &points_of(&on_device.download(&x)));
+        assert!(error < 1.0e-7, "the points differ by {error}");
     }
 
     /// The objective and the gradient on the device, against the host, for the sizes in `CELLS`.
@@ -1195,31 +1364,35 @@ mod device {
             let on_device = OnDevice::new(&kernels, &layout);
             let x = problem.coordinates.clone();
             on_device.set_coordinates(&planes(&x));
+            let coordinates = &on_device.coordinates;
             let expected = problem.objective(&x);
-            let objective = on_device.objective();
+            let objective = on_device.objective_of(coordinates);
             assert!(
                 (objective - expected).abs() < 1.0e-11 * expected.abs(),
                 "the objective is {objective} on the device and {expected} on the host"
             );
-            let error = disagreement(&problem.gradient(&x), &on_device.gradient());
+            let error = disagreement(
+                &problem.gradient(&x),
+                &on_device.gradient_points(coordinates),
+            );
             assert!(error < 1.0e-11, "the gradients disagree by {error}");
             let repetitions = repetitions();
             let device_objective = time_of(repetitions, || {
-                on_device.energies();
+                on_device.energies(coordinates);
                 on_device.add_up();
                 on_device.wait();
             });
             let corners = time_of(repetitions, || {
-                on_device.corners();
+                on_device.corners(coordinates);
                 on_device.wait();
             });
             let gather = time_of(repetitions, || {
-                on_device.gather();
+                on_device.gather(coordinates, &on_device.gradient);
                 on_device.wait();
             });
             let device_gradient = time_of(repetitions, || {
-                on_device.corners();
-                on_device.gather();
+                on_device.corners(coordinates);
+                on_device.gather(coordinates, &on_device.gradient);
                 on_device.wait();
             });
             let mut contributions = vec![[0.0; 3]; 8 * problem.elements.len()];
@@ -1238,6 +1411,91 @@ mod device {
                 host_objective / device_objective,
                 host_gradient / device_gradient,
             );
+        }
+    }
+
+    /// The fit on the device, all of it: the steps of the method with every vector on the device.
+    ///
+    /// `STEPS` is how many steps to take, 100 by default, which is what a sweep of the fit of the
+    /// library takes at most, and the run does not stop for having converged. It is timed whole,
+    /// and then again with each part of a step waited for, which adds the time of the waiting.
+    #[test]
+    #[ignore]
+    fn device_fit() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let steps = std::env::var("STEPS")
+            .ok()
+            .and_then(|steps| steps.parse().ok())
+            .unwrap_or(100);
+        println!();
+        println!("{}", kernels.device.name());
+        println!(
+            "{:>7}{:>10}{:>11}{:>7}{:>7}{:>12}{:>10}{:>16}{:>16}",
+            "cells",
+            "nodes",
+            "elements",
+            "steps",
+            "evals",
+            "total ms",
+            "ms/step",
+            "energy at start",
+            "energy at end"
+        );
+        for cells in cells() {
+            let problem = Problem::new(cells, 1.0);
+            let layout = Layout::new(&problem);
+            let on_device = OnDevice::new(&kernels, &layout);
+            let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+            let settings = Settings {
+                steps,
+                convergence: 0.0,
+            };
+            let start = planes(&problem.coordinates);
+            let mut x = on_device.vector();
+            let mut run = || {
+                on_device.upload(&x, &start);
+                on_device.wait();
+                let started = Instant::now();
+                let trace = lbfgs(&on_device, &mut x, typical, settings);
+                on_device.wait();
+                (trace, started.elapsed().as_secs_f64() * 1.0e3)
+            };
+            let (trace, _) = run();
+            let total = super::median((0..repetitions()).map(|_| run().1).collect());
+            on_device.profiling.set(true);
+            run();
+            on_device.profiling.set(false);
+            let taken = trace.values.len();
+            println!(
+                "{cells:>7}{:>10}{:>11}{taken:>7}{:>7}{total:>12.3}{:>10.4}{:>16.9e}{:>16.9e}",
+                problem.nodes(),
+                problem.elements.len(),
+                trace.evaluations,
+                total / trace.passes.max(1) as f64,
+                trace.initial,
+                trace.values.last().copied().unwrap_or(trace.initial),
+            );
+            let phases = *on_device.phases.borrow();
+            let waited: f64 = phases.iter().sum();
+            let line: Vec<String> = Phase::ALL
+                .iter()
+                .map(|phase| {
+                    let time = phases[*phase as usize];
+                    format!(
+                        "{} {:.4} ms ({:.0}%)",
+                        phase.name(),
+                        time / trace.passes.max(1) as f64,
+                        100.0 * time / waited
+                    )
+                })
+                .collect();
+            println!(
+                "        per step, each part waited for: {}",
+                line.join(", ")
+            );
+            *on_device.phases.borrow_mut() = [0.0; PHASES];
         }
     }
 }

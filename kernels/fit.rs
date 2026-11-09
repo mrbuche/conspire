@@ -208,3 +208,137 @@ pub unsafe extern "ptx-kernel" fn sum_groups(
     // SAFETY: as the caller says.
     unsafe { shared::sum_groups(thread(), count as usize, group as usize, values, sums) }
 }
+
+/// See [`shared::dot_strided`].
+///
+/// # Safety
+///
+/// `a` and `b` must be `count` values and `partials` must be `threads`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn dot_strided(
+    count: u32,
+    threads: u32,
+    a: *const f64,
+    b: *const f64,
+    partials: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::dot_strided(thread(), count as usize, threads as usize, a, b, partials) }
+}
+
+/// See [`shared::sum_into`].
+///
+/// # Safety
+///
+/// `values` must be `count` values and `out` must have a value at `slot`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn sum_into(
+    count: u32,
+    values: *const f64,
+    out: *mut f64,
+    slot: u32,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::sum_into(thread(), count as usize, values, out, slot as usize) }
+}
+
+/// See [`shared::times`].
+///
+/// # Safety
+///
+/// `dots` must have a value at `dot` and `out` must have a value at `index`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn times(
+    factor: f64,
+    dots: *const f64,
+    dot: u32,
+    out: *mut f64,
+    index: u32,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::times(thread(), factor, dots, dot as usize, out, index as usize) }
+}
+
+/// See [`shared::axpy`].
+///
+/// # Safety
+///
+/// `x`, `y` and `out` must be `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn axpy(
+    count: u32,
+    alpha: f64,
+    x: *const f64,
+    y: *const f64,
+    out: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::axpy(thread(), count as usize, alpha, x, y, out) }
+}
+
+/// See [`shared::scale`].
+///
+/// # Safety
+///
+/// `x` and `out` must be `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn scale(count: u32, alpha: f64, x: *const f64, out: *mut f64) {
+    // SAFETY: as the caller says.
+    unsafe { shared::scale(thread(), count as usize, alpha, x, out) }
+}
+
+/// See [`shared::scale_in_place`].
+///
+/// # Safety
+///
+/// `y` must be `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn scale_in_place(count: u32, alpha: f64, y: *mut f64) {
+    // SAFETY: as the caller says.
+    unsafe { shared::scale_in_place(thread(), count as usize, alpha, y) }
+}
+
+/// See [`shared::subtract_alpha`].
+///
+/// # Safety
+///
+/// `x` and `y` must be `count` values and `scalars` must have a value at `index`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_alpha(
+    count: u32,
+    scalars: *const f64,
+    index: u32,
+    x: *const f64,
+    y: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::subtract_alpha(thread(), count as usize, scalars, index as usize, x, y) }
+}
+
+/// See [`shared::subtract_pair`].
+///
+/// # Safety
+///
+/// `x` and `y` must be `count` values and `alphas` and `betas` must have a value at `index`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_pair(
+    count: u32,
+    alphas: *const f64,
+    betas: *const f64,
+    index: u32,
+    x: *const f64,
+    y: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::subtract_pair(
+            thread(),
+            count as usize,
+            alphas,
+            betas,
+            index as usize,
+            x,
+            y,
+        )
+    }
+}
