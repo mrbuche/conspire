@@ -897,3 +897,265 @@ pub unsafe fn difference_at(
     // SAFETY: the item is among the `count` values.
     unsafe { *out.add(offset + item) = *new.add(item) - *old.add(item) };
 }
+
+// The kernels of a sweep of the fit: what is found from the points at its start and at its end.
+
+/// The size of the thread `item`, a node: the mean length of the edges that leave it, to the nodes
+/// in `entries[starts[item]..starts[item + 1]]`.
+///
+/// # Safety
+///
+/// `starts` must be `nodes + 1` values, `entries` as many as the last says, `coordinates` must be
+/// `3 * nodes`, and `lengths` must be `nodes`.
+pub unsafe fn node_lengths(
+    item: usize,
+    nodes: usize,
+    starts: *const u32,
+    entries: *const u32,
+    coordinates: *const f64,
+    lengths: *mut f64,
+) {
+    if item >= nodes {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (starts, coordinates) = unsafe { (view(starts, nodes + 1), view(coordinates, 3 * nodes)) };
+    let (first, last) = (starts[item] as usize, starts[item + 1] as usize);
+    // SAFETY: the entries are as many as the last of the starts says.
+    let entries = unsafe { view(entries, last) };
+    let mut sum = 0.0;
+    for &other in &entries[first..last] {
+        let other = other as usize;
+        let d = [
+            coordinates[other] - coordinates[item],
+            coordinates[nodes + other] - coordinates[nodes + item],
+            coordinates[2 * nodes + other] - coordinates[2 * nodes + item],
+        ];
+        sum += sqrt(dot(d, d));
+    }
+    // SAFETY: there is a length for each node.
+    unsafe { *lengths.add(item) = sum / (last - first) as f64 };
+}
+
+/// The size of the thread `item`, an element: the mean of the sizes of its nodes.
+///
+/// # Safety
+///
+/// `connectivity` must be `8 * elements`, `lengths` must be `nodes`, and `scales` must be
+/// `elements`.
+pub unsafe fn element_scales(
+    item: usize,
+    elements: usize,
+    nodes: usize,
+    connectivity: *const u32,
+    lengths: *const f64,
+    scales: *mut f64,
+) {
+    if item >= elements {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (connectivity, lengths) =
+        unsafe { (view(connectivity, 8 * elements), view(lengths, nodes)) };
+    let mut sum = 0.0;
+    for corner in 0..8 {
+        sum += lengths[connectivity[corner * elements + item] as usize];
+    }
+    // SAFETY: there is a size for each element.
+    unsafe { *scales.add(item) = sum / 8.0 };
+}
+
+/// The target of the thread `item`, a face of the boundary: the point of the sphere of `radius`
+/// that is nearest to the centroid of the face, the normal there, and the largest of the squared
+/// deviations of the nodes of the face from the plane that they make. The nodes of the face
+/// `face` are `face_nodes[c * faces + face]`.
+///
+/// # Safety
+///
+/// `face_nodes` must be `4 * faces`, `coordinates` must be `3 * nodes`, and `points`, `normals`
+/// must be `3 * faces` and `distances` must be `faces`.
+pub unsafe fn face_targets(
+    item: usize,
+    faces: usize,
+    nodes: usize,
+    face_nodes: *const u32,
+    coordinates: *const f64,
+    radius: f64,
+    points: *mut f64,
+    normals: *mut f64,
+    distances: *mut f64,
+) {
+    if item >= faces {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (face_nodes, coordinates) =
+        unsafe { (view(face_nodes, 4 * faces), view(coordinates, 3 * nodes)) };
+    let mut centroid = [0.0; 3];
+    for c in 0..4 {
+        let node = face_nodes[c * faces + item] as usize;
+        for d in 0..3 {
+            centroid[d] += coordinates[d * nodes + node] * 0.25;
+        }
+    }
+    let norm = sqrt(dot(centroid, centroid));
+    let normal = centroid.map(|c| c / norm);
+    let point = normal.map(|c| c * radius);
+    let mut distance = 0.0_f64;
+    for c in 0..4 {
+        let node = face_nodes[c * faces + item] as usize;
+        let at = [
+            coordinates[node],
+            coordinates[nodes + node],
+            coordinates[2 * nodes + node],
+        ];
+        let deviation = dot(minus(at, point), normal);
+        distance = distance.max(deviation * deviation);
+    }
+    for d in 0..3 {
+        // SAFETY: there is a point and a normal for each face.
+        unsafe {
+            *points.add(d * faces + item) = point[d];
+            *normals.add(d * faces + item) = normal[d];
+        }
+    }
+    // SAFETY: there is a distance for each face.
+    unsafe { *distances.add(item) = distance };
+}
+
+/// The determinant of the corner `C`, with the nodes `A0`, `A1` and `A2` next to it.
+#[inline(always)]
+fn corner_determinant<const C: usize, const A0: usize, const A1: usize, const A2: usize>(
+    points: &[Point; 8],
+) -> f64 {
+    corner(points, C, &[A0, A1, A2]).2
+}
+
+/// The least determinant of a corner of the element of the thread `item`, over the cube of its
+/// size, into `out[item]`.
+///
+/// # Safety
+///
+/// The arrays must be as the layout says and `out` must be `elements`.
+pub unsafe fn element_worst(
+    item: usize,
+    elements: usize,
+    nodes: usize,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    scales: *const f64,
+    out: *mut f64,
+) {
+    if item >= elements {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (points, scales) = unsafe {
+        (
+            points(item, elements, nodes, connectivity, coordinates),
+            view(scales, elements),
+        )
+    };
+    let scale = scales[item];
+    let mut least = f64::INFINITY;
+    // The corners of a hexahedron, each with the three nodes that it is joined to.
+    least = least.min(corner_determinant::<0, 1, 3, 4>(&points));
+    least = least.min(corner_determinant::<1, 2, 0, 5>(&points));
+    least = least.min(corner_determinant::<2, 3, 1, 6>(&points));
+    least = least.min(corner_determinant::<3, 0, 2, 7>(&points));
+    least = least.min(corner_determinant::<4, 7, 5, 0>(&points));
+    least = least.min(corner_determinant::<5, 4, 6, 1>(&points));
+    least = least.min(corner_determinant::<6, 5, 7, 2>(&points));
+    least = least.min(corner_determinant::<7, 6, 4, 3>(&points));
+    // SAFETY: there is a value for each element.
+    unsafe { *out.add(item) = least / (scale * scale * scale) };
+}
+
+/// Minus how far the node of the thread `item` is from where it was, over its size, so that the
+/// greatest shift is the least of these.
+///
+/// # Safety
+///
+/// `start` and `x` must be `3 * nodes`, and `lengths` and `out` must be `nodes`.
+pub unsafe fn shift_values(
+    item: usize,
+    nodes: usize,
+    start: *const f64,
+    x: *const f64,
+    lengths: *const f64,
+    out: *mut f64,
+) {
+    if item >= nodes {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (start, x, lengths) = unsafe {
+        (
+            view(start, 3 * nodes),
+            view(x, 3 * nodes),
+            view(lengths, nodes),
+        )
+    };
+    let d = [
+        x[item] - start[item],
+        x[nodes + item] - start[nodes + item],
+        x[2 * nodes + item] - start[2 * nodes + item],
+    ];
+    // SAFETY: there is a value for each node.
+    unsafe { *out.add(item) = -(sqrt(dot(d, d)) / lengths[item]) };
+}
+
+/// The first pass of the least of `count` values, as [`sum_strided`] is of the sum.
+///
+/// # Safety
+///
+/// `values` must be `count` values and `partials` must be `threads`.
+pub unsafe fn min_strided(
+    item: usize,
+    count: usize,
+    threads: usize,
+    values: *const f64,
+    partials: *mut f64,
+) {
+    if item >= threads {
+        return;
+    }
+    let mut least = f64::INFINITY;
+    let mut index = item;
+    while index < count {
+        // SAFETY: the index is among the `count` values.
+        least = least.min(unsafe { *values.add(index) });
+        index += threads;
+    }
+    // SAFETY: there is a partial value for each thread.
+    unsafe { *partials.add(item) = least };
+}
+
+/// A pass of the least values of `rows` rows after the first, as [`sum_columns`] is of the sums.
+///
+/// # Safety
+///
+/// `values` must be `rows * count` values and `mins` must be `rows * count.div_ceil(group)`.
+pub unsafe fn min_columns(
+    item: usize,
+    count: usize,
+    group: usize,
+    rows: usize,
+    values: *const f64,
+    mins: *mut f64,
+) {
+    let groups = count.div_ceil(group);
+    if item >= rows * groups {
+        return;
+    }
+    let (row, member) = (item / groups, item % groups);
+    let first = row * count + member * group;
+    let last = row * count + ((member + 1) * group).min(count);
+    let mut least = f64::INFINITY;
+    for index in first..last {
+        // SAFETY: the index is among the values of the row.
+        least = least.min(unsafe { *values.add(index) });
+    }
+    // SAFETY: there is a value for each group of each row.
+    unsafe { *mins.add(item) = least };
+}

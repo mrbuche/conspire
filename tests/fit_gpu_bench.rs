@@ -18,7 +18,8 @@
 //! The fit itself, the limited-memory BFGS, is in `fit_gpu_bench/solver.rs`, written once for a
 //! backend that has the vectors. Run on the arithmetic of the kernels on the host it is checked
 //! against a version made of plain loops, and run on the device it is checked against that too.
-//! `device_fit` times it with every vector on the device, whole and by the parts of a step, for the
+//! `device_sweeps` runs the whole fit as the library does, in sweeps that find the sizes, the
+//! targets and the regularization again, and times it by the parts. `device_fit` times one descent with every vector on the device, whole and by the parts of a step, for the
 //! two-loop recursion and for the compact form of the same inverse Hessian, which has far fewer
 //! reductions to wait for.
 //!
@@ -45,10 +46,12 @@
 //! `kernels/fit.sh` and then
 //! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_reference --ignored --nocapture --test-threads=1`
 //! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_fit --ignored --nocapture --test-threads=1`
+//! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_sweeps --ignored --nocapture --test-threads=1`
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids, `22,46,90` by
 //! default, `STEPS` is the steps of the fit of `device_fit`, 100 by default, `SOLVER` is `two-loop`,
-//! `compact` or `both` (the default) for the method of its steps, `REPETITIONS` is how
+//! `compact` or `both` (the default) for the method of its steps, `SWEEPS` is the most sweeps of
+//! `device_sweeps`, 50 by default, `VERBOSE` makes it say what each sweep did, `REPETITIONS` is how
 //! many times each is timed, 5 by default, `DEVICE` is the ordinal of
 //! the device, `BLOCK` is the threads in a block of a launch, 128 by default, `BATCH_THREADS` and
 //! `BATCH_GROUP` are the threads of the first pass of the sums of a batch of dot products and the
@@ -175,6 +178,12 @@ pub struct Problem {
     pub scales: Vec<f64>,
     /// The parameter of the regularization, which the sizes of the elements are applied to.
     pub epsilon: f64,
+    /// The four nodes of each face of the boundary.
+    pub faces: Vec<[u32; 4]>,
+    /// The nodes that an edge joins to each node: `neighbor_entries[neighbor_starts[node]..
+    /// neighbor_starts[node + 1]]`.
+    pub neighbor_starts: Vec<u32>,
+    pub neighbor_entries: Vec<u32>,
     /// The point, the normal and the squared distance of each face of the boundary.
     pub points: Vec<Point>,
     pub normals: Vec<Point>,
@@ -225,13 +234,12 @@ impl Problem {
             }
         }
         // On a grid the nodes that an edge joins are the ones next to a node along an axis.
-        let mut lengths = vec![0.0; coordinates.len()];
+        let mut neighbor_starts = Vec::with_capacity(side * side * side + 1);
+        let mut neighbor_entries = Vec::with_capacity(6 * side * side * side);
+        neighbor_starts.push(0_u32);
         for k in 0..side {
             for j in 0..side {
                 for i in 0..side {
-                    let node = index(i, j, k) as usize;
-                    let mut sum = 0.0;
-                    let mut count = 0;
                     for (axis, at) in [i, j, k].into_iter().enumerate() {
                         for neighbor in [at.checked_sub(1), (at + 1 < side).then_some(at + 1)]
                             .into_iter()
@@ -239,26 +247,13 @@ impl Problem {
                         {
                             let mut other = [i, j, k];
                             other[axis] = neighbor;
-                            let other = index(other[0], other[1], other[2]) as usize;
-                            let d = minus(coordinates[other], coordinates[node]);
-                            sum += dot(d, d).sqrt();
-                            count += 1;
+                            neighbor_entries.push(index(other[0], other[1], other[2]));
                         }
                     }
-                    lengths[node] = sum / count as f64;
+                    neighbor_starts.push(neighbor_entries.len() as u32);
                 }
             }
         }
-        let scales = elements
-            .iter()
-            .map(|element| {
-                element
-                    .iter()
-                    .map(|&node| lengths[node as usize])
-                    .sum::<f64>()
-                    / 8.0
-            })
-            .collect();
         // The faces of the boundary, as the four nodes of each.
         let mut faces: Vec<[u32; 4]> = Vec::with_capacity(6 * cells * cells);
         for a in 0..cells {
@@ -284,25 +279,6 @@ impl Problem {
                     ]);
                 }
             }
-        }
-        let mut points = Vec::with_capacity(faces.len());
-        let mut normals = Vec::with_capacity(faces.len());
-        let mut distances = Vec::with_capacity(faces.len());
-        for face in &faces {
-            let mut centroid = [0.0; 3];
-            for &node in face {
-                (0..3).for_each(|d| centroid[d] += coordinates[node as usize][d] * 0.25);
-            }
-            let norm = dot(centroid, centroid).sqrt();
-            let normal = centroid.map(|c| c / norm);
-            let point = normal.map(|c| c * RADIUS);
-            let distance = face
-                .iter()
-                .map(|&node| dot(minus(coordinates[node as usize], point), normal).powi(2))
-                .fold(0.0, f64::max);
-            points.push(point);
-            normals.push(normal);
-            distances.push(distance);
         }
         let nodes = coordinates.len();
         let mut face_starts = vec![0_u32; nodes + 1];
@@ -333,21 +309,84 @@ impl Problem {
                 next[node as usize] += 1;
             }
         }
-        Self {
+        let mut problem = Self {
             cells,
+            lengths: vec![0.0; nodes],
+            scales: vec![0.0; elements.len()],
+            points: vec![[0.0; 3]; faces.len()],
+            normals: vec![[0.0; 3]; faces.len()],
+            distances: vec![0.0; faces.len()],
             coordinates,
             elements,
-            lengths,
-            scales,
             epsilon,
-            points,
-            normals,
-            distances,
+            faces,
+            neighbor_starts,
+            neighbor_entries,
             face_starts,
             face_entries,
             starts,
             entries,
+        };
+        let start = problem.coordinates.clone();
+        problem.refresh(&start);
+        problem
+    }
+    /// Finds the sizes of the nodes and of the elements, and the targets of the faces, from the
+    /// points `x`, as the start of a sweep of the fit does.
+    pub fn refresh(&mut self, x: &[Point]) {
+        for node in 0..self.nodes() {
+            let (first, last) = (
+                self.neighbor_starts[node] as usize,
+                self.neighbor_starts[node + 1] as usize,
+            );
+            let mut sum = 0.0;
+            for &other in &self.neighbor_entries[first..last] {
+                let d = minus(x[other as usize], x[node]);
+                sum += dot(d, d).sqrt();
+            }
+            self.lengths[node] = sum / (last - first) as f64;
         }
+        for (element, scale) in self.elements.iter().zip(self.scales.iter_mut()) {
+            *scale = element
+                .iter()
+                .map(|&node| self.lengths[node as usize])
+                .sum::<f64>()
+                / 8.0;
+        }
+        for (face, nodes) in self.faces.iter().enumerate() {
+            let mut centroid = [0.0; 3];
+            for &node in nodes {
+                (0..3).for_each(|d| centroid[d] += x[node as usize][d] * 0.25);
+            }
+            let norm = dot(centroid, centroid).sqrt();
+            let normal = centroid.map(|c| c / norm);
+            let point = normal.map(|c| c * RADIUS);
+            self.distances[face] = nodes
+                .iter()
+                .map(|&node| dot(minus(x[node as usize], point), normal).powi(2))
+                .fold(0.0, f64::max);
+            self.points[face] = point;
+            self.normals[face] = normal;
+        }
+    }
+    /// The quality of the elements, which is their energy without that of the boundary, and the
+    /// least determinant of a corner over the cube of the size of its element, as the start of a
+    /// sweep of the fit finds them.
+    pub fn measure(&self, x: &[Point]) -> (f64, f64) {
+        let mut quality = 0.0;
+        let mut worst = f64::INFINITY;
+        for (element, &scale) in self.elements.iter().zip(&self.scales) {
+            quality += scale * energy(element, x, scale.powi(3) * self.epsilon);
+            let least = CORNERS
+                .iter()
+                .map(|(corner, adjacent)| {
+                    let e = edges(element, *corner, adjacent, x);
+                    dot(e[0], cross(e[1], e[2]))
+                })
+                .fold(f64::INFINITY, f64::min);
+            worst = worst.min(least / scale.powi(3));
+        }
+        (quality, worst)
     }
     pub fn nodes(&self) -> usize {
         self.coordinates.len()
@@ -648,6 +687,7 @@ const SUMMERS: usize = 4096;
 const GROUP: usize = 64;
 
 /// A problem as the kernels take it: values on planes, and indices of 32 bits.
+#[derive(Clone)]
 pub struct Layout {
     pub nodes: usize,
     pub elements: usize,
@@ -660,6 +700,11 @@ pub struct Layout {
     pub entries: Vec<u32>,
     pub face_starts: Vec<u32>,
     pub face_entries: Vec<u32>,
+    /// The nodes that an edge joins to each node, as in the problem.
+    pub neighbor_starts: Vec<u32>,
+    pub neighbor_entries: Vec<u32>,
+    /// The nodes of the faces of the boundary, `face_nodes[c * faces + face]` for the node `c`.
+    pub face_nodes: Vec<u32>,
     pub points: Vec<f64>,
     pub normals: Vec<f64>,
     pub distances: Vec<f64>,
@@ -714,6 +759,11 @@ impl Layout {
             entries,
             face_starts: problem.face_starts.clone(),
             face_entries: problem.face_entries.clone(),
+            neighbor_starts: problem.neighbor_starts.clone(),
+            neighbor_entries: problem.neighbor_entries.clone(),
+            face_nodes: (0..4)
+                .flat_map(|c| problem.faces.iter().map(move |face| face[c]))
+                .collect(),
             points: planes(&problem.points),
             normals: planes(&problem.normals),
             distances: problem.distances.clone(),
@@ -753,6 +803,42 @@ fn sum_by_passes(values: &[f64], summers: usize, group: usize) -> f64 {
             }
         }
         partials = sums;
+    }
+    partials[0]
+}
+
+/// The least of `values` as the passes of the kernels make it, run on the host.
+fn min_by_passes(values: &[f64], threads: usize, group: usize) -> f64 {
+    let mut partials = vec![0.0; threads];
+    for item in 0..threads {
+        // SAFETY: the values are `values.len()` and the partials are `threads`.
+        unsafe {
+            shared::min_strided(
+                item,
+                values.len(),
+                threads,
+                values.as_ptr(),
+                partials.as_mut_ptr(),
+            )
+        }
+    }
+    while partials.len() > 1 {
+        let groups = partials.len().div_ceil(group);
+        let mut mins = vec![0.0; groups];
+        for item in 0..groups {
+            // SAFETY: the values are `partials.len()` and the minima are `groups`.
+            unsafe {
+                shared::min_columns(
+                    item,
+                    partials.len(),
+                    group,
+                    1,
+                    partials.as_ptr(),
+                    mins.as_mut_ptr(),
+                )
+            }
+        }
+        partials = mins;
     }
     partials[0]
 }
@@ -948,6 +1034,13 @@ mod device {
         combine: Function,
         scale_at: Function,
         difference_at: Function,
+        node_lengths: Function,
+        element_scales: Function,
+        face_targets: Function,
+        element_worst: Function,
+        shift_values: Function,
+        min_strided: Function,
+        min_columns: Function,
     }
 
     impl Kernels {
@@ -999,6 +1092,13 @@ mod device {
                 combine: function("combine"),
                 scale_at: function("scale_at"),
                 difference_at: function("difference_at"),
+                node_lengths: function("node_lengths"),
+                element_scales: function("element_scales"),
+                face_targets: function("face_targets"),
+                element_worst: function("element_worst"),
+                shift_values: function("shift_values"),
+                min_strided: function("min_strided"),
+                min_columns: function("min_columns"),
                 device,
             })
         }
@@ -1039,6 +1139,15 @@ mod device {
         batch: Buffer<f64>,
         order: Buffer<u32>,
         coefficients: Buffer<f64>,
+        neighbor_starts: Buffer<u32>,
+        neighbor_entries: Buffer<u32>,
+        face_nodes: Buffer<u32>,
+        /// Values of the elements or of the nodes that a sweep reduces, whichever are more.
+        scratch: Buffer<f64>,
+        /// The least value that a reduction found.
+        extreme: Buffer<f64>,
+        /// The regularization, which a sweep sets.
+        epsilon: Cell<f64>,
         /// The order that is on the device, so that it is not sent again.
         uploaded: RefCell<Option<Vec<usize>>>,
         /// Whether the phases of a step are waited for, to time them.
@@ -1095,6 +1204,12 @@ mod device {
                 batch: device.buffer(BATCH).unwrap(),
                 order: device.buffer(HISTORY).unwrap(),
                 coefficients: device.buffer(1 + 2 * HISTORY).unwrap(),
+                neighbor_starts: device.buffer_of(&layout.neighbor_starts).unwrap(),
+                neighbor_entries: device.buffer_of(&layout.neighbor_entries).unwrap(),
+                face_nodes: device.buffer_of(&layout.face_nodes).unwrap(),
+                scratch: device.buffer(layout.elements.max(layout.nodes)).unwrap(),
+                extreme: device.buffer(1).unwrap(),
+                epsilon: Cell::new(layout.epsilon),
                 uploaded: RefCell::new(None),
                 profiling: Cell::new(false),
                 started: Cell::new(None),
@@ -1116,6 +1231,7 @@ mod device {
         /// The first pass of the gradient at `x`.
         fn corners(&self, x: &Buffer<f64>) {
             let (elements, nodes) = (self.layout.elements as u32, self.layout.nodes as u32);
+            let epsilon = self.epsilon.get();
             self.launch(
                 &self.kernels.corner_contributions,
                 self.layout.elements,
@@ -1125,7 +1241,7 @@ mod device {
                     &self.connectivity,
                     x,
                     &self.scales,
-                    &self.layout.epsilon,
+                    &epsilon,
                     &self.contributions,
                 ],
             );
@@ -1160,6 +1276,7 @@ mod device {
         }
         /// The energies of the elements and of the nodes at `x`, before they are added up.
         fn energies(&self, x: &Buffer<f64>) {
+            let epsilon = self.epsilon.get();
             let (elements, nodes, faces) = (
                 self.layout.elements as u32,
                 self.layout.nodes as u32,
@@ -1174,7 +1291,7 @@ mod device {
                     &self.connectivity,
                     x,
                     &self.scales,
-                    &self.layout.epsilon,
+                    &epsilon,
                     &self.energies,
                 ],
             );
@@ -1248,6 +1365,11 @@ mod device {
         /// The passes that take the partial sums of the threads of a first pass, `rows` rows of
         /// them, to one sum for each row in `out`.
         fn reduce(&self, rows: usize, out: &Buffer<f64>) {
+            self.reduce_with(&self.kernels.sum_columns, rows, out);
+        }
+        /// The same with the passes of `function`, which are those of the sums or those of the
+        /// least values.
+        fn reduce_with(&self, function: &Function, rows: usize, out: &Buffer<f64>) {
             let (group, rows_u32) = (self.batch_group as u32, rows as u32);
             let mut count = self.batch_threads;
             let mut level = 0;
@@ -1265,7 +1387,7 @@ mod device {
                 };
                 let count_u32 = count as u32;
                 self.launch(
-                    &self.kernels.sum_columns,
+                    function,
                     rows * groups,
                     &[&count_u32, &group, &rows_u32, input, output],
                 );
@@ -1399,6 +1521,132 @@ mod device {
                     d,
                 ],
             );
+        }
+    }
+
+    impl SweepBackend for OnDevice<'_> {
+        fn start_sweep(&self, x: &Buffer<f64>) -> f64 {
+            let (nodes, elements, faces) = (
+                self.layout.nodes as u32,
+                self.layout.elements as u32,
+                self.layout.faces as u32,
+            );
+            self.launch(
+                &self.kernels.node_lengths,
+                self.layout.nodes,
+                &[
+                    &nodes,
+                    &self.neighbor_starts,
+                    &self.neighbor_entries,
+                    x,
+                    &self.lengths,
+                ],
+            );
+            self.launch(
+                &self.kernels.element_scales,
+                self.layout.elements,
+                &[
+                    &elements,
+                    &nodes,
+                    &self.connectivity,
+                    &self.lengths,
+                    &self.scales,
+                ],
+            );
+            let radius = super::RADIUS;
+            self.launch(
+                &self.kernels.face_targets,
+                self.layout.faces,
+                &[
+                    &faces,
+                    &nodes,
+                    &self.face_nodes,
+                    x,
+                    &radius,
+                    &self.points,
+                    &self.normals,
+                    &self.distances,
+                ],
+            );
+            // The mean size of the nodes.
+            let threads = self.batch_threads as u32;
+            self.launch(
+                &self.kernels.sum_strided,
+                self.batch_threads,
+                &[&nodes, &threads, &self.lengths, &self.batch_partials],
+            );
+            self.reduce(1, &self.total);
+            self.wait();
+            let mut total = [0.0];
+            self.total.download(&mut total).unwrap();
+            total[0] / self.layout.nodes as f64
+        }
+        fn measure(&self, x: &Buffer<f64>) -> (f64, f64) {
+            let (nodes, elements) = (self.layout.nodes as u32, self.layout.elements as u32);
+            let (epsilon, threads) = (self.epsilon.get(), self.batch_threads as u32);
+            self.launch(
+                &self.kernels.element_energies,
+                self.layout.elements,
+                &[
+                    &elements,
+                    &nodes,
+                    &self.connectivity,
+                    x,
+                    &self.scales,
+                    &epsilon,
+                    &self.energies,
+                ],
+            );
+            self.launch(
+                &self.kernels.sum_strided,
+                self.batch_threads,
+                &[&elements, &threads, &self.energies, &self.batch_partials],
+            );
+            self.reduce(1, &self.total);
+            self.launch(
+                &self.kernels.element_worst,
+                self.layout.elements,
+                &[
+                    &elements,
+                    &nodes,
+                    &self.connectivity,
+                    x,
+                    &self.scales,
+                    &self.scratch,
+                ],
+            );
+            self.launch(
+                &self.kernels.min_strided,
+                self.batch_threads,
+                &[&elements, &threads, &self.scratch, &self.batch_partials],
+            );
+            self.reduce_with(&self.kernels.min_columns, 1, &self.extreme);
+            self.wait();
+            let (mut quality, mut worst) = ([0.0], [0.0]);
+            self.total.download(&mut quality).unwrap();
+            self.extreme.download(&mut worst).unwrap();
+            (quality[0], worst[0])
+        }
+        fn set_epsilon(&self, epsilon: f64) {
+            self.epsilon.set(epsilon);
+        }
+        fn shift(&self, start: &Buffer<f64>, x: &Buffer<f64>) -> f64 {
+            let (nodes, threads) = (self.layout.nodes as u32, self.batch_threads as u32);
+            self.launch(
+                &self.kernels.shift_values,
+                self.layout.nodes,
+                &[&nodes, start, x, &self.lengths, &self.scratch],
+            );
+            self.launch(
+                &self.kernels.min_strided,
+                self.batch_threads,
+                &[&nodes, &threads, &self.scratch, &self.batch_partials],
+            );
+            self.reduce_with(&self.kernels.min_columns, 1, &self.extreme);
+            self.wait();
+            let mut least = [0.0];
+            self.extreme.download(&mut least).unwrap();
+            -least[0]
         }
     }
 
@@ -1668,6 +1916,140 @@ mod device {
                 host_objective / device_objective,
                 host_gradient / device_gradient,
             );
+        }
+    }
+
+    /// The sweeps of the fit on the device are the sweeps that the plain loops on the host make.
+    #[test]
+    fn the_device_sweeps_follow_the_reference() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let mut problem = Problem::new(6, 1.0);
+        let layout = Layout::new(&problem);
+        let on_device = OnDevice::new(&kernels, &layout);
+        let start = problem.coordinates.clone();
+        let settings = Settings {
+            steps: 15,
+            ..Default::default()
+        };
+        let (expected, expected_x) = fit_reference(&mut problem, &start, settings, 3);
+        let mut x = on_device.vector();
+        on_device.upload(&x, &planes(&start));
+        let found = fit(&on_device, &mut x, settings, 3, layout.epsilon);
+        assert_eq!(found.sweeps.len(), expected.sweeps.len());
+        let close = |a: f64, b: f64, tolerance: f64| (a - b).abs() <= 1.0e-6 + tolerance * b.abs();
+        for (index, (a, b)) in found.sweeps.iter().zip(&expected.sweeps).enumerate() {
+            assert_eq!(a.passes, b.passes, "sweep {index}: {a:?} against {b:?}");
+            assert!(
+                close(a.epsilon, b.epsilon, 1.0e-4),
+                "sweep {index}: {a:?} against {b:?}"
+            );
+            assert!(
+                close(a.quality, b.quality, 1.0e-6),
+                "sweep {index}: {a:?} against {b:?}"
+            );
+            assert!(
+                close(a.worst, b.worst, 1.0e-4),
+                "sweep {index}: {a:?} against {b:?}"
+            );
+            assert!(
+                close(a.value, b.value, 1.0e-5),
+                "sweep {index}: {a:?} against {b:?}"
+            );
+            assert!(
+                close(a.shift, b.shift, 1.0e-4),
+                "sweep {index}: {a:?} against {b:?}"
+            );
+        }
+        let error = disagreement(&expected_x, &points_of(&on_device.download(&x)));
+        assert!(error < 1.0e-4, "the points differ by {error}");
+    }
+
+    /// The whole fit on the device: every sweep, with the sizes, the targets, the quality and the
+    /// regularization found on the device, and the descents.
+    ///
+    /// `SWEEPS` is the most sweeps, 50 by default as in the library, `STEPS` the most steps of a
+    /// sweep, 100 by default, and `VERBOSE` says what each sweep did. Only the targets are not
+    /// what the library does: the library finds them with a bounding volume hierarchy on the host,
+    /// here the point of the sphere nearest to the face is found on the device.
+    #[test]
+    #[ignore]
+    fn device_sweeps() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let steps = setting("STEPS", 100);
+        let limit = setting("SWEEPS", 50);
+        let verbose = std::env::var_os("VERBOSE").is_some();
+        println!();
+        println!("{}", kernels.device.name());
+        println!("block {}", block());
+        println!(
+            "{:>7}{:>10}{:>11}{:>8}{:>8}{:>10}{:>10}{:>10}{:>10}{:>10}  stopped for",
+            "cells",
+            "nodes",
+            "elements",
+            "sweeps",
+            "steps",
+            "total s",
+            "sizes s",
+            "measure s",
+            "descent s",
+            "shift s"
+        );
+        for cells in cells() {
+            let problem = Problem::new(cells, 1.0);
+            let layout = Layout::new(&problem);
+            let on_device = OnDevice::new(&kernels, &layout);
+            println!(
+                "        batch threads {}, groups of {}",
+                on_device.batch_threads, on_device.batch_group
+            );
+            let mut x = on_device.vector();
+            on_device.upload(&x, &planes(&problem.coordinates));
+            on_device.wait();
+            let settings = Settings {
+                steps,
+                ..Default::default()
+            };
+            let started = Instant::now();
+            let found = fit(&on_device, &mut x, settings, limit, layout.epsilon);
+            on_device.wait();
+            let total = started.elapsed().as_secs_f64();
+            let part = |index: usize| {
+                found
+                    .sweeps
+                    .iter()
+                    .map(|sweep| sweep.seconds[index])
+                    .sum::<f64>()
+            };
+            let taken: usize = found.sweeps.iter().map(|sweep| sweep.passes).sum();
+            println!(
+                "{cells:>7}{:>10}{:>11}{:>8}{taken:>8}{total:>10.3}{:>10.3}{:>10.3}{:>10.3}{:>10.3}  {}",
+                problem.nodes(),
+                problem.elements.len(),
+                found.sweeps.len(),
+                part(0),
+                part(1),
+                part(2),
+                part(3),
+                found.stop,
+            );
+            if verbose {
+                for (index, sweep) in found.sweeps.iter().enumerate() {
+                    println!(
+                        "        sweep {index:>2}: epsilon {:.3e}, quality {:.6e}, worst {:>10.3e}, steps {:>3}, energy {:.6e}, shift {:.3e}, {:.1} ms",
+                        sweep.epsilon,
+                        sweep.quality,
+                        sweep.worst,
+                        sweep.passes,
+                        sweep.value,
+                        sweep.shift,
+                        1.0e3 * sweep.seconds.iter().sum::<f64>()
+                    );
+                }
+            }
         }
     }
 

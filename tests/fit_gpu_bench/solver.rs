@@ -16,10 +16,10 @@
 //! of the iterate, the slope, the energy of a trial point, and the curvature of a correction.
 
 use super::{
-    GROUP, Layout, Point, Problem, SUMMERS, gradient_on_host, objective_on_host, planes, points_of,
-    shared,
+    GROUP, Layout, Point, Problem, SUMMERS, chi, dot, gradient_on_host, min_by_passes, minus,
+    objective_on_host, planes, points_of, shared, sum_by_passes,
 };
-use std::{cell::RefCell, collections::VecDeque, mem::swap};
+use std::{cell::RefCell, collections::VecDeque, marker::PhantomData, mem::swap, time::Instant};
 
 /// The corrections kept.
 pub const HISTORY: usize = 8;
@@ -341,7 +341,9 @@ pub fn reference(
 
 /// The kernels run on the host, one thread after another.
 pub struct Emulated<'a> {
-    layout: &'a Layout,
+    /// The problem, with the sizes and the targets that a sweep sets.
+    layout: RefCell<Layout>,
+    marker: PhantomData<&'a Layout>,
     threads: usize,
     group: usize,
     dots: RefCell<[f64; SLOTS]>,
@@ -358,7 +360,8 @@ impl<'a> Emulated<'a> {
     pub fn with_batch(layout: &'a Layout, threads: usize, group: usize) -> Self {
         assert!(threads >= 2 && group >= 2);
         Self {
-            layout,
+            layout: RefCell::new(layout.clone()),
+            marker: PhantomData,
             threads,
             group,
             dots: RefCell::new([0.0; SLOTS]),
@@ -372,7 +375,7 @@ impl<'a> Emulated<'a> {
 impl Backend for Emulated<'_> {
     type Vector = RefCell<Vec<f64>>;
     fn count(&self) -> usize {
-        3 * self.layout.nodes
+        3 * self.layout.borrow().nodes
     }
     fn vector(&self) -> Self::Vector {
         RefCell::new(vec![0.0; self.count()])
@@ -384,10 +387,10 @@ impl Backend for Emulated<'_> {
         vector.borrow().clone()
     }
     fn objective(&self, x: &Self::Vector) -> f64 {
-        objective_on_host(self.layout, &x.borrow(), self.threads, self.group)
+        objective_on_host(&self.layout.borrow(), &x.borrow(), self.threads, self.group)
     }
     fn gradient(&self, x: &Self::Vector, gradient: &Self::Vector) {
-        *gradient.borrow_mut() = gradient_on_host(self.layout, &x.borrow());
+        *gradient.borrow_mut() = gradient_on_host(&self.layout.borrow(), &x.borrow());
     }
     fn axpy(&self, alpha: f64, x: &Self::Vector, y: &Self::Vector, out: &Self::Vector) {
         let (x, y, mut out) = (x.borrow(), y.borrow(), out.borrow_mut());
@@ -1105,4 +1108,392 @@ fn the_automatic_batch_is_what_was_fastest() {
             "{count} values"
         );
     }
+}
+
+// The sweeps.
+//
+// The fit of the library is not one descent but up to fifty, each of which starts by finding the
+// sizes of the nodes and of the elements and the targets of the faces from where the nodes are,
+// measures the quality of the elements, and sets the regularization from how it has changed. Each
+// goes on for at most a hundred steps, and the fit stops when a descent has nothing to do, when
+// the nodes hardly moved, or when the energy has stopped changing.
+
+const RELAXATION: f64 = 0.1;
+const EPSILON_FLOOR: f64 = 1.0e-12;
+const WINDOW: usize = 3;
+const STAGNATION: f64 = 5.0e-4;
+const TOLERANCE: f64 = 1.0e-3;
+
+/// The regularization of the next sweep, from the quality of the elements and the least
+/// determinant at its start, and the quality at the start of the sweep before.
+pub fn schedule(epsilon: f64, quality: f64, previous: f64, worst: f64) -> f64 {
+    let sigma = RELAXATION.max(1.0 - quality / previous);
+    let mu = (1.0 - sigma) * chi(epsilon, worst);
+    let epsilon_2021 = if worst < mu {
+        2.0 * (mu * (mu - worst)).sqrt()
+    } else {
+        EPSILON_FLOOR
+    };
+    let epsilon_1999 = (1.0e-18 + (0.2 * worst).powi(2)).sqrt();
+    epsilon_2021.min(epsilon_1999)
+}
+
+/// What a backend does at the start and the end of a sweep.
+pub trait SweepBackend: CompactBackend {
+    /// Finds the sizes of the nodes and of the elements and the targets of the faces from `x`, and
+    /// gives the mean size of the nodes.
+    fn start_sweep(&self, x: &Self::Vector) -> f64;
+    /// The quality of the elements at `x`, which is their energy without that of the boundary, and
+    /// the least determinant of a corner over the cube of the size of its element.
+    fn measure(&self, x: &Self::Vector) -> (f64, f64);
+    fn set_epsilon(&self, epsilon: f64);
+    /// The greatest of how far a node is from where it was, over its size.
+    fn shift(&self, start: &Self::Vector, x: &Self::Vector) -> f64;
+}
+
+/// A sweep.
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+pub struct Sweep {
+    pub epsilon: f64,
+    pub quality: f64,
+    pub worst: f64,
+    /// The passes of the descent, those that took a step and those that did not.
+    pub passes: usize,
+    /// The energy at its end.
+    pub value: f64,
+    pub shift: f64,
+    /// The seconds of finding the sizes and the targets, of measuring, of the descent, and of
+    /// the shift.
+    pub seconds: [f64; 4],
+}
+
+/// What a fit did.
+#[derive(Debug, Default)]
+pub struct Sweeps {
+    pub sweeps: Vec<Sweep>,
+    pub stop: &'static str,
+}
+
+/// Whether a sweep ends the fit, and why.
+fn stops(settled: bool, shift: f64, value: f64, window: &VecDeque<f64>) -> Option<&'static str> {
+    let stagnant = window.len() == WINDOW && {
+        let high = window.iter().fold(value, |high, &entry| high.max(entry));
+        let low = window.iter().fold(value, |low, &entry| low.min(entry));
+        high - low <= value.abs() * STAGNATION
+    };
+    if settled {
+        Some("a descent that had nothing to do")
+    } else if shift < TOLERANCE {
+        Some("the nodes hardly moved")
+    } else if stagnant {
+        Some("the energy stopped changing")
+    } else {
+        None
+    }
+}
+
+/// Fits as the library does, in up to `limit` sweeps, from `epsilon` the first time.
+pub fn fit<B: SweepBackend>(
+    backend: &B,
+    x: &mut B::Vector,
+    settings: Settings,
+    limit: usize,
+    epsilon: f64,
+) -> Sweeps {
+    let b = backend;
+    let start = b.vector();
+    let mut epsilon = epsilon;
+    let mut previous = f64::INFINITY;
+    let mut window = VecDeque::with_capacity(WINDOW);
+    let mut result = Sweeps {
+        stop: "the sweeps ran out",
+        ..Default::default()
+    };
+    b.set_epsilon(epsilon);
+    for sweep in 0..limit {
+        let mut seconds = [0.0; 4];
+        let started = Instant::now();
+        let typical = b.start_sweep(x);
+        seconds[0] = started.elapsed().as_secs_f64();
+        let started = Instant::now();
+        let (quality, worst) = b.measure(x);
+        if sweep > 0 {
+            epsilon = schedule(epsilon, quality, previous, worst);
+            b.set_epsilon(epsilon);
+        }
+        previous = quality;
+        seconds[1] = started.elapsed().as_secs_f64();
+        b.scale(1.0, x, &start);
+        let started = Instant::now();
+        let trace = lbfgs_compact(b, x, typical, settings);
+        seconds[2] = started.elapsed().as_secs_f64();
+        let value = trace.values.last().copied().unwrap_or(trace.initial);
+        let started = Instant::now();
+        let shift = b.shift(&start, x);
+        seconds[3] = started.elapsed().as_secs_f64();
+        let stop = stops(trace.converged && trace.passes == 0, shift, value, &window);
+        result.sweeps.push(Sweep {
+            epsilon,
+            quality,
+            worst,
+            passes: trace.passes,
+            value,
+            shift,
+            seconds,
+        });
+        if let Some(reason) = stop {
+            result.stop = reason;
+            break;
+        }
+        if window.len() == WINDOW {
+            window.pop_front();
+        }
+        window.push_back(value);
+    }
+    result
+}
+
+/// The same fit with plain loops, on the points, which finds the sizes and the targets of the
+/// problem again for each sweep.
+pub fn fit_reference(
+    problem: &mut Problem,
+    start: &[Point],
+    settings: Settings,
+    limit: usize,
+) -> (Sweeps, Vec<Point>) {
+    let mut x = start.to_vec();
+    let mut epsilon = problem.epsilon;
+    let mut previous = f64::INFINITY;
+    let mut window = VecDeque::with_capacity(WINDOW);
+    let mut result = Sweeps {
+        stop: "the sweeps ran out",
+        ..Default::default()
+    };
+    for sweep in 0..limit {
+        problem.refresh(&x);
+        let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+        problem.epsilon = epsilon;
+        let (quality, worst) = problem.measure(&x);
+        if sweep > 0 {
+            epsilon = schedule(epsilon, quality, previous, worst);
+            problem.epsilon = epsilon;
+        }
+        previous = quality;
+        let anchor = x.clone();
+        let (trace, next) = reference(problem, &x, typical, settings);
+        x = next;
+        let value = trace.values.last().copied().unwrap_or(trace.initial);
+        let shift = x
+            .iter()
+            .zip(&anchor)
+            .zip(&problem.lengths)
+            .map(|((x, anchor), length)| {
+                let d = minus(*x, *anchor);
+                dot(d, d).sqrt() / length
+            })
+            .fold(0.0, f64::max);
+        let stop = stops(trace.converged && trace.passes == 0, shift, value, &window);
+        result.sweeps.push(Sweep {
+            epsilon,
+            quality,
+            worst,
+            passes: trace.passes,
+            value,
+            shift,
+            seconds: [0.0; 4],
+        });
+        if let Some(reason) = stop {
+            result.stop = reason;
+            break;
+        }
+        if window.len() == WINDOW {
+            window.pop_front();
+        }
+        window.push_back(value);
+    }
+    (result, x)
+}
+
+impl SweepBackend for Emulated<'_> {
+    fn start_sweep(&self, x: &Self::Vector) -> f64 {
+        let x = x.borrow();
+        let mut layout = self.layout.borrow_mut();
+        let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+        {
+            let Layout {
+                neighbor_starts,
+                neighbor_entries,
+                lengths,
+                ..
+            } = &mut *layout;
+            for item in 0..nodes {
+                // SAFETY: the arrays are those of the layout.
+                unsafe {
+                    shared::node_lengths(
+                        item,
+                        nodes,
+                        neighbor_starts.as_ptr(),
+                        neighbor_entries.as_ptr(),
+                        x.as_ptr(),
+                        lengths.as_mut_ptr(),
+                    )
+                }
+            }
+        }
+        {
+            let Layout {
+                connectivity,
+                lengths,
+                scales,
+                ..
+            } = &mut *layout;
+            for item in 0..elements {
+                // SAFETY: the arrays are those of the layout.
+                unsafe {
+                    shared::element_scales(
+                        item,
+                        elements,
+                        nodes,
+                        connectivity.as_ptr(),
+                        lengths.as_ptr(),
+                        scales.as_mut_ptr(),
+                    )
+                }
+            }
+        }
+        {
+            let Layout {
+                face_nodes,
+                points,
+                normals,
+                distances,
+                ..
+            } = &mut *layout;
+            for item in 0..faces {
+                // SAFETY: the arrays are those of the layout.
+                unsafe {
+                    shared::face_targets(
+                        item,
+                        faces,
+                        nodes,
+                        face_nodes.as_ptr(),
+                        x.as_ptr(),
+                        super::RADIUS,
+                        points.as_mut_ptr(),
+                        normals.as_mut_ptr(),
+                        distances.as_mut_ptr(),
+                    )
+                }
+            }
+        }
+        sum_by_passes(&layout.lengths, self.threads, self.group) / nodes as f64
+    }
+    fn measure(&self, x: &Self::Vector) -> (f64, f64) {
+        let x = x.borrow();
+        let layout = self.layout.borrow();
+        let (nodes, elements) = (layout.nodes, layout.elements);
+        let mut energies = vec![0.0; elements];
+        let mut worst = vec![0.0; elements];
+        for item in 0..elements {
+            // SAFETY: the arrays are those of the layout.
+            unsafe {
+                shared::element_energies(
+                    item,
+                    elements,
+                    nodes,
+                    layout.connectivity.as_ptr(),
+                    x.as_ptr(),
+                    layout.scales.as_ptr(),
+                    layout.epsilon,
+                    energies.as_mut_ptr(),
+                );
+                shared::element_worst(
+                    item,
+                    elements,
+                    nodes,
+                    layout.connectivity.as_ptr(),
+                    x.as_ptr(),
+                    layout.scales.as_ptr(),
+                    worst.as_mut_ptr(),
+                )
+            }
+        }
+        (
+            sum_by_passes(&energies, self.threads, self.group),
+            min_by_passes(&worst, self.threads, self.group),
+        )
+    }
+    fn set_epsilon(&self, epsilon: f64) {
+        self.layout.borrow_mut().epsilon = epsilon;
+    }
+    fn shift(&self, start: &Self::Vector, x: &Self::Vector) -> f64 {
+        let (start, x) = (start.borrow(), x.borrow());
+        let layout = self.layout.borrow();
+        let nodes = layout.nodes;
+        let mut values = vec![0.0; nodes];
+        for item in 0..nodes {
+            // SAFETY: the vectors and the sizes are those of the layout.
+            unsafe {
+                shared::shift_values(
+                    item,
+                    nodes,
+                    start.as_ptr(),
+                    x.as_ptr(),
+                    layout.lengths.as_ptr(),
+                    values.as_mut_ptr(),
+                )
+            }
+        }
+        -min_by_passes(&values, self.threads, self.group)
+    }
+}
+
+#[test]
+fn the_sweeps_on_the_kernels_follow_the_reference() {
+    let mut problem = Problem::new(6, 1.0);
+    let layout = Layout::new(&problem);
+    let start = problem.coordinates.clone();
+    let settings = Settings {
+        steps: 25,
+        ..Default::default()
+    };
+    let (expected, expected_x) = fit_reference(&mut problem, &start, settings, 4);
+    let backend = Emulated::new(&layout);
+    let mut x = backend.vector();
+    backend.upload(&x, &planes(&start));
+    let found = fit(&backend, &mut x, settings, 4, layout.epsilon);
+    if std::env::var_os("SHOW").is_some() {
+        found.sweeps.iter().for_each(|sweep| eprintln!("{sweep:?}"));
+        eprintln!("{}", found.stop);
+    }
+    assert_eq!(found.sweeps.len(), expected.sweeps.len());
+    assert!(found.sweeps.len() >= 2, "{:?}", found.sweeps);
+    let close = |a: f64, b: f64, tolerance: f64| (a - b).abs() <= tolerance * b.abs();
+    for (index, (a, b)) in found.sweeps.iter().zip(&expected.sweeps).enumerate() {
+        assert_eq!(a.passes, b.passes, "sweep {index}");
+        assert!(
+            close(a.epsilon, b.epsilon, 1.0e-6),
+            "sweep {index}: {a:?} against {b:?}"
+        );
+        assert!(
+            close(a.quality, b.quality, 1.0e-8),
+            "sweep {index}: {a:?} against {b:?}"
+        );
+        assert!(
+            close(a.worst, b.worst, 1.0e-8),
+            "sweep {index}: {a:?} against {b:?}"
+        );
+        assert!(
+            close(a.value, b.value, 1.0e-6),
+            "sweep {index}: {a:?} against {b:?}"
+        );
+        assert!(
+            close(a.shift, b.shift, 1.0e-5),
+            "sweep {index}: {a:?} against {b:?}"
+        );
+    }
+    assert_eq!(found.stop, expected.stop);
+    let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
+    assert!(error < 1.0e-5, "the points differ by {error}");
 }

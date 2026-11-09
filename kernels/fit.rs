@@ -500,3 +500,174 @@ pub unsafe extern "ptx-kernel" fn difference_at(
     // SAFETY: as the caller says.
     unsafe { shared::difference_at(thread(), count as usize, new, old, out, offset as usize) }
 }
+
+/// See [`shared::node_lengths`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn node_lengths(
+    nodes: u32,
+    starts: *const u32,
+    entries: *const u32,
+    coordinates: *const f64,
+    lengths: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::node_lengths(
+            thread(),
+            nodes as usize,
+            starts,
+            entries,
+            coordinates,
+            lengths,
+        )
+    }
+}
+
+/// See [`shared::element_scales`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn element_scales(
+    elements: u32,
+    nodes: u32,
+    connectivity: *const u32,
+    lengths: *const f64,
+    scales: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::element_scales(
+            thread(),
+            elements as usize,
+            nodes as usize,
+            connectivity,
+            lengths,
+            scales,
+        )
+    }
+}
+
+/// See [`shared::face_targets`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn face_targets(
+    faces: u32,
+    nodes: u32,
+    face_nodes: *const u32,
+    coordinates: *const f64,
+    radius: f64,
+    points: *mut f64,
+    normals: *mut f64,
+    distances: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::face_targets(
+            thread(),
+            faces as usize,
+            nodes as usize,
+            face_nodes,
+            coordinates,
+            radius,
+            points,
+            normals,
+            distances,
+        )
+    }
+}
+
+/// See [`shared::element_worst`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn element_worst(
+    elements: u32,
+    nodes: u32,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    scales: *const f64,
+    out: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::element_worst(
+            thread(),
+            elements as usize,
+            nodes as usize,
+            connectivity,
+            coordinates,
+            scales,
+            out,
+        )
+    }
+}
+
+/// See [`shared::shift_values`].
+///
+/// # Safety
+///
+/// `start` and `x` must be `3 * nodes`, and `lengths` and `out` must be `nodes`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn shift_values(
+    nodes: u32,
+    start: *const f64,
+    x: *const f64,
+    lengths: *const f64,
+    out: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::shift_values(thread(), nodes as usize, start, x, lengths, out) }
+}
+
+/// See [`shared::min_strided`].
+///
+/// # Safety
+///
+/// `values` must be `count` values and `partials` must be `threads`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn min_strided(
+    count: u32,
+    threads: u32,
+    values: *const f64,
+    partials: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::min_strided(thread(), count as usize, threads as usize, values, partials) }
+}
+
+/// See [`shared::min_columns`].
+///
+/// # Safety
+///
+/// `values` must be `rows * count` values and `mins` must be `rows * count.div_ceil(group)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn min_columns(
+    count: u32,
+    group: u32,
+    rows: u32,
+    values: *const f64,
+    mins: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::min_columns(
+            thread(),
+            count as usize,
+            group as usize,
+            rows as usize,
+            values,
+            mins,
+        )
+    }
+}
