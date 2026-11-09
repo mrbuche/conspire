@@ -375,6 +375,7 @@ fn triad(threads: usize) -> f64 {
 ///
 /// - `SCALE` sets the size of the mesh, the number of cells growing about as its cube (5.0).
 /// - `FREEDOM` is `whole` to fit every node, or `shell` for the boundary and its neighbours.
+/// - `STL` is a surface to mesh and fit, instead of the octahedron, such as a bone.
 /// - The threads are those the process may run on, so `taskset -c 0-7` runs it on eight.
 #[test]
 #[ignore]
@@ -399,7 +400,12 @@ fn profile_fit() {
         Ok("shell") => Freedom::Shell,
         _ => Freedom::Whole,
     };
-    let target = octahedron(2);
+    let target = match var("STL") {
+        Ok(path) => {
+            Tessellation::try_from(std::path::Path::new(&path)).expect("the surface is read")
+        }
+        Err(_) => octahedron(2),
+    };
     let started = Instant::now();
     let mut octree = Octree::<u16, usize>::from_features(
         &target,
