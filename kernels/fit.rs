@@ -671,3 +671,49 @@ pub unsafe extern "ptx-kernel" fn min_columns(
         )
     }
 }
+
+/// See [`shared::surface_targets`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout and the surface say.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn surface_targets(
+    faces: u32,
+    nodes: u32,
+    tree_nodes: u32,
+    triangle_count: u32,
+    face_nodes: *const u32,
+    coordinates: *const f64,
+    bounds: *const f64,
+    skips: *const u32,
+    firsts: *const u32,
+    counts: *const u32,
+    triangles: *const f64,
+    previous: *mut u32,
+    points: *mut f64,
+    normals: *mut f64,
+    distances: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::surface_targets(
+            thread(),
+            faces as usize,
+            nodes as usize,
+            tree_nodes as usize,
+            triangle_count as usize,
+            face_nodes,
+            coordinates,
+            bounds,
+            skips,
+            firsts,
+            counts,
+            triangles,
+            previous,
+            points,
+            normals,
+            distances,
+        )
+    }
+}

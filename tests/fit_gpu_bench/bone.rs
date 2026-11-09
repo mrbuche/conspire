@@ -20,8 +20,9 @@
 //! `VERBOSE` says what each sweep did.
 
 use super::{
-    Layout, cross, dot, minus,
+    Layout, Point, cross, dot, minus, random,
     solver::{Backend, Emulated, Settings, SweepBackend, Sweeps, Targets, Threaded, fit},
+    surface::{Surface, surface_targets_on_host},
 };
 use conspire::geometry::{
     Coordinate,
@@ -255,6 +256,23 @@ pub fn layout_of(mesh: &Mesh<3>) -> Bone {
             distances: vec![0.0; faces],
         },
     }
+}
+
+/// The triangles of a surface, as the corners of each.
+pub fn soup_of(target: &Tessellation) -> Vec<[Point; 3]> {
+    let coordinates = target.mesh().coordinates();
+    target
+        .mesh()
+        .connectivities()
+        .iter()
+        .flatten()
+        .map(|triangle| {
+            [0, 1, 2].map(|index| {
+                let point = &coordinates[triangle[index]];
+                [point[0].value(), point[1].value(), point[2].value()]
+            })
+        })
+        .collect()
 }
 
 /// The targets of the faces of a layout, from a surface: for each face, the point of the surface
@@ -505,6 +523,111 @@ fn the_layout_of_a_bone_mesh_is_consistent() {
         }
     }
     assert!(checked > 60);
+}
+
+/// The kernel that finds the targets, run on the host, finds the points that the library does, and
+/// finds them again from the triangles of the last time after the nodes have moved.
+#[test]
+fn the_surface_kernel_finds_the_nearest_points() {
+    let Some(target) = read() else {
+        return;
+    };
+    let Bone {
+        layout,
+        coordinates,
+    } = layout_of(&mesh(&target, 5.0));
+    let (nodes, faces) = (layout.nodes, layout.faces);
+    let surface = Surface::new(&soup_of(&target));
+    let library = SurfaceTargets::new(&target, &layout);
+    let centroid = |x: &[f64], face: usize| {
+        let mut sum = [0.0; 3];
+        for corner in 0..4 {
+            let node = layout.face_nodes[corner * faces + face] as usize;
+            for d in 0..3 {
+                sum[d] += x[d * nodes + node] * 0.25;
+            }
+        }
+        sum
+    };
+    let mut previous = vec![u32::MAX; faces];
+    let mut x = coordinates.clone();
+    let mut state = 5;
+    for round in 0..3 {
+        if round > 0 {
+            // A small move of the nodes, so that the faces mostly keep their triangles.
+            for value in x.iter_mut() {
+                *value += 1.0e-3 * random(&mut state);
+            }
+        }
+        let mut found = layout.clone();
+        surface_targets_on_host(&surface, &mut found, &mut previous, &x);
+        let (points, _, _) = library.find(&x);
+        let mut differ = 0;
+        for face in 0..faces {
+            let at = centroid(&x, face);
+            let distance = |points: &[f64]| {
+                let d = minus(at, [0, 1, 2].map(|d| points[d * faces + face]));
+                dot(d, d)
+            };
+            let (ours, theirs) = (distance(&found.points), distance(&points));
+            assert!(
+                (ours - theirs).abs() <= 1.0e-9 * theirs.max(1.0e-9),
+                "round {round}, face {face}: {ours} against {theirs}"
+            );
+            let same = [0, 1, 2].iter().all(|&d| {
+                (found.points[d * faces + face] - points[d * faces + face]).abs() < 1.0e-9
+            });
+            differ += usize::from(!same);
+            let normal = [0, 1, 2].map(|d| found.normals[d * faces + face]);
+            assert!((dot(normal, normal) - 1.0).abs() < 1.0e-9 || dot(normal, normal) == 0.0);
+        }
+        // Only a tie, at an edge or a corner, picks another point.
+        assert!(differ * 50 <= faces, "{differ} of {faces} faces");
+        assert!(
+            previous
+                .iter()
+                .all(|&triangle| (triangle as usize) < surface.count())
+        );
+    }
+}
+
+/// The fit with the targets found by the kernel reaches the quality that the fit with the targets
+/// of the library does, to within what the faces on an edge, which pick either triangle, change.
+#[test]
+fn the_fit_with_the_surface_kernel_matches_the_fit_with_the_library() {
+    let Some(target) = read() else {
+        return;
+    };
+    let Bone {
+        layout,
+        coordinates,
+    } = layout_of(&mesh(&target, 4.0));
+    let surface = Surface::new(&soup_of(&target));
+    let library = SurfaceTargets::new(&target, &layout);
+    let settings = Settings {
+        steps: 20,
+        ..Default::default()
+    };
+    let run = |backend: &Emulated| {
+        let mut x = backend.vector();
+        backend.upload(&x, &coordinates);
+        fit(backend, &mut x, settings, 4, layout.epsilon)
+    };
+    let expected = run(&Emulated::new(&layout).with_targets(library.targets()));
+    let found = run(&Emulated::new(&layout).with_surface(&surface));
+    let (a, b) = (
+        found.sweeps.last().unwrap(),
+        expected.sweeps.last().unwrap(),
+    );
+    assert_eq!(found.sweeps.len(), expected.sweeps.len());
+    assert!(
+        (a.quality - b.quality).abs() <= 3.0e-2 * b.quality.abs().max(1.0e-3),
+        "{a:?} {b:?}"
+    );
+    assert!(
+        (a.value - b.value).abs() <= 3.0e-2 * b.value.abs().max(1.0e-3),
+        "{a:?} {b:?}"
+    );
 }
 
 /// The fit of a bone on the threads of the host, for each size of the octree in `SCALES`.

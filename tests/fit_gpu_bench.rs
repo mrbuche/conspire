@@ -677,6 +677,9 @@ mod shared;
 #[path = "fit_gpu_bench/solver.rs"]
 mod solver;
 
+#[path = "fit_gpu_bench/surface.rs"]
+mod surface;
+
 /// The fit of a bone, which needs the library to make the mesh from the surface.
 #[cfg(feature = "geometry")]
 #[path = "fit_gpu_bench/bone.rs"]
@@ -1044,6 +1047,7 @@ mod device {
         node_lengths: Function,
         element_scales: Function,
         face_targets: Function,
+        surface_targets: Function,
         element_worst: Function,
         shift_values: Function,
         min_strided: Function,
@@ -1102,6 +1106,7 @@ mod device {
                 node_lengths: function("node_lengths"),
                 element_scales: function("element_scales"),
                 face_targets: function("face_targets"),
+                surface_targets: function("surface_targets"),
                 element_worst: function("element_worst"),
                 shift_values: function("shift_values"),
                 min_strided: function("min_strided"),
@@ -1109,6 +1114,18 @@ mod device {
                 device,
             })
         }
+    }
+
+    /// A surface of triangles on the device, and the triangle that each face was nearest to.
+    struct OnSurface {
+        tree_nodes: u32,
+        triangles: u32,
+        bounds: Buffer<f64>,
+        skips: Buffer<u32>,
+        firsts: Buffer<u32>,
+        counts: Buffer<u32>,
+        triangle_data: Buffer<f64>,
+        previous: Buffer<u32>,
     }
 
     /// A problem on the device, with the buffers that the passes use.
@@ -1158,6 +1175,8 @@ mod device {
         /// What finds the targets of the faces on the host, where they are not those of a sphere,
         /// and the seconds that it and the transfers have taken.
         host_targets: Option<Targets<'a>>,
+        /// The surface that the targets are found on, by a kernel.
+        surface: Option<OnSurface>,
         target_seconds: Cell<f64>,
         /// The order that is on the device, so that it is not sent again.
         uploaded: RefCell<Option<Vec<usize>>>,
@@ -1222,6 +1241,7 @@ mod device {
                 extreme: device.buffer(1).unwrap(),
                 epsilon: Cell::new(layout.epsilon),
                 host_targets: None,
+                surface: None,
                 target_seconds: Cell::new(0.0),
                 uploaded: RefCell::new(None),
                 profiling: Cell::new(false),
@@ -1234,6 +1254,25 @@ mod device {
         #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
         fn with_targets(mut self, targets: Targets<'a>) -> Self {
             self.host_targets = Some(targets);
+            self
+        }
+        /// With the targets of the faces found on `surface` by a kernel, from where the nodes are
+        /// that sweep.
+        #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+        fn with_surface(mut self, surface: &crate::surface::Surface) -> Self {
+            let device = &self.kernels.device;
+            self.surface = Some(OnSurface {
+                tree_nodes: surface.nodes() as u32,
+                triangles: surface.count() as u32,
+                bounds: device.buffer_of(&surface.bounds).unwrap(),
+                skips: device.buffer_of(&surface.skips).unwrap(),
+                firsts: device.buffer_of(&surface.firsts).unwrap(),
+                counts: device.buffer_of(&surface.counts).unwrap(),
+                triangle_data: device.buffer_of(&surface.triangles).unwrap(),
+                previous: device
+                    .buffer_of(&vec![u32::MAX; self.layout.faces])
+                    .unwrap(),
+            });
             self
         }
         fn launch(&self, function: &Function, threads: usize, arguments: &[&dyn Argument]) {
@@ -1580,6 +1619,33 @@ mod device {
                 self.points.upload(&points).unwrap();
                 self.normals.upload(&normals).unwrap();
                 self.distances.upload(&distances).unwrap();
+                self.target_seconds
+                    .set(self.target_seconds.get() + started.elapsed().as_secs_f64());
+            } else if let Some(surface) = &self.surface {
+                self.wait();
+                let started = Instant::now();
+                self.launch(
+                    &self.kernels.surface_targets,
+                    self.layout.faces,
+                    &[
+                        &faces,
+                        &nodes,
+                        &surface.tree_nodes,
+                        &surface.triangles,
+                        &self.face_nodes,
+                        x,
+                        &surface.bounds,
+                        &surface.skips,
+                        &surface.firsts,
+                        &surface.counts,
+                        &surface.triangle_data,
+                        &surface.previous,
+                        &self.points,
+                        &self.normals,
+                        &self.distances,
+                    ],
+                );
+                self.wait();
                 self.target_seconds
                     .set(self.target_seconds.get() + started.elapsed().as_secs_f64());
             } else {
@@ -2041,8 +2107,49 @@ mod device {
         }
     }
 
+    /// The fit of a bone on the device with the targets found on the device from the triangles
+    /// takes the sweeps that the same kernels run on the host do.
+    #[cfg(feature = "geometry")]
+    #[test]
+    fn the_device_surface_fit_follows_the_emulation() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let Some(target) = bone::read() else {
+            return;
+        };
+        let Bone {
+            layout,
+            coordinates,
+        } = bone::layout_of(&bone::mesh(&target, 3.0));
+        let surface = crate::surface::Surface::new(&bone::soup_of(&target));
+        let settings = Settings {
+            steps: 15,
+            ..Default::default()
+        };
+        let emulated = Emulated::new(&layout).with_surface(&surface);
+        let mut expected_x = emulated.vector();
+        emulated.upload(&expected_x, &coordinates);
+        let expected = fit(&emulated, &mut expected_x, settings, 3, layout.epsilon);
+        let on_device = OnDevice::new(&kernels, &layout).with_surface(&surface);
+        let mut x = on_device.vector();
+        on_device.upload(&x, &coordinates);
+        let found = fit(&on_device, &mut x, settings, 3, layout.epsilon);
+        assert_eq!(found.sweeps.len(), expected.sweeps.len());
+        let close = |a: f64, b: f64, tolerance: f64| (a - b).abs() <= 1.0e-6 + tolerance * b.abs();
+        for (index, (a, b)) in found.sweeps.iter().zip(&expected.sweeps).enumerate() {
+            let at = format!("sweep {index}: {a:?} against {b:?}");
+            assert_eq!(a.passes, b.passes, "{at}");
+            assert!(close(a.quality, b.quality, 1.0e-6), "{at}");
+            assert!(close(a.value, b.value, 1.0e-5), "{at}");
+            assert!(close(a.shift, b.shift, 1.0e-4), "{at}");
+        }
+        assert!(on_device.target_seconds() > 0.0);
+    }
+
     /// The fit of a bone on the device, for each size of the octree in `SCALES`: the mesh is made on
-    /// the host, and each sweep finds its targets from the surface on the host and sends them over.
+    /// the host, and each sweep finds its targets from the surface, on the device unless `TARGETS`
+    /// is `host`, where they are found by the library and sent over.
     #[cfg(feature = "geometry")]
     #[test]
     #[ignore]
@@ -2058,7 +2165,14 @@ mod device {
             ..Default::default()
         };
         let limit = bone::setting("SWEEPS", 50);
-        bone::header(&format!("{}, block {}", kernels.device.name(), block()));
+        let on_host = std::env::var("TARGETS").is_ok_and(|targets| targets == "host");
+        let surface = crate::surface::Surface::new(&bone::soup_of(&target));
+        bone::header(&format!(
+            "{}, block {}, targets on the {}",
+            kernels.device.name(),
+            block(),
+            if on_host { "host" } else { "device" }
+        ));
         for scale in bone::scales() {
             let started = Instant::now();
             let mesh = bone::mesh(&target, scale);
@@ -2077,7 +2191,11 @@ mod device {
             );
             let targets = SurfaceTargets::new(&target, &layout);
             let started = Instant::now();
-            let on_device = OnDevice::new(&kernels, &layout).with_targets(targets.targets());
+            let on_device = if on_host {
+                OnDevice::new(&kernels, &layout).with_targets(targets.targets())
+            } else {
+                OnDevice::new(&kernels, &layout).with_surface(&surface)
+            };
             let mut x = on_device.vector();
             on_device.upload(&x, &coordinates);
             on_device.wait();

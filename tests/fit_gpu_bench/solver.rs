@@ -18,6 +18,7 @@
 use super::{
     GROUP, Layout, Point, Problem, SUMMERS, chi, dot, gradient_on_host, min_by_passes, minus,
     objective_on_host, planes, points_of, shared, sum_by_passes,
+    surface::{Surface, surface_targets_on_host},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -352,6 +353,9 @@ pub struct Emulated<'a> {
     layout: RefCell<Layout>,
     marker: PhantomData<&'a Layout>,
     targets: Option<Targets<'a>>,
+    /// A surface to find the targets on, by the kernel, and the triangle that each face had last.
+    surface: Option<&'a Surface>,
+    previous: RefCell<Vec<u32>>,
     threads: usize,
     group: usize,
     dots: RefCell<[f64; SLOTS]>,
@@ -371,6 +375,12 @@ impl<'a> Emulated<'a> {
         self.targets = Some(targets);
         self
     }
+    /// With the targets of the faces found on `surface` by the kernel that a device runs.
+    #[allow(dead_code)]
+    pub fn with_surface(mut self, surface: &'a Surface) -> Self {
+        self.surface = Some(surface);
+        self
+    }
     /// With other threads for the first pass of the sums of a batch, and other groups after it.
     pub fn with_batch(layout: &'a Layout, threads: usize, group: usize) -> Self {
         assert!(threads >= 2 && group >= 2);
@@ -378,6 +388,8 @@ impl<'a> Emulated<'a> {
             layout: RefCell::new(layout.clone()),
             marker: PhantomData,
             targets: None,
+            surface: None,
+            previous: RefCell::new(vec![u32::MAX; layout.faces]),
             threads,
             group,
             dots: RefCell::new([0.0; SLOTS]),
@@ -1392,6 +1404,8 @@ impl SweepBackend for Emulated<'_> {
             layout.points = points;
             layout.normals = normals;
             layout.distances = distances;
+        } else if let Some(surface) = self.surface {
+            surface_targets_on_host(surface, &mut layout, &mut self.previous.borrow_mut(), &x);
         } else {
             let Layout {
                 face_nodes,

@@ -1159,3 +1159,253 @@ pub unsafe fn min_columns(
     // SAFETY: there is a value for each group of each row.
     unsafe { *mins.add(item) = least };
 }
+
+// The targets of the faces from a surface of triangles, found where the nodes are.
+//
+// The triangles are twelve numbers each, the three corners and the unit normal. Over them is a
+// tree of boxes, which is walked from its first box and not from the root down: the boxes are in
+// the order that a walk down the tree visits them, so the next box to visit is the one after, and
+// where a box and what is in it can be left out, `skips` says which box is next. Nothing is kept
+// of where the walk has been, which a thread of a device cannot do cheaply.
+
+fn plus(a: Point, b: Point) -> Point {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn scaled(a: Point, factor: f64) -> Point {
+    [a[0] * factor, a[1] * factor, a[2] * factor]
+}
+
+/// The point of the triangle `a b c` that is nearest to `p`.
+#[allow(dead_code)]
+pub fn closest_on_triangle(p: Point, a: Point, b: Point, c: Point) -> Point {
+    let ab = minus(b, a);
+    let ac = minus(c, a);
+    let ap = minus(p, a);
+    let (d1, d2) = (dot(ab, ap), dot(ac, ap));
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+    let bp = minus(p, b);
+    let (d3, d4) = (dot(ab, bp), dot(ac, bp));
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        return plus(a, scaled(ab, d1 / (d1 - d3)));
+    }
+    let cp = minus(p, c);
+    let (d5, d6) = (dot(ab, cp), dot(ac, cp));
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        return plus(a, scaled(ac, d2 / (d2 - d6)));
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0 {
+        return plus(b, scaled(minus(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6))));
+    }
+    let total = va + vb + vc;
+    if total == 0.0 {
+        // A triangle that has no area.
+        return a;
+    }
+    plus(a, plus(scaled(ab, vb / total), scaled(ac, vc / total)))
+}
+
+/// The squared distance from `p` to the box `node` of the tree.
+fn box_distance(p: Point, bounds: &View<f64>, node: usize) -> f64 {
+    let mut sum = 0.0;
+    for d in 0..3 {
+        let excess = (bounds[6 * node + d] - p[d])
+            .max(p[d] - bounds[6 * node + 3 + d])
+            .max(0.0);
+        sum += excess * excess;
+    }
+    sum
+}
+
+/// The corners of the triangle `triangle`.
+fn corners(triangles: &View<f64>, triangle: usize) -> (Point, Point, Point) {
+    let at = |first: usize| {
+        [
+            triangles[12 * triangle + first],
+            triangles[12 * triangle + first + 1],
+            triangles[12 * triangle + first + 2],
+        ]
+    };
+    (at(0), at(3), at(6))
+}
+
+/// The triangle nearest to `query`, the point of it that is nearest, and the squared distance to
+/// that point, by a walk down the tree that starts from the triangle `guess` if there is one, so
+/// that most of the tree can be left out. Of triangles that are as near, the one that is found
+/// first is the one that stays.
+fn nearest(
+    query: Point,
+    tree_nodes: usize,
+    bounds: &View<f64>,
+    skips: &View<u32>,
+    firsts: &View<u32>,
+    counts: &View<u32>,
+    triangles: &View<f64>,
+    guess: u32,
+) -> (u32, Point, f64) {
+    let mut best = f64::INFINITY;
+    let mut found = u32::MAX;
+    let mut point = [0.0; 3];
+    if guess != u32::MAX {
+        let (a, b, c) = corners(triangles, guess as usize);
+        point = closest_on_triangle(query, a, b, c);
+        let d = minus(query, point);
+        best = dot(d, d);
+        found = guess;
+    }
+    let mut node = 0;
+    while node < tree_nodes {
+        if box_distance(query, bounds, node) < best {
+            let first = firsts[node] as usize;
+            for triangle in first..first + counts[node] as usize {
+                let (a, b, c) = corners(triangles, triangle);
+                let nearest = closest_on_triangle(query, a, b, c);
+                let d = minus(query, nearest);
+                let distance = dot(d, d);
+                if distance < best {
+                    best = distance;
+                    found = triangle as u32;
+                    point = nearest;
+                }
+            }
+            node += 1;
+        } else {
+            node = skips[node] as usize;
+        }
+    }
+    (found, point, best)
+}
+
+/// The same for a query among arrays.
+///
+/// # Safety
+///
+/// The arrays must be those of a surface: `tree_nodes` boxes of six numbers, and as many skips,
+/// firsts and counts, and triangles of twelve numbers, with `guess` among them if it is any.
+#[allow(dead_code)]
+pub unsafe fn nearest_triangle(
+    query: Point,
+    tree_nodes: usize,
+    triangle_count: usize,
+    bounds: *const f64,
+    skips: *const u32,
+    firsts: *const u32,
+    counts: *const u32,
+    triangles: *const f64,
+    guess: u32,
+) -> (u32, Point, f64) {
+    // SAFETY: as the caller says.
+    let (bounds, skips, firsts, counts, triangles) = unsafe {
+        (
+            view(bounds, 6 * tree_nodes),
+            view(skips, tree_nodes),
+            view(firsts, tree_nodes),
+            view(counts, tree_nodes),
+            view(triangles, 12 * triangle_count),
+        )
+    };
+    nearest(
+        query, tree_nodes, &bounds, &skips, &firsts, &counts, &triangles, guess,
+    )
+}
+
+/// The target of the thread `item`, a face of the boundary: the point of the surface that is
+/// nearest to the centroid of the face, the normal of the triangle that it is on, and the largest
+/// of the squared deviations of the nodes of the face from that plane. The triangle that was
+/// nearest the last time is in `previous[item]` and is where the walk starts, and the triangle
+/// that is nearest now is put there.
+///
+/// # Safety
+///
+/// The arrays must be as the layout and the surface say, `previous` must be `faces` values, each
+/// either no triangle, which is `u32::MAX`, or one of the surface, and `points`, `normals` must be
+/// `3 * faces` and `distances` must be `faces`.
+pub unsafe fn surface_targets(
+    item: usize,
+    faces: usize,
+    nodes: usize,
+    tree_nodes: usize,
+    triangle_count: usize,
+    face_nodes: *const u32,
+    coordinates: *const f64,
+    bounds: *const f64,
+    skips: *const u32,
+    firsts: *const u32,
+    counts: *const u32,
+    triangles: *const f64,
+    previous: *mut u32,
+    points: *mut f64,
+    normals: *mut f64,
+    distances: *mut f64,
+) {
+    if item >= faces {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let (face_nodes, coordinates, bounds, skips, firsts, counts, triangles) = unsafe {
+        (
+            view(face_nodes, 4 * faces),
+            view(coordinates, 3 * nodes),
+            view(bounds, 6 * tree_nodes),
+            view(skips, tree_nodes),
+            view(firsts, tree_nodes),
+            view(counts, tree_nodes),
+            view(triangles, 12 * triangle_count),
+        )
+    };
+    let mut centroid = [0.0; 3];
+    for c in 0..4 {
+        let node = face_nodes[c * faces + item] as usize;
+        for d in 0..3 {
+            centroid[d] += coordinates[d * nodes + node] * 0.25;
+        }
+    }
+    // SAFETY: there is a triangle for each face.
+    let guess = unsafe { *previous.add(item) };
+    let (found, point, _) = nearest(
+        centroid, tree_nodes, &bounds, &skips, &firsts, &counts, &triangles, guess,
+    );
+    let normal = if found == u32::MAX {
+        [0.0; 3]
+    } else {
+        [
+            triangles[12 * found as usize + 9],
+            triangles[12 * found as usize + 10],
+            triangles[12 * found as usize + 11],
+        ]
+    };
+    let mut distance = 0.0_f64;
+    for c in 0..4 {
+        let node = face_nodes[c * faces + item] as usize;
+        let at = [
+            coordinates[node],
+            coordinates[nodes + node],
+            coordinates[2 * nodes + node],
+        ];
+        let deviation = dot(minus(at, point), normal);
+        distance = distance.max(deviation * deviation);
+    }
+    for d in 0..3 {
+        // SAFETY: there is a point and a normal for each face.
+        unsafe {
+            *points.add(d * faces + item) = point[d];
+            *normals.add(d * faces + item) = normal[d];
+        }
+    }
+    // SAFETY: there is a distance and a triangle for each face.
+    unsafe {
+        *distances.add(item) = distance;
+        *previous.add(item) = found;
+    }
+}
