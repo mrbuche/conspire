@@ -2156,7 +2156,7 @@ mod device {
         let Some(kernels) = Kernels::new() else {
             return;
         };
-        let Some((target, bone)) = bone::case() else {
+        let Some((target, bone, mesh)) = bone::case() else {
             return;
         };
         let Bone {
@@ -2186,6 +2186,12 @@ mod device {
             &found,
             total,
             on_device.target_seconds(),
+        );
+        bone::finish(
+            mesh,
+            nodes,
+            &SurfaceTargets::new(&target, &layout),
+            &on_device.download(&x),
         );
     }
 

@@ -26,9 +26,10 @@ use super::{
 };
 use conspire::geometry::{
     Coordinate,
-    mesh::{Dualization, Input, Mesh, Tessellation},
+    mesh::{Dualization, ExodusFormat, Input, Mesh, Output, Tessellation, Verdict},
     ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
 };
+use conspire::io::Write;
 use std::{
     path::PathBuf,
     thread::{available_parallelism, scope},
@@ -118,7 +119,7 @@ fn interior(path: &std::path::Path) -> Mesh<3> {
 
 /// A case: the surface from `STL` and the mesh of the inside of it in `INTERIOR`, with the buffer
 /// layer added as the library does before it fits, and not fitted. None unless `INTERIOR` is set.
-pub fn case() -> Option<(Tessellation, Bone)> {
+pub fn case() -> Option<(Tessellation, Bone, Mesh<3>)> {
     let path = std::env::var_os("INTERIOR")?;
     let target = read()?;
     let started = Instant::now();
@@ -135,7 +136,68 @@ pub fn case() -> Option<(Tessellation, Bone)> {
         "case: {hexahedra} hexahedra in the interior, {} with the buffer layer, {} nodes, {} faces; read {read:.1} s, layer {layered:.1} s, layout {converted:.1} s",
         bone.layout.elements, bone.layout.nodes, bone.layout.faces
     );
-    Some((target, bone))
+    Some((target, bone, mesh))
+}
+
+/// What a fit of a case came to: the mesh at `x`, its worst scaled Jacobian and how far the
+/// boundary is from the surface, and the mesh in the file `OUTPUT` as Exodus if that is set.
+pub fn finish(mesh: Mesh<3>, nodes: usize, surface: &SurfaceTargets, x: &[f64]) {
+    let started = Instant::now();
+    let mut used = vec![false; mesh.number_of_nodes()];
+    for element in mesh.iter().flatten() {
+        for &node in element {
+            used[node] = true;
+        }
+    }
+    let (connectivities, mut coordinates) = mesh.into();
+    let mut next = 0;
+    for (old, used) in used.into_iter().enumerate() {
+        if used {
+            coordinates[old] =
+                Coordinate::<3>::from([x[next], x[nodes + next], x[2 * nodes + next]]);
+            next += 1;
+        }
+    }
+    assert_eq!(next, nodes, "the nodes of the layout are those of the mesh");
+    let fitted = Mesh::from((connectivities, coordinates));
+    let jacobians: Vec<f64> = fitted
+        .minimum_scaled_jacobians()
+        .into_iter()
+        .flatten()
+        .collect();
+    let worst = jacobians.iter().copied().fold(f64::INFINITY, f64::min);
+    let inverted = jacobians
+        .iter()
+        .filter(|&&jacobian| jacobian <= 0.0)
+        .count();
+    let poor = jacobians.iter().filter(|&&jacobian| jacobian < 0.2).count();
+    let mean = jacobians.iter().sum::<f64>() / jacobians.len() as f64;
+    // The planes of the boundary faces, from the nodes of the fit, which says how far from the
+    // surface the faces are.
+    let (_, _, squares) = surface.find(x);
+    let mut distances: Vec<f64> = squares.iter().map(|square| square.sqrt()).collect();
+    distances.sort_by(f64::total_cmp);
+    let at = |fraction: f64| distances[((distances.len() - 1) as f64 * fraction) as usize];
+    eprintln!(
+        "fitted mesh: scaled Jacobian least {worst:.4}, mean {mean:.4}, {inverted} not positive, {poor} below 0.2 of {}",
+        jacobians.len()
+    );
+    eprintln!(
+        "             boundary nodes off the plane of the nearest triangle: median {:.3e}, 99% {:.3e}, greatest {:.3e}",
+        at(0.5),
+        at(0.99),
+        at(1.0)
+    );
+    if let Some(path) = std::env::var_os("OUTPUT") {
+        fitted
+            .write(Output::Exodus(ExodusFormat::Classic(path.clone())))
+            .expect("the fitted mesh is written");
+        eprintln!("             written to {}", path.to_string_lossy());
+    }
+    eprintln!(
+        "             checked in {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
 }
 
 /// A mesh as the problem that the kernels take, and where its nodes start, on planes.
@@ -674,7 +736,7 @@ fn the_fit_with_the_surface_kernel_matches_the_fit_with_the_library() {
 #[test]
 #[ignore]
 fn case_fit_cpu() {
-    let Some((target, bone)) = case() else {
+    let Some((target, bone, mesh)) = case() else {
         return;
     };
     let Bone {
@@ -703,6 +765,7 @@ fn case_fit_cpu() {
         total,
         backend.target_seconds(),
     );
+    finish(mesh, nodes, &targets, &backend.download(&x));
 }
 
 /// The fit of a bone on the threads of the host, for each size of the octree in `SCALES`.
@@ -786,4 +849,19 @@ fn the_buffer_layer_is_a_layout() {
     assert!(quality.is_finite(), "{quality}");
     // The layer starts flat, so the least determinant is zero.
     assert!(worst.abs() < 1.0e-9, "{worst}");
+}
+
+/// Writes the inside of `STL`, as the bone benchmarks mesh it at the first of `SCALES`, to the
+/// Exodus file `OUTPUT`, to run `case_fit_cpu` and `case_fit_gpu` on without a case of one's own.
+#[test]
+#[ignore]
+fn bone_interior_file() {
+    let Some(target) = read() else {
+        return;
+    };
+    let path = std::env::var_os("OUTPUT").expect("OUTPUT is the file to write");
+    let scale = scales()[0];
+    mesh(&target, scale)
+        .write(Output::Exodus(ExodusFormat::Classic(path)))
+        .expect("the mesh is written");
 }
