@@ -50,7 +50,10 @@
 //! default, `STEPS` is the steps of the fit of `device_fit`, 100 by default, `SOLVER` is `two-loop`,
 //! `compact` or `both` (the default) for the method of its steps, `REPETITIONS` is how
 //! many times each is timed, 5 by default, `DEVICE` is the ordinal of
-//! the device, `BLOCK` is the threads in a block of a launch, 128 by default, and `FIT_KERNELS` is
+//! the device, `BLOCK` is the threads in a block of a launch, 128 by default, `BATCH_THREADS` and
+//! `BATCH_GROUP` are the threads of the first pass of the sums of a batch of dot products, 32768 by
+//! default, and the sums that a thread of the passes after it adds up, 32 by default, and
+//! `FIT_KERNELS` is
 //! the PTX of the kernels, where `kernels/fit.sh` builds it by default.
 
 use std::time::Instant;
@@ -718,7 +721,7 @@ impl Layout {
 }
 
 /// The sum of `values` as the passes of the kernels make it, run on the host.
-fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
+fn sum_by_passes(values: &[f64], summers: usize, group: usize) -> f64 {
     let mut partials = vec![0.0; summers];
     for item in 0..summers {
         // SAFETY: the values are `values.len()` and the partials are `summers`.
@@ -733,7 +736,7 @@ fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
         }
     }
     while partials.len() > 1 {
-        let groups = partials.len().div_ceil(solver::BATCH_GROUP);
+        let groups = partials.len().div_ceil(group);
         let mut sums = vec![0.0; groups];
         for item in 0..groups {
             // SAFETY: the values are `partials.len()` and the sums are `groups`.
@@ -741,7 +744,7 @@ fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
                 shared::sum_columns(
                     item,
                     partials.len(),
-                    solver::BATCH_GROUP,
+                    group,
                     1,
                     partials.as_ptr(),
                     sums.as_mut_ptr(),
@@ -754,7 +757,7 @@ fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
 }
 
 /// The objective as the kernels compute it, run on the host.
-fn objective_on_host(layout: &Layout, coordinates: &[f64], summers: usize) -> f64 {
+fn objective_on_host(layout: &Layout, coordinates: &[f64], summers: usize, group: usize) -> f64 {
     let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
     let mut energies = vec![0.0; elements + nodes];
     for item in 0..elements {
@@ -792,7 +795,7 @@ fn objective_on_host(layout: &Layout, coordinates: &[f64], summers: usize) -> f6
             )
         }
     }
-    sum_by_passes(&energies, summers)
+    sum_by_passes(&energies, summers, group)
 }
 
 /// The gradient as the kernels compute it, run on the host, on planes.
@@ -873,7 +876,7 @@ fn the_kernels_run_on_the_host_are_the_reference() {
     let expected = problem.objective(&x);
     // However many threads add up the energies, the sum is the same to within the rounding.
     for summers in [1, 7, 64, SUMMERS, 100_000] {
-        let objective = objective_on_host(&layout, &coordinates, summers);
+        let objective = objective_on_host(&layout, &coordinates, summers, solver::BATCH_GROUP);
         assert!(
             (objective - expected).abs() < 1.0e-12 * expected.abs(),
             "{summers} summers: {objective} against {expected}"
@@ -895,6 +898,14 @@ mod device {
         cell::{Cell, RefCell},
         time::Instant,
     };
+
+    /// A number that the environment sets, or what it is without.
+    fn setting(name: &str, default: usize) -> usize {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    }
 
     /// How many threads are in a block.
     fn block() -> usize {
@@ -1017,9 +1028,13 @@ mod device {
         dots: Buffer<f64>,
         alphas: Buffer<f64>,
         betas: Buffer<f64>,
+        /// The threads of the first pass of the sums of a batch, and the sums that a thread of a
+        /// later pass adds up.
+        batch_threads: usize,
+        batch_group: usize,
         batch_partials: Buffer<f64>,
-        batch_level2: Buffer<f64>,
-        batch_level3: Buffer<f64>,
+        /// The partial sums that the passes after the first make, but the last.
+        levels: Vec<Buffer<f64>>,
         batch: Buffer<f64>,
         order: Buffer<u32>,
         coefficients: Buffer<f64>,
@@ -1034,6 +1049,20 @@ mod device {
     impl<'a> OnDevice<'a> {
         fn new(kernels: &'a Kernels, layout: &'a Layout) -> Self {
             let device = &kernels.device;
+            let batch_threads = setting("BATCH_THREADS", BATCH_THREADS);
+            let batch_group = setting("BATCH_GROUP", BATCH_GROUP);
+            assert!(batch_threads >= 2 && batch_group >= 2);
+            // The passes after the first take the sums to groups of sums until there is one.
+            let mut levels = Vec::new();
+            let mut count = batch_threads;
+            loop {
+                let groups = count.div_ceil(batch_group);
+                if groups == 1 {
+                    break;
+                }
+                levels.push(device.buffer(BATCH * groups).unwrap());
+                count = groups;
+            }
             Self {
                 kernels,
                 layout,
@@ -1058,11 +1087,10 @@ mod device {
                 dots: device.buffer(SLOTS).unwrap(),
                 alphas: device.buffer(HISTORY + 1).unwrap(),
                 betas: device.buffer(HISTORY + 1).unwrap(),
-                batch_partials: device.buffer(BATCH * BATCH_THREADS).unwrap(),
-                batch_level2: device.buffer(BATCH * BATCH_THREADS / BATCH_GROUP).unwrap(),
-                batch_level3: device
-                    .buffer(BATCH * BATCH_THREADS / BATCH_GROUP / BATCH_GROUP)
-                    .unwrap(),
+                batch_threads,
+                batch_group,
+                batch_partials: device.buffer(BATCH * batch_threads).unwrap(),
+                levels,
                 batch: device.buffer(BATCH).unwrap(),
                 order: device.buffer(HISTORY).unwrap(),
                 coefficients: device.buffer(1 + 2 * HISTORY).unwrap(),
@@ -1167,45 +1195,17 @@ mod device {
                 ],
             );
         }
-        /// The passes that add the energies up, the first by many threads and then the three of the
+        /// The passes that add the energies up: the first by many threads and then those of the
         /// batches, of one row.
         fn add_up(&self) {
             let count = (self.layout.elements + self.layout.nodes) as u32;
-            let (threads, group, rows) = (BATCH_THREADS as u32, BATCH_GROUP as u32, 1_u32);
-            let second = (BATCH_THREADS / BATCH_GROUP) as u32;
-            let third = second / group;
+            let threads = self.batch_threads as u32;
             self.launch(
                 &self.kernels.sum_strided,
-                BATCH_THREADS,
+                self.batch_threads,
                 &[&count, &threads, &self.energies, &self.batch_partials],
             );
-            self.launch(
-                &self.kernels.sum_columns,
-                second as usize,
-                &[
-                    &threads,
-                    &group,
-                    &rows,
-                    &self.batch_partials,
-                    &self.batch_level2,
-                ],
-            );
-            self.launch(
-                &self.kernels.sum_columns,
-                third as usize,
-                &[
-                    &second,
-                    &group,
-                    &rows,
-                    &self.batch_level2,
-                    &self.batch_level3,
-                ],
-            );
-            self.launch(
-                &self.kernels.sum_columns,
-                1,
-                &[&third, &group, &rows, &self.batch_level3, &self.total],
-            );
+            self.reduce(1, &self.total);
         }
         fn objective_of(&self, x: &Buffer<f64>) -> f64 {
             self.energies(x);
@@ -1222,10 +1222,6 @@ mod device {
             points_of(&self.download(&self.gradient))
         }
     }
-
-    // The passes that take the partial sums of a batch to its dot products are three, each taking
-    // `BATCH_GROUP` sums to one.
-    const _: () = assert!(BATCH_THREADS == BATCH_GROUP * BATCH_GROUP * BATCH_GROUP);
 
     /// The corrections on the device: two pools of vectors one after another.
     struct DevicePool {
@@ -1248,49 +1244,41 @@ mod device {
             self.order.upload(&padded).unwrap();
             *self.uploaded.borrow_mut() = Some(order.to_vec());
         }
+        /// The passes that take the partial sums of the threads of a first pass, `rows` rows of
+        /// them, to one sum for each row in `out`.
+        fn reduce(&self, rows: usize, out: &Buffer<f64>) {
+            let (group, rows_u32) = (self.batch_group as u32, rows as u32);
+            let mut count = self.batch_threads;
+            let mut level = 0;
+            loop {
+                let groups = count.div_ceil(self.batch_group);
+                let input = if level == 0 {
+                    &self.batch_partials
+                } else {
+                    &self.levels[level - 1]
+                };
+                let output = if groups == 1 {
+                    out
+                } else {
+                    &self.levels[level]
+                };
+                let count_u32 = count as u32;
+                self.launch(
+                    &self.kernels.sum_columns,
+                    rows * groups,
+                    &[&count_u32, &group, &rows_u32, input, output],
+                );
+                if groups == 1 {
+                    break;
+                }
+                count = groups;
+                level += 1;
+            }
+        }
         /// The passes that take the partial sums of a batch of `rows` dot products to the dot
         /// products.
         fn batch_tail(&self, rows: usize) {
-            let group = BATCH_GROUP as u32;
-            let rows_u32 = rows as u32;
-            let (second, third) = (
-                BATCH_THREADS / BATCH_GROUP,
-                BATCH_THREADS / BATCH_GROUP / BATCH_GROUP,
-            );
-            let counts = [BATCH_THREADS as u32, second as u32, third as u32];
-            self.launch(
-                &self.kernels.sum_columns,
-                rows * second,
-                &[
-                    &counts[0],
-                    &group,
-                    &rows_u32,
-                    &self.batch_partials,
-                    &self.batch_level2,
-                ],
-            );
-            self.launch(
-                &self.kernels.sum_columns,
-                rows * third,
-                &[
-                    &counts[1],
-                    &group,
-                    &rows_u32,
-                    &self.batch_level2,
-                    &self.batch_level3,
-                ],
-            );
-            self.launch(
-                &self.kernels.sum_columns,
-                rows,
-                &[
-                    &counts[2],
-                    &group,
-                    &rows_u32,
-                    &self.batch_level3,
-                    &self.batch,
-                ],
-            );
+            self.reduce(rows, &self.batch);
         }
     }
 
@@ -1335,12 +1323,12 @@ mod device {
             self.set_order(order);
             let (count, threads, active) = (
                 self.count() as u32,
-                BATCH_THREADS as u32,
+                self.batch_threads as u32,
                 order.len() as u32,
             );
             self.launch(
                 &self.kernels.history_dots,
-                BATCH_THREADS,
+                self.batch_threads,
                 &[
                     &count,
                     &threads,
@@ -1359,13 +1347,13 @@ mod device {
             self.set_order(order);
             let (count, threads, active, slot) = (
                 self.count() as u32,
-                BATCH_THREADS as u32,
+                self.batch_threads as u32,
                 order.len() as u32,
                 slot as u32,
             );
             self.launch(
                 &self.kernels.update_dots,
-                BATCH_THREADS,
+                self.batch_threads,
                 &[
                     &count,
                     &threads,
@@ -1707,6 +1695,12 @@ mod device {
         };
         println!();
         println!("{}", kernels.device.name());
+        println!(
+            "batch threads {}, groups of {}, block {}",
+            setting("BATCH_THREADS", BATCH_THREADS),
+            setting("BATCH_GROUP", BATCH_GROUP),
+            block()
+        );
         println!(
             "{:>7}{:>10}{:>11}{:>10}{:>7}{:>7}{:>12}{:>10}{:>16}{:>16}",
             "cells",

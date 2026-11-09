@@ -342,6 +342,8 @@ pub fn reference(
 /// The kernels run on the host, one thread after another.
 pub struct Emulated<'a> {
     layout: &'a Layout,
+    threads: usize,
+    group: usize,
     dots: RefCell<[f64; SLOTS]>,
     alphas: RefCell<[f64; HISTORY + 1]>,
     betas: RefCell<[f64; HISTORY + 1]>,
@@ -350,8 +352,15 @@ pub struct Emulated<'a> {
 
 impl<'a> Emulated<'a> {
     pub fn new(layout: &'a Layout) -> Self {
+        Self::with_batch(layout, BATCH_THREADS, BATCH_GROUP)
+    }
+    /// With other threads for the first pass of the sums of a batch, and other groups after it.
+    pub fn with_batch(layout: &'a Layout, threads: usize, group: usize) -> Self {
+        assert!(threads >= 2 && group >= 2);
         Self {
             layout,
+            threads,
+            group,
             dots: RefCell::new([0.0; SLOTS]),
             alphas: RefCell::new([0.0; HISTORY + 1]),
             betas: RefCell::new([0.0; HISTORY + 1]),
@@ -375,7 +384,7 @@ impl Backend for Emulated<'_> {
         vector.borrow().clone()
     }
     fn objective(&self, x: &Self::Vector) -> f64 {
-        objective_on_host(self.layout, &x.borrow(), BATCH_THREADS)
+        objective_on_host(self.layout, &x.borrow(), self.threads, self.group)
     }
     fn gradient(&self, x: &Self::Vector, gradient: &Self::Vector) {
         *gradient.borrow_mut() = gradient_on_host(self.layout, &x.borrow());
@@ -544,7 +553,8 @@ fn the_solver_on_the_kernels_follows_the_reference() {
 // pass more. The slope comes from the same dot products, with none of its own.
 
 /// The threads that add up the products of a batch of dot products, and how many partial sums a
-/// thread of a later pass adds up. The passes take the threads to groups three times over.
+/// thread of a later pass adds up, unless they are set otherwise. The passes take the threads to
+/// groups, and the groups to groups, until there is one sum.
 pub const BATCH_THREADS: usize = 32768;
 pub const BATCH_GROUP: usize = 32;
 /// The most dot products of a batch.
@@ -813,14 +823,14 @@ impl CompactBackend for Emulated<'_> {
         let count = self.count();
         let order: Vec<u32> = order.iter().map(|&slot| slot as u32).collect();
         let (s, y, g, x) = (pool.s.borrow(), pool.y.borrow(), g.borrow(), x.borrow());
-        let mut partials = vec![0.0; ROWS_HISTORY * BATCH_THREADS];
-        for item in 0..BATCH_THREADS {
+        let mut partials = vec![0.0; ROWS_HISTORY * self.threads];
+        for item in 0..self.threads {
             // SAFETY: the vectors, the pools and the partial sums are as the kernel takes them.
             unsafe {
                 shared::history_dots(
                     item,
                     count,
-                    BATCH_THREADS,
+                    self.threads,
                     order.len(),
                     order.as_ptr(),
                     s.as_ptr(),
@@ -837,14 +847,14 @@ impl CompactBackend for Emulated<'_> {
         let count = self.count();
         let order: Vec<u32> = order.iter().map(|&slot| slot as u32).collect();
         let (s, y) = (pool.s.borrow(), pool.y.borrow());
-        let mut partials = vec![0.0; ROWS_UPDATE * BATCH_THREADS];
-        for item in 0..BATCH_THREADS {
+        let mut partials = vec![0.0; ROWS_UPDATE * self.threads];
+        for item in 0..self.threads {
             // SAFETY: the pools and the partial sums are as the kernel takes them.
             unsafe {
                 shared::update_dots(
                     item,
                     count,
-                    BATCH_THREADS,
+                    self.threads,
                     order.len(),
                     order.as_ptr(),
                     s.as_ptr(),
@@ -892,10 +902,10 @@ impl CompactBackend for Emulated<'_> {
 impl Emulated<'_> {
     /// The passes that take the partial sums of a batch to its dot products.
     fn batch_tail(&self, partials: &[f64], rows: usize) {
-        let mut count = BATCH_THREADS;
+        let mut count = self.threads;
         let mut values = partials.to_vec();
         while count > 1 {
-            let groups = count.div_ceil(BATCH_GROUP);
+            let groups = count.div_ceil(self.group);
             let mut sums = vec![0.0; rows * groups];
             for item in 0..rows * groups {
                 // SAFETY: the values are `rows * count` and the sums are `rows * groups`.
@@ -903,7 +913,7 @@ impl Emulated<'_> {
                     shared::sum_columns(
                         item,
                         count,
-                        BATCH_GROUP,
+                        self.group,
                         rows,
                         values.as_ptr(),
                         sums.as_mut_ptr(),
@@ -1015,4 +1025,51 @@ fn the_compact_solver_on_the_kernels_follows_the_reference() {
     assert_eq!(trace.evaluations, expected.evaluations);
     let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
     assert!(error < 1.0e-6, "the points differ by {error}");
+}
+
+#[test]
+fn the_compact_solver_does_not_depend_on_how_the_dot_products_are_batched() {
+    let problem = Problem::new(6, 1.0);
+    let layout = Layout::new(&problem);
+    let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+    let settings = Settings {
+        steps: 20,
+        ..Default::default()
+    };
+    let run = |threads: usize, group: usize| {
+        let backend = Emulated::with_batch(&layout, threads, group);
+        let mut x = backend.vector();
+        backend.upload(&x, &planes(&problem.coordinates));
+        let trace = lbfgs_compact(&backend, &mut x, typical, settings);
+        (trace, backend.download(&x))
+    };
+    let (expected, expected_x) = run(BATCH_THREADS, BATCH_GROUP);
+    // Few threads, many, and groups that do not divide the threads, so that the last group of a
+    // pass is short, and a pass of a single group straight away.
+    for (threads, group) in [
+        (2, 2),
+        (7, 3),
+        (1000, 7),
+        (64, 4),
+        (4096, 64),
+        (100_000, 33),
+        (5, 100),
+    ] {
+        let (trace, x) = run(threads, group);
+        let (difference, same_steps) = compare(&trace, &expected);
+        assert!(same_steps, "{threads} threads, groups of {group}");
+        assert!(
+            difference < 1.0e-9,
+            "{threads} threads, groups of {group}: the energies differ by {difference}"
+        );
+        let error = x
+            .iter()
+            .zip(&expected_x)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            error < 1.0e-8,
+            "{threads} threads, groups of {group}: {error}"
+        );
+    }
 }
