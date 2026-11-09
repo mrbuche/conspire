@@ -1,4 +1,4 @@
-use super::{Oracle, PLACE_GRAIN, energy, place, scatter};
+use super::{CornerTable, Oracle, PLACE_GRAIN, adjacency, energy, place, scatter};
 use crate::math::assert::perturbation;
 use crate::{
     EPSILON,
@@ -17,6 +17,54 @@ use crate::{
     units::ReciprocalLength,
 };
 use core::array::from_fn;
+
+#[test]
+fn the_adjacency_gathers_what_the_elements_scatter() {
+    let corners: &'static CornerTable = &hexahedron::CORNERS;
+    let elements: Vec<(&'static CornerTable, Vec<usize>)> = [
+        vec![0, 1, 2, 3, 4, 5, 6, 7],
+        vec![4, 5, 6, 7, 8, 9, 10, 11],
+        vec![8, 9, 10, 11, 12, 13, 14, 15],
+    ]
+    .into_iter()
+    .map(|element| (corners, element))
+    .collect();
+    let tracked = [2, 0, 1];
+    let nodes = [9, 3, 12, 0, 5, 15, 7, 10];
+    let mut slot = vec![None; 16];
+    nodes
+        .iter()
+        .enumerate()
+        .for_each(|(index, &node)| slot[node] = Some(index));
+    let adjacency = adjacency(&elements, &tracked, &slot, nodes.len());
+    assert_eq!(adjacency.offsets, [0, 8, 16, 24]);
+    assert_eq!(adjacency.starts.len(), nodes.len() + 1);
+    assert_eq!(adjacency.starts[0], 0);
+    assert!(adjacency.starts.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert_eq!(adjacency.starts[nodes.len()], adjacency.entries.len());
+    assert!(adjacency.entries.iter().all(|&position| position < 24));
+    let contribution = |position: usize| (position as f64 * 0.37).sin() + 1.0e-3 * position as f64;
+    let mut expected = vec![0.0; nodes.len()];
+    tracked.iter().enumerate().for_each(|(position, &element)| {
+        elements[element]
+            .1
+            .iter()
+            .enumerate()
+            .for_each(|(corner, &node)| {
+                if let Some(index) = slot[node] {
+                    expected[index] += contribution(adjacency.offsets[position] + corner)
+                }
+            })
+    });
+    let gathered: Vec<f64> = (0..nodes.len())
+        .map(|index| {
+            adjacency.entries[adjacency.starts[index]..adjacency.starts[index + 1]]
+                .iter()
+                .fold(0.0, |sum, &position| sum + contribution(position))
+        })
+        .collect();
+    assert_eq!(gathered, expected);
+}
 
 #[test]
 fn placing_in_parallel_is_placing_in_order() {

@@ -18,10 +18,14 @@ use crate::{
     units::{Area, Dimensionless, Length, ReciprocalLength},
 };
 use alloc::collections::VecDeque;
-use core::{array::from_fn, cell::RefCell, mem::replace};
-use std::thread::{available_parallelism, scope};
+use core::{array::from_fn, cell::RefCell, mem::replace, mem::take};
+use std::{
+    sync::Mutex,
+    thread::{available_parallelism, scope},
+};
 
 type EdgeList = TensorRank1List<3, Reference, 3>;
+type Entry = TensorRank1<3, Reference, Dimensionless>;
 type Slope = TensorRank1<3, Reference, ReciprocalLength>;
 type Gradient = TensorRank1Vec<3, Reference, Dimensionless>;
 type Target = (Coordinate<3>, Direction<3>, Quantity<Area>);
@@ -97,6 +101,60 @@ fn timed<T>(_: Part, work: impl FnOnce() -> T) -> T {
     work()
 }
 
+/// Where the contributions of the corners of the elements go: the entries of a node are the
+/// positions, in the order of the elements, of the contributions of the corners that sit on it.
+struct Adjacency {
+    /// The position of the first corner of each tracked element, and the number of corners.
+    offsets: Vec<usize>,
+    /// The first entry of each unknown, and the number of entries.
+    starts: Vec<usize>,
+    /// The positions of the corners that sit on the unknowns, one run to an unknown.
+    entries: Vec<usize>,
+}
+
+fn adjacency(
+    elements: &[(&'static CornerTable, Vec<usize>)],
+    tracked: &[usize],
+    slot: &[Option<usize>],
+    unknowns: usize,
+) -> Adjacency {
+    let mut offsets = Vec::with_capacity(tracked.len() + 1);
+    let mut corners = 0;
+    tracked.iter().for_each(|&element| {
+        offsets.push(corners);
+        corners += elements[element].1.len()
+    });
+    offsets.push(corners);
+    let mut starts = vec![0; unknowns + 1];
+    tracked.iter().for_each(|&element| {
+        elements[element]
+            .1
+            .iter()
+            .filter_map(|&node| slot[node])
+            .for_each(|index| starts[index + 1] += 1)
+    });
+    (0..unknowns).for_each(|index| starts[index + 1] += starts[index]);
+    let mut next = starts.clone();
+    let mut entries = vec![0; starts[unknowns]];
+    tracked.iter().enumerate().for_each(|(position, &element)| {
+        elements[element]
+            .1
+            .iter()
+            .enumerate()
+            .for_each(|(corner, &node)| {
+                if let Some(index) = slot[node] {
+                    entries[next[index]] = offsets[position] + corner;
+                    next[index] += 1
+                }
+            })
+    });
+    Adjacency {
+        offsets,
+        starts,
+        entries,
+    }
+}
+
 fn solver(typical: Quantity<Length>, residual: Scalar) -> LimitedMemoryBFGS<Armijo, Length> {
     LimitedMemoryBFGS {
         abs_tol: Tolerances {
@@ -143,6 +201,8 @@ struct Oracle<'a> {
 }
 
 struct Sweep<'a> {
+    adjacency: &'a Adjacency,
+    contributions: &'a Mutex<Vec<Entry>>,
     element_chunk: usize,
     elements: &'a [(&'static CornerTable, Vec<usize>)],
     epsilon: Scalar,
@@ -151,7 +211,6 @@ struct Sweep<'a> {
     node_faces: &'a [Vec<usize>],
     nodes: &'a [usize],
     scales: Vec<Quantity<Length>>,
-    slot: &'a [Option<usize>],
     sorted: &'a [(usize, usize)],
     targets: Vec<Target>,
     threads: usize,
@@ -280,6 +339,11 @@ impl Mesh<3> {
         let mut sorted: Vec<(usize, usize)> = nodes.iter().copied().zip(0..).collect();
         sorted.sort_by_key(|&(node, _)| node);
         let unknowns = nodes.len();
+        let adjacency = adjacency(&elements, &tracked, &slot, unknowns);
+        let contributions: Mutex<Vec<Entry>> = Mutex::new(vec![
+            TensorRank1::const_from([0.0; 3]);
+            adjacency.offsets[tracked.len()]
+        ]);
         let mut epsilon: Scalar = 1.0;
         let mut previous = Quantity::<Length>::new(Scalar::INFINITY);
         let mut window = VecDeque::<Quantity<Length>>::with_capacity(WINDOW);
@@ -287,6 +351,8 @@ impl Mesh<3> {
             let (lengths, scales) =
                 timed(Part::Sizes, || sizes(&neighbors, &elements, coordinates));
             let mut state = Sweep {
+                adjacency: &adjacency,
+                contributions: &contributions,
                 element_chunk,
                 elements: &elements,
                 epsilon,
@@ -295,7 +361,6 @@ impl Mesh<3> {
                 node_faces: &node_faces,
                 nodes,
                 scales,
-                slot: &slot,
                 sorted: &sorted,
                 targets: timed(Part::Targets, || {
                     oracle.targets(&faces, coordinates, face_chunk)
@@ -557,37 +622,42 @@ impl Sweep<'_> {
         })
     }
     fn derivative(&self, coordinates: &Coordinates<3>) -> Gradient {
-        let partials = scope(|scope| {
+        let mut guard = self.contributions.lock().unwrap();
+        let mut rest: &mut [Entry] = guard.as_mut_slice();
+        scope(|scope| {
             self.tracked
                 .chunks(self.element_chunk)
-                .map(|chunk| {
+                .enumerate()
+                .for_each(|(block, chunk)| {
+                    let first = block * self.element_chunk;
+                    let length =
+                        self.adjacency.offsets[first + chunk.len()] - self.adjacency.offsets[first];
+                    let (mine, tail) = take(&mut rest).split_at_mut(length);
+                    rest = tail;
                     scope.spawn(move || {
-                        let mut partial = self.empty();
+                        let mut at = 0;
                         chunk.iter().for_each(|&element| {
                             let (corners, nodes) = &self.elements[element];
-                            let local = scatter(
-                                corners,
-                                nodes,
-                                coordinates,
-                                self.scales[element].value().powi(3) * self.epsilon,
-                            );
-                            nodes.iter().zip(local).for_each(|(&node, contribution)| {
-                                if let Some(index) = self.slot[node] {
-                                    partial[index] += contribution * self.scales[element]
-                                }
-                            })
-                        });
-                        partial
-                    })
+                            let scale = self.scales[element];
+                            nodes
+                                .iter()
+                                .zip(scatter(
+                                    corners,
+                                    nodes,
+                                    coordinates,
+                                    scale.value().powi(3) * self.epsilon,
+                                ))
+                                .for_each(|(_, contribution)| {
+                                    mine[at] = contribution * scale;
+                                    at += 1
+                                })
+                        })
+                    });
                 })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .map(|handle| handle.join().unwrap())
-                .collect::<Vec<_>>()
         });
+        let contributions: &[Entry] = &guard;
         let mut gradient = self.empty();
         scope(|scope| {
-            let partials = &partials;
             gradient
                 .as_mut_slice()
                 .chunks_mut(self.node_chunk)
@@ -598,9 +668,10 @@ impl Sweep<'_> {
                         entries.iter_mut().zip(nodes).enumerate().for_each(
                             |(offset, (entry, &node))| {
                                 let index = block * self.node_chunk + offset;
-                                partials
+                                self.adjacency.entries[self.adjacency.starts[index]
+                                    ..self.adjacency.starts[index + 1]]
                                     .iter()
-                                    .for_each(|partial| *entry += &partial[index]);
+                                    .for_each(|&at| *entry += &contributions[at]);
                                 self.node_faces[node].iter().for_each(|&face| {
                                     let (point, normal, distance) = &self.targets[face];
                                     let weight = weight(*distance, self.lengths[node]);
@@ -617,9 +688,7 @@ impl Sweep<'_> {
         gradient
     }
     fn empty(&self) -> Gradient {
-        (0..self.unknowns)
-            .map(|_| TensorRank1::const_from([0.0; 3]))
-            .collect()
+        Gradient::from(vec![[0.0; 3]; self.unknowns])
     }
     fn minimize(
         &self,
