@@ -345,6 +345,7 @@ pub struct Emulated<'a> {
     dots: RefCell<[f64; SLOTS]>,
     alphas: RefCell<[f64; HISTORY + 1]>,
     betas: RefCell<[f64; HISTORY + 1]>,
+    batch: RefCell<[f64; BATCH]>,
 }
 
 impl<'a> Emulated<'a> {
@@ -354,6 +355,7 @@ impl<'a> Emulated<'a> {
             dots: RefCell::new([0.0; SLOTS]),
             alphas: RefCell::new([0.0; HISTORY + 1]),
             betas: RefCell::new([0.0; HISTORY + 1]),
+            batch: RefCell::new([0.0; BATCH]),
         }
     }
 }
@@ -526,4 +528,491 @@ fn the_solver_on_the_kernels_follows_the_reference() {
     assert_eq!(trace.evaluations, expected.evaluations);
     let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
     assert!(error < 1.0e-8, "the points differ by {error}");
+}
+
+// The compact form.
+//
+// The two-loop recursion takes a dot product, and with it a reduction, for each of the corrections
+// twice over, which on a device is a chain of dependent launches. The compact form of the same
+// inverse Hessian,
+//
+//     H = g I + [S gY] [[R^-T (D + g Y'Y) R^-1, -R^-T], [-R^-1, 0]] [S'; gY'],
+//
+// where `S` and `Y` hold the corrections, `R` is the upper triangle of `S'Y`, `D` is its diagonal
+// and `g` is the scale of the newest correction, takes all of the dot products against the history
+// in one pass over the vectors, a small triangular solve on the host, and the direction in one
+// pass more. The slope comes from the same dot products, with none of its own.
+
+/// The threads that add up the products of a batch of dot products, and how many partial sums a
+/// thread of a later pass adds up. The passes take the threads to groups three times over.
+pub const BATCH_THREADS: usize = 32768;
+pub const BATCH_GROUP: usize = 32;
+/// The most dot products of a batch.
+pub const BATCH: usize = shared::ROWS_UPDATE;
+/// The dot products of the first pass of a step.
+pub const ROWS_HISTORY: usize = shared::ROWS_HISTORY;
+/// The dot products of the update of the history.
+pub const ROWS_UPDATE: usize = shared::ROWS_UPDATE;
+
+/// A backend that can take the dot products of a step in batches, and keeps the corrections in a
+/// pool.
+pub trait CompactBackend: Backend {
+    type Pool;
+    fn pool(&self) -> Self::Pool;
+    /// The correction in the slot `slot` has the step `alpha * x`.
+    fn store_step(&self, alpha: f64, x: &Self::Vector, pool: &Self::Pool, slot: usize);
+    /// The correction in the slot `slot` has the change of the gradient `new - old`.
+    fn store_change(&self, new: &Self::Vector, old: &Self::Vector, pool: &Self::Pool, slot: usize);
+    /// The dot products of the first pass of a step, for the corrections in `order`.
+    fn history_dots(&self, pool: &Self::Pool, order: &[usize], g: &Self::Vector, x: &Self::Vector);
+    /// The dot products of the update, once the correction in the slot `slot` is written.
+    fn update_dots(&self, pool: &Self::Pool, order: &[usize], slot: usize);
+    /// The first `rows` dot products of the batch, which waits for them.
+    fn read_batch(&self, rows: usize) -> Vec<f64>;
+    /// `d` is the sum of the vectors with the coefficients that are given: the first for `g`, then
+    /// those for the steps in `order`, then those for the changes of the gradient.
+    fn combine(
+        &self,
+        pool: &Self::Pool,
+        order: &[usize],
+        coefficients: &[f64; 1 + 2 * HISTORY],
+        g: &Self::Vector,
+        d: &Self::Vector,
+    );
+}
+
+/// The coefficients of the direction `-H g` on `g`, the steps and the changes of the gradient,
+/// and the slope `g . (-H g)`, from the `m` corrections in order: the dot products of each step
+/// with each change `sy[i][j]` and of the changes with each other `yy[i][j]`, those of the
+/// steps and of the changes with the gradient `a` and `b`, the gradient with itself `gg`, and the
+/// scale `gamma` of the initial inverse Hessian.
+fn compact(
+    m: usize,
+    sy: &[[f64; HISTORY]; HISTORY],
+    yy: &[[f64; HISTORY]; HISTORY],
+    a: &[f64; HISTORY],
+    b: &[f64; HISTORY],
+    gamma: f64,
+    gg: f64,
+) -> ([f64; 1 + 2 * HISTORY], f64) {
+    let mut coefficients = [0.0; 1 + 2 * HISTORY];
+    coefficients[0] = -gamma;
+    // `R w = a`, with `R` the upper triangle of `S'Y`.
+    let mut w = [0.0; HISTORY];
+    for i in (0..m).rev() {
+        let mut sum = a[i];
+        for j in i + 1..m {
+            sum -= sy[i][j] * w[j];
+        }
+        w[i] = sum / sy[i][i];
+    }
+    // `R' z = (D + gamma Y'Y) w - gamma b`.
+    let mut q = [0.0; HISTORY];
+    for i in 0..m {
+        let mut sum = sy[i][i] * w[i];
+        for j in 0..m {
+            sum += gamma * yy[i][j] * w[j];
+        }
+        q[i] = sum - gamma * b[i];
+    }
+    let mut z = [0.0; HISTORY];
+    for i in 0..m {
+        let mut sum = q[i];
+        for j in 0..i {
+            sum -= sy[j][i] * z[j];
+        }
+        z[i] = sum / sy[i][i];
+    }
+    // `-H g = -gamma g - S z + gamma Y w`.
+    let mut slope = -gamma * gg;
+    for j in 0..m {
+        coefficients[1 + j] = -z[j];
+        coefficients[1 + HISTORY + j] = gamma * w[j];
+        slope += -z[j] * a[j] + gamma * w[j] * b[j];
+    }
+    (coefficients, slope)
+}
+
+/// Fits as [`lbfgs`] does, with the compact form of the inverse Hessian in place of the two-loop
+/// recursion, which is the same method with other arithmetic.
+pub fn lbfgs_compact<B: CompactBackend>(
+    backend: &B,
+    x: &mut B::Vector,
+    typical: f64,
+    settings: Settings,
+) -> Trace {
+    let b = backend;
+    let mut trace = Trace::default();
+    let (mut g, mut g_new, d, mut trial) = (b.vector(), b.vector(), b.vector(), b.vector());
+    let pool = b.pool();
+    let mut free: Vec<usize> = (0..=HISTORY).collect();
+    let mut order: VecDeque<usize> = VecDeque::new();
+    // The dot products of the steps with the changes of the gradient, and of the changes with
+    // each other, by the slots of the corrections.
+    let mut sy = [[0.0; HISTORY + 1]; HISTORY + 1];
+    let mut yy = [[0.0; HISTORY + 1]; HISTORY + 1];
+    b.gradient(x, &g);
+    let mut value = b.objective(x);
+    trace.initial = value;
+    trace.evaluations = 1;
+    for _ in 0..settings.steps {
+        let slots: Vec<usize> = order.iter().copied().collect();
+        let m = slots.len();
+        b.begin(Phase::Norms);
+        b.history_dots(&pool, &slots, &g, x);
+        let read = b.read_batch(ROWS_HISTORY);
+        b.end(Phase::Norms);
+        let gg = read[0];
+        let magnitude = gg.sqrt();
+        if magnitude / read[1].sqrt().max(1.0) < settings.convergence {
+            trace.converged = true;
+            break;
+        }
+        trace.passes += 1;
+        b.begin(Phase::TwoLoop);
+        let gamma = slots
+            .last()
+            .map_or(typical / magnitude, |&k| sy[k][k] / yy[k][k]);
+        let (mut a_in_order, mut b_in_order) = ([0.0; HISTORY], [0.0; HISTORY]);
+        let (mut sy_in_order, mut yy_in_order) =
+            ([[0.0; HISTORY]; HISTORY], [[0.0; HISTORY]; HISTORY]);
+        for i in 0..m {
+            a_in_order[i] = read[2 + i];
+            b_in_order[i] = read[2 + HISTORY + i];
+            for j in 0..m {
+                sy_in_order[i][j] = sy[slots[i]][slots[j]];
+                yy_in_order[i][j] = yy[slots[i]][slots[j]];
+            }
+        }
+        let (coefficients, slope) = compact(
+            m,
+            &sy_in_order,
+            &yy_in_order,
+            &a_in_order,
+            &b_in_order,
+            gamma,
+            gg,
+        );
+        b.combine(&pool, &slots, &coefficients, &g, &d);
+        b.end(Phase::TwoLoop);
+        if slope >= 0.0 {
+            free.extend(order.drain(..));
+            continue;
+        }
+        b.begin(Phase::Search);
+        let mut step = 1.0;
+        let mut accepted = None;
+        for _ in 0..BACKTRACKS {
+            b.axpy(step, &d, x, &trial);
+            let found = b.objective(&trial);
+            trace.evaluations += 1;
+            if found <= value + ARMIJO * step * slope {
+                accepted = Some(found);
+                break;
+            }
+            step *= 0.5;
+        }
+        b.end(Phase::Search);
+        let Some(found) = accepted else {
+            if order.is_empty() {
+                break;
+            }
+            free.extend(order.drain(..));
+            continue;
+        };
+        let slot = free.pop().expect("there is a correction to write in");
+        b.begin(Phase::Gradient);
+        b.store_step(step, &d, &pool, slot);
+        swap(x, &mut trial);
+        b.gradient(x, &g_new);
+        b.store_change(&g_new, &g, &pool, slot);
+        b.end(Phase::Gradient);
+        b.begin(Phase::History);
+        b.update_dots(&pool, &slots, slot);
+        let read = b.read_batch(ROWS_UPDATE);
+        b.end(Phase::History);
+        let (new_sy, new_ss, new_yy) = (read[0], read[1], read[2]);
+        if new_sy > CURVATURE_FLOOR * new_ss.sqrt() * new_yy.sqrt() {
+            for (i, &old) in slots.iter().enumerate() {
+                sy[old][slot] = read[3 + i];
+                sy[slot][old] = read[3 + HISTORY + i];
+                yy[old][slot] = read[3 + 2 * HISTORY + i];
+                yy[slot][old] = read[3 + 2 * HISTORY + i];
+            }
+            sy[slot][slot] = new_sy;
+            yy[slot][slot] = new_yy;
+            if order.len() == HISTORY {
+                free.extend(order.pop_front());
+            }
+            order.push_back(slot);
+        } else {
+            free.push(slot);
+        }
+        swap(&mut g, &mut g_new);
+        value = found;
+        trace.values.push(value);
+        trace.steps.push(step);
+    }
+    trace
+}
+
+/// The corrections of the host: two pools of vectors one after another.
+pub struct EmulatedPool {
+    s: RefCell<Vec<f64>>,
+    y: RefCell<Vec<f64>>,
+}
+
+impl CompactBackend for Emulated<'_> {
+    type Pool = EmulatedPool;
+    fn pool(&self) -> EmulatedPool {
+        EmulatedPool {
+            s: RefCell::new(vec![0.0; (HISTORY + 1) * self.count()]),
+            y: RefCell::new(vec![0.0; (HISTORY + 1) * self.count()]),
+        }
+    }
+    fn store_step(&self, alpha: f64, x: &Self::Vector, pool: &EmulatedPool, slot: usize) {
+        let count = self.count();
+        let (x, mut s) = (x.borrow(), pool.s.borrow_mut());
+        for item in 0..count {
+            // SAFETY: the vector is `count` values and the pool has the slot.
+            unsafe {
+                shared::scale_at(item, count, alpha, x.as_ptr(), s.as_mut_ptr(), slot * count)
+            }
+        }
+    }
+    fn store_change(
+        &self,
+        new: &Self::Vector,
+        old: &Self::Vector,
+        pool: &EmulatedPool,
+        slot: usize,
+    ) {
+        let count = self.count();
+        let (new, old, mut y) = (new.borrow(), old.borrow(), pool.y.borrow_mut());
+        for item in 0..count {
+            // SAFETY: the vectors are `count` values and the pool has the slot.
+            unsafe {
+                shared::difference_at(
+                    item,
+                    count,
+                    new.as_ptr(),
+                    old.as_ptr(),
+                    y.as_mut_ptr(),
+                    slot * count,
+                )
+            }
+        }
+    }
+    fn history_dots(
+        &self,
+        pool: &EmulatedPool,
+        order: &[usize],
+        g: &Self::Vector,
+        x: &Self::Vector,
+    ) {
+        let count = self.count();
+        let order: Vec<u32> = order.iter().map(|&slot| slot as u32).collect();
+        let (s, y, g, x) = (pool.s.borrow(), pool.y.borrow(), g.borrow(), x.borrow());
+        let mut partials = vec![0.0; ROWS_HISTORY * BATCH_THREADS];
+        for item in 0..BATCH_THREADS {
+            // SAFETY: the vectors, the pools and the partial sums are as the kernel takes them.
+            unsafe {
+                shared::history_dots(
+                    item,
+                    count,
+                    BATCH_THREADS,
+                    order.len(),
+                    order.as_ptr(),
+                    s.as_ptr(),
+                    y.as_ptr(),
+                    g.as_ptr(),
+                    x.as_ptr(),
+                    partials.as_mut_ptr(),
+                )
+            }
+        }
+        self.batch_tail(&partials, ROWS_HISTORY);
+    }
+    fn update_dots(&self, pool: &EmulatedPool, order: &[usize], slot: usize) {
+        let count = self.count();
+        let order: Vec<u32> = order.iter().map(|&slot| slot as u32).collect();
+        let (s, y) = (pool.s.borrow(), pool.y.borrow());
+        let mut partials = vec![0.0; ROWS_UPDATE * BATCH_THREADS];
+        for item in 0..BATCH_THREADS {
+            // SAFETY: the pools and the partial sums are as the kernel takes them.
+            unsafe {
+                shared::update_dots(
+                    item,
+                    count,
+                    BATCH_THREADS,
+                    order.len(),
+                    order.as_ptr(),
+                    s.as_ptr(),
+                    y.as_ptr(),
+                    slot,
+                    partials.as_mut_ptr(),
+                )
+            }
+        }
+        self.batch_tail(&partials, ROWS_UPDATE);
+    }
+    fn read_batch(&self, rows: usize) -> Vec<f64> {
+        self.batch.borrow()[..rows].to_vec()
+    }
+    fn combine(
+        &self,
+        pool: &EmulatedPool,
+        order: &[usize],
+        coefficients: &[f64; 1 + 2 * HISTORY],
+        g: &Self::Vector,
+        d: &Self::Vector,
+    ) {
+        let count = self.count();
+        let order: Vec<u32> = order.iter().map(|&slot| slot as u32).collect();
+        let (s, y, g, mut d) = (pool.s.borrow(), pool.y.borrow(), g.borrow(), d.borrow_mut());
+        for item in 0..count {
+            // SAFETY: the vectors and the pools are as the kernel takes them.
+            unsafe {
+                shared::combine(
+                    item,
+                    count,
+                    order.len(),
+                    order.as_ptr(),
+                    coefficients.as_ptr(),
+                    s.as_ptr(),
+                    y.as_ptr(),
+                    g.as_ptr(),
+                    d.as_mut_ptr(),
+                )
+            }
+        }
+    }
+}
+
+impl Emulated<'_> {
+    /// The passes that take the partial sums of a batch to its dot products.
+    fn batch_tail(&self, partials: &[f64], rows: usize) {
+        let mut count = BATCH_THREADS;
+        let mut values = partials.to_vec();
+        while count > 1 {
+            let groups = count.div_ceil(BATCH_GROUP);
+            let mut sums = vec![0.0; rows * groups];
+            for item in 0..rows * groups {
+                // SAFETY: the values are `rows * count` and the sums are `rows * groups`.
+                unsafe {
+                    shared::sum_columns(
+                        item,
+                        count,
+                        BATCH_GROUP,
+                        rows,
+                        values.as_ptr(),
+                        sums.as_mut_ptr(),
+                    )
+                }
+            }
+            values = sums;
+            count = groups;
+        }
+        self.batch.borrow_mut()[..rows].copy_from_slice(&values);
+    }
+}
+
+#[test]
+fn the_compact_form_is_the_two_loop_recursion() {
+    // Corrections made of a quadratic, so that each has curvature, on vectors of a dozen values.
+    let n = 12;
+    let value = |seed: usize, i: usize| ((seed * 31 + i * 17) as f64 * 0.7).sin();
+    for m in 1..=HISTORY {
+        let s: Vec<Vec<f64>> = (0..m)
+            .map(|k| (0..n).map(|i| value(k + 1, i)).collect())
+            .collect();
+        let y: Vec<Vec<f64>> = (0..m)
+            .map(|k| {
+                // y = A s with a positive definite A, so that s . y > 0.
+                (0..n)
+                    .map(|i| {
+                        (1.0 + 0.1 * i as f64) * s[k][i]
+                            + 0.05 * s[k][(i + 1) % n]
+                            + 0.05 * s[k][(i + n - 1) % n]
+                    })
+                    .collect()
+            })
+            .collect();
+        let g: Vec<f64> = (0..n).map(|i| value(99, i)).collect();
+        let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+        let gamma = dot(&s[m - 1], &y[m - 1]) / dot(&y[m - 1], &y[m - 1]);
+        // The two-loop recursion.
+        let mut q = g.clone();
+        let mut alphas = vec![0.0; m];
+        for k in (0..m).rev() {
+            alphas[k] = dot(&s[k], &q) / dot(&s[k], &y[k]);
+            q.iter_mut()
+                .zip(&y[k])
+                .for_each(|(q, y)| *q -= alphas[k] * y);
+        }
+        q.iter_mut().for_each(|q| *q *= gamma);
+        for k in 0..m {
+            let beta = dot(&y[k], &q) / dot(&s[k], &y[k]);
+            q.iter_mut()
+                .zip(&s[k])
+                .for_each(|(q, s)| *q += (alphas[k] - beta) * s);
+        }
+        let expected: Vec<f64> = q.iter().map(|q| -q).collect();
+        // The compact form.
+        let (mut sy, mut yy) = ([[0.0; HISTORY]; HISTORY], [[0.0; HISTORY]; HISTORY]);
+        let (mut a, mut b) = ([0.0; HISTORY], [0.0; HISTORY]);
+        for i in 0..m {
+            a[i] = dot(&s[i], &g);
+            b[i] = dot(&y[i], &g);
+            for j in 0..m {
+                sy[i][j] = dot(&s[i], &y[j]);
+                yy[i][j] = dot(&y[i], &y[j]);
+            }
+        }
+        let (coefficients, slope) = compact(m, &sy, &yy, &a, &b, gamma, dot(&g, &g));
+        let direction: Vec<f64> = (0..n)
+            .map(|i| {
+                coefficients[0] * g[i]
+                    + (0..m)
+                        .map(|k| {
+                            coefficients[1 + k] * s[k][i] + coefficients[1 + HISTORY + k] * y[k][i]
+                        })
+                        .sum::<f64>()
+            })
+            .collect();
+        let scale = expected.iter().fold(0.0_f64, |scale, e| scale.max(e.abs()));
+        let error = direction
+            .iter()
+            .zip(&expected)
+            .map(|(d, e)| (d - e).abs())
+            .fold(0.0_f64, f64::max);
+        assert!(error < 1.0e-10 * scale, "{m} corrections: error {error}");
+        assert!(
+            (slope - dot(&g, &expected)).abs() < 1.0e-10 * slope.abs(),
+            "{m} corrections: slope {slope} against {}",
+            dot(&g, &expected)
+        );
+    }
+}
+
+#[test]
+fn the_compact_solver_on_the_kernels_follows_the_reference() {
+    let problem = Problem::new(6, 1.0);
+    let layout = Layout::new(&problem);
+    let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+    let settings = Settings {
+        steps: 30,
+        ..Default::default()
+    };
+    let (expected, expected_x) = reference(&problem, &problem.coordinates, typical, settings);
+    let backend = Emulated::new(&layout);
+    let mut x = backend.vector();
+    backend.upload(&x, &planes(&problem.coordinates));
+    let trace = lbfgs_compact(&backend, &mut x, typical, settings);
+    let (difference, same_steps) = compare(&trace, &expected);
+    assert!(same_steps, "{:?} against {:?}", trace.steps, expected.steps);
+    assert!(difference < 1.0e-8, "the energies differ by {difference}");
+    assert_eq!(trace.evaluations, expected.evaluations);
+    let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
+    assert!(error < 1.0e-6, "the points differ by {error}");
 }

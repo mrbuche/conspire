@@ -342,3 +342,161 @@ pub unsafe extern "ptx-kernel" fn subtract_pair(
         )
     }
 }
+
+/// See [`shared::history_dots`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn history_dots(
+    count: u32,
+    threads: u32,
+    active: u32,
+    order: *const u32,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    g: *const f64,
+    x: *const f64,
+    partials: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::history_dots(
+            thread(),
+            count as usize,
+            threads as usize,
+            active as usize,
+            order,
+            pool_s,
+            pool_y,
+            g,
+            x,
+            partials,
+        )
+    }
+}
+
+/// See [`shared::update_dots`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn update_dots(
+    count: u32,
+    threads: u32,
+    active: u32,
+    order: *const u32,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    slot: u32,
+    partials: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::update_dots(
+            thread(),
+            count as usize,
+            threads as usize,
+            active as usize,
+            order,
+            pool_s,
+            pool_y,
+            slot as usize,
+            partials,
+        )
+    }
+}
+
+/// See [`shared::sum_columns`].
+///
+/// # Safety
+///
+/// `values` must be `rows * count` values and `sums` must be `rows * count.div_ceil(group)`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn sum_columns(
+    count: u32,
+    group: u32,
+    rows: u32,
+    values: *const f64,
+    sums: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::sum_columns(
+            thread(),
+            count as usize,
+            group as usize,
+            rows as usize,
+            values,
+            sums,
+        )
+    }
+}
+
+/// See [`shared::combine`].
+///
+/// # Safety
+///
+/// The arrays must be as the layout says.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn combine(
+    count: u32,
+    active: u32,
+    order: *const u32,
+    coefficients: *const f64,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    g: *const f64,
+    d: *mut f64,
+) {
+    // SAFETY: as the caller says.
+    unsafe {
+        shared::combine(
+            thread(),
+            count as usize,
+            active as usize,
+            order,
+            coefficients,
+            pool_s,
+            pool_y,
+            g,
+            d,
+        )
+    }
+}
+
+/// See [`shared::scale_at`].
+///
+/// # Safety
+///
+/// `x` must be `count` values and `out` must have `count` values from `offset`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn scale_at(
+    count: u32,
+    alpha: f64,
+    x: *const f64,
+    out: *mut f64,
+    offset: u32,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::scale_at(thread(), count as usize, alpha, x, out, offset as usize) }
+}
+
+/// See [`shared::difference_at`].
+///
+/// # Safety
+///
+/// `new` and `old` must be `count` values and `out` must have `count` values from `offset`.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn difference_at(
+    count: u32,
+    new: *const f64,
+    old: *const f64,
+    out: *mut f64,
+    offset: u32,
+) {
+    // SAFETY: as the caller says.
+    unsafe { shared::difference_at(thread(), count as usize, new, old, out, offset as usize) }
+}

@@ -18,7 +18,9 @@
 //! The fit itself, the limited-memory BFGS, is in `fit_gpu_bench/solver.rs`, written once for a
 //! backend that has the vectors. Run on the arithmetic of the kernels on the host it is checked
 //! against a version made of plain loops, and run on the device it is checked against that too.
-//! `device_fit` times it with every vector on the device, whole and by the parts of a step.
+//! `device_fit` times it with every vector on the device, whole and by the parts of a step, for the
+//! two-loop recursion and for the compact form of the same inverse Hessian, which has far fewer
+//! reductions to wait for.
 //!
 //! The energy is a sum over the elements of the regularized quality of each corner, weighted by
 //! the size of the element, and a term that holds each node of the boundary near the faces it is on:
@@ -45,7 +47,8 @@
 //! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device_fit --ignored --nocapture --test-threads=1`
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids, `22,46,90` by
-//! default, `STEPS` is the steps of the fit of `device_fit`, 100 by default, `REPETITIONS` is how
+//! default, `STEPS` is the steps of the fit of `device_fit`, 100 by default, `SOLVER` is `two-loop`,
+//! `compact` or `both` (the default) for the method of its steps, `REPETITIONS` is how
 //! many times each is timed, 5 by default, `DEVICE` is the ordinal of
 //! the device, `BLOCK` is the threads in a block of a launch, 128 by default, and `FIT_KERNELS` is
 //! the PTX of the kernels, where `kernels/fit.sh` builds it by default.
@@ -926,6 +929,12 @@ mod device {
         scale_in_place: Function,
         subtract_alpha: Function,
         subtract_pair: Function,
+        history_dots: Function,
+        update_dots: Function,
+        sum_columns: Function,
+        combine: Function,
+        scale_at: Function,
+        difference_at: Function,
     }
 
     impl Kernels {
@@ -971,6 +980,12 @@ mod device {
                 scale_in_place: function("scale_in_place"),
                 subtract_alpha: function("subtract_alpha"),
                 subtract_pair: function("subtract_pair"),
+                history_dots: function("history_dots"),
+                update_dots: function("update_dots"),
+                sum_columns: function("sum_columns"),
+                combine: function("combine"),
+                scale_at: function("scale_at"),
+                difference_at: function("difference_at"),
                 device,
             })
         }
@@ -1001,6 +1016,14 @@ mod device {
         dots: Buffer<f64>,
         alphas: Buffer<f64>,
         betas: Buffer<f64>,
+        batch_partials: Buffer<f64>,
+        batch_level2: Buffer<f64>,
+        batch_level3: Buffer<f64>,
+        batch: Buffer<f64>,
+        order: Buffer<u32>,
+        coefficients: Buffer<f64>,
+        /// The order that is on the device, so that it is not sent again.
+        uploaded: RefCell<Option<Vec<usize>>>,
         /// Whether the phases of a step are waited for, to time them.
         profiling: Cell<bool>,
         started: Cell<Option<Instant>>,
@@ -1034,6 +1057,15 @@ mod device {
                 dots: device.buffer(SLOTS).unwrap(),
                 alphas: device.buffer(HISTORY + 1).unwrap(),
                 betas: device.buffer(HISTORY + 1).unwrap(),
+                batch_partials: device.buffer(BATCH * BATCH_THREADS).unwrap(),
+                batch_level2: device.buffer(BATCH * BATCH_THREADS / BATCH_GROUP).unwrap(),
+                batch_level3: device
+                    .buffer(BATCH * BATCH_THREADS / BATCH_GROUP / BATCH_GROUP)
+                    .unwrap(),
+                batch: device.buffer(BATCH).unwrap(),
+                order: device.buffer(HISTORY).unwrap(),
+                coefficients: device.buffer(1 + 2 * HISTORY).unwrap(),
+                uploaded: RefCell::new(None),
                 profiling: Cell::new(false),
                 started: Cell::new(None),
                 phases: RefCell::new([0.0; PHASES]),
@@ -1168,6 +1200,196 @@ mod device {
             self.gather(x, &self.gradient);
             self.wait();
             points_of(&self.download(&self.gradient))
+        }
+    }
+
+    // The passes that take the partial sums of a batch to its dot products are three, each taking
+    // `BATCH_GROUP` sums to one.
+    const _: () = assert!(BATCH_THREADS == BATCH_GROUP * BATCH_GROUP * BATCH_GROUP);
+
+    /// The corrections on the device: two pools of vectors one after another.
+    struct DevicePool {
+        s: Buffer<f64>,
+        y: Buffer<f64>,
+    }
+
+    impl OnDevice<'_> {
+        /// Puts the slots of the corrections in use, oldest first, on the device, unless they are
+        /// there already.
+        fn set_order(&self, order: &[usize]) {
+            if self.uploaded.borrow().as_deref() == Some(order) {
+                return;
+            }
+            let mut padded = [0_u32; HISTORY];
+            order
+                .iter()
+                .enumerate()
+                .for_each(|(index, &slot)| padded[index] = slot as u32);
+            self.order.upload(&padded).unwrap();
+            *self.uploaded.borrow_mut() = Some(order.to_vec());
+        }
+        /// The passes that take the partial sums of a batch of `rows` dot products to the dot
+        /// products.
+        fn batch_tail(&self, rows: usize) {
+            let group = BATCH_GROUP as u32;
+            let rows_u32 = rows as u32;
+            let (second, third) = (
+                BATCH_THREADS / BATCH_GROUP,
+                BATCH_THREADS / BATCH_GROUP / BATCH_GROUP,
+            );
+            let counts = [BATCH_THREADS as u32, second as u32, third as u32];
+            self.launch(
+                &self.kernels.sum_columns,
+                rows * second,
+                &[
+                    &counts[0],
+                    &group,
+                    &rows_u32,
+                    &self.batch_partials,
+                    &self.batch_level2,
+                ],
+            );
+            self.launch(
+                &self.kernels.sum_columns,
+                rows * third,
+                &[
+                    &counts[1],
+                    &group,
+                    &rows_u32,
+                    &self.batch_level2,
+                    &self.batch_level3,
+                ],
+            );
+            self.launch(
+                &self.kernels.sum_columns,
+                rows,
+                &[
+                    &counts[2],
+                    &group,
+                    &rows_u32,
+                    &self.batch_level3,
+                    &self.batch,
+                ],
+            );
+        }
+    }
+
+    impl CompactBackend for OnDevice<'_> {
+        type Pool = DevicePool;
+        fn pool(&self) -> DevicePool {
+            let length = (HISTORY + 1) * self.count();
+            DevicePool {
+                s: self.kernels.device.buffer(length).unwrap(),
+                y: self.kernels.device.buffer(length).unwrap(),
+            }
+        }
+        fn store_step(&self, alpha: f64, x: &Buffer<f64>, pool: &DevicePool, slot: usize) {
+            let (count, offset) = (self.count() as u32, (slot * self.count()) as u32);
+            self.launch(
+                &self.kernels.scale_at,
+                self.count(),
+                &[&count, &alpha, x, &pool.s, &offset],
+            );
+        }
+        fn store_change(
+            &self,
+            new: &Buffer<f64>,
+            old: &Buffer<f64>,
+            pool: &DevicePool,
+            slot: usize,
+        ) {
+            let (count, offset) = (self.count() as u32, (slot * self.count()) as u32);
+            self.launch(
+                &self.kernels.difference_at,
+                self.count(),
+                &[&count, new, old, &pool.y, &offset],
+            );
+        }
+        fn history_dots(
+            &self,
+            pool: &DevicePool,
+            order: &[usize],
+            g: &Buffer<f64>,
+            x: &Buffer<f64>,
+        ) {
+            self.set_order(order);
+            let (count, threads, active) = (
+                self.count() as u32,
+                BATCH_THREADS as u32,
+                order.len() as u32,
+            );
+            self.launch(
+                &self.kernels.history_dots,
+                BATCH_THREADS,
+                &[
+                    &count,
+                    &threads,
+                    &active,
+                    &self.order,
+                    &pool.s,
+                    &pool.y,
+                    g,
+                    x,
+                    &self.batch_partials,
+                ],
+            );
+            self.batch_tail(ROWS_HISTORY);
+        }
+        fn update_dots(&self, pool: &DevicePool, order: &[usize], slot: usize) {
+            self.set_order(order);
+            let (count, threads, active, slot) = (
+                self.count() as u32,
+                BATCH_THREADS as u32,
+                order.len() as u32,
+                slot as u32,
+            );
+            self.launch(
+                &self.kernels.update_dots,
+                BATCH_THREADS,
+                &[
+                    &count,
+                    &threads,
+                    &active,
+                    &self.order,
+                    &pool.s,
+                    &pool.y,
+                    &slot,
+                    &self.batch_partials,
+                ],
+            );
+            self.batch_tail(ROWS_UPDATE);
+        }
+        fn read_batch(&self, rows: usize) -> Vec<f64> {
+            self.wait();
+            let mut values = [0.0; BATCH];
+            self.batch.download(&mut values).unwrap();
+            values[..rows].to_vec()
+        }
+        fn combine(
+            &self,
+            pool: &DevicePool,
+            order: &[usize],
+            coefficients: &[f64; 1 + 2 * HISTORY],
+            g: &Buffer<f64>,
+            d: &Buffer<f64>,
+        ) {
+            self.set_order(order);
+            self.coefficients.upload(coefficients).unwrap();
+            let (count, active) = (self.count() as u32, order.len() as u32);
+            self.launch(
+                &self.kernels.combine,
+                self.count(),
+                &[
+                    &count,
+                    &active,
+                    &self.order,
+                    &self.coefficients,
+                    &pool.s,
+                    &pool.y,
+                    g,
+                    d,
+                ],
+            );
         }
     }
 
@@ -1334,6 +1556,32 @@ mod device {
         assert!(error < 1.0e-7, "the points differ by {error}");
     }
 
+    /// The fit with the compact form on the device takes the steps that the plain loops on the
+    /// host do.
+    #[test]
+    fn the_device_compact_solver_follows_the_reference() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let problem = Problem::new(6, 1.0);
+        let layout = Layout::new(&problem);
+        let on_device = OnDevice::new(&kernels, &layout);
+        let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
+        let settings = Settings {
+            steps: 15,
+            ..Default::default()
+        };
+        let (expected, expected_x) = reference(&problem, &problem.coordinates, typical, settings);
+        let mut x = on_device.vector();
+        on_device.upload(&x, &planes(&problem.coordinates));
+        let trace = lbfgs_compact(&on_device, &mut x, typical, settings);
+        let (difference, same_steps) = compare(&trace, &expected);
+        assert!(same_steps, "{:?} against {:?}", trace.steps, expected.steps);
+        assert!(difference < 1.0e-8, "the energies differ by {difference}");
+        let error = disagreement(&expected_x, &points_of(&on_device.download(&x)));
+        assert!(error < 1.0e-6, "the points differ by {error}");
+    }
+
     /// The objective and the gradient on the device, against the host, for the sizes in `CELLS`.
     ///
     /// The kernels are timed with the coordinates already on the device, which is what a fit that
@@ -1417,8 +1665,11 @@ mod device {
     /// The fit on the device, all of it: the steps of the method with every vector on the device.
     ///
     /// `STEPS` is how many steps to take, 100 by default, which is what a sweep of the fit of the
-    /// library takes at most, and the run does not stop for having converged. It is timed whole,
-    /// and then again with each part of a step waited for, which adds the time of the waiting.
+    /// library takes at most, and the run does not stop for having converged. `SOLVER` is
+    /// `two-loop`, `compact` or `both`, the default. It is timed whole, and then again with each
+    /// part of a step waited for, which adds the time of the waiting. For the compact form,
+    /// "norms" is the first batched pass of dot products, "two-loop" the solve on the host and
+    /// the pass that makes the direction, and "history" the second batched pass.
     #[test]
     #[ignore]
     fn device_fit() {
@@ -1429,13 +1680,19 @@ mod device {
             .ok()
             .and_then(|steps| steps.parse().ok())
             .unwrap_or(100);
+        let solvers: Vec<&str> = match std::env::var("SOLVER").as_deref() {
+            Ok("two-loop") => vec!["two-loop"],
+            Ok("compact") => vec!["compact"],
+            _ => vec!["two-loop", "compact"],
+        };
         println!();
         println!("{}", kernels.device.name());
         println!(
-            "{:>7}{:>10}{:>11}{:>7}{:>7}{:>12}{:>10}{:>16}{:>16}",
+            "{:>7}{:>10}{:>11}{:>10}{:>7}{:>7}{:>12}{:>10}{:>16}{:>16}",
             "cells",
             "nodes",
             "elements",
+            "solver",
             "steps",
             "evals",
             "total ms",
@@ -1453,49 +1710,55 @@ mod device {
                 convergence: 0.0,
             };
             let start = planes(&problem.coordinates);
-            let mut x = on_device.vector();
-            let mut run = || {
-                on_device.upload(&x, &start);
-                on_device.wait();
-                let started = Instant::now();
-                let trace = lbfgs(&on_device, &mut x, typical, settings);
-                on_device.wait();
-                (trace, started.elapsed().as_secs_f64() * 1.0e3)
-            };
-            let (trace, _) = run();
-            let total = super::median((0..repetitions()).map(|_| run().1).collect());
-            on_device.profiling.set(true);
-            run();
-            on_device.profiling.set(false);
-            let taken = trace.values.len();
-            println!(
-                "{cells:>7}{:>10}{:>11}{taken:>7}{:>7}{total:>12.3}{:>10.4}{:>16.9e}{:>16.9e}",
-                problem.nodes(),
-                problem.elements.len(),
-                trace.evaluations,
-                total / trace.passes.max(1) as f64,
-                trace.initial,
-                trace.values.last().copied().unwrap_or(trace.initial),
-            );
-            let phases = *on_device.phases.borrow();
-            let waited: f64 = phases.iter().sum();
-            let line: Vec<String> = Phase::ALL
-                .iter()
-                .map(|phase| {
-                    let time = phases[*phase as usize];
-                    format!(
-                        "{} {:.4} ms ({:.0}%)",
-                        phase.name(),
-                        time / trace.passes.max(1) as f64,
-                        100.0 * time / waited
-                    )
-                })
-                .collect();
-            println!(
-                "        per step, each part waited for: {}",
-                line.join(", ")
-            );
-            *on_device.phases.borrow_mut() = [0.0; PHASES];
+            for &solver in &solvers {
+                let mut x = on_device.vector();
+                let mut run = || {
+                    on_device.upload(&x, &start);
+                    on_device.wait();
+                    let started = Instant::now();
+                    let trace = if solver == "compact" {
+                        lbfgs_compact(&on_device, &mut x, typical, settings)
+                    } else {
+                        lbfgs(&on_device, &mut x, typical, settings)
+                    };
+                    on_device.wait();
+                    (trace, started.elapsed().as_secs_f64() * 1.0e3)
+                };
+                let (trace, _) = run();
+                let total = super::median((0..repetitions()).map(|_| run().1).collect());
+                on_device.profiling.set(true);
+                run();
+                on_device.profiling.set(false);
+                let taken = trace.values.len();
+                println!(
+                    "{cells:>7}{:>10}{:>11}{solver:>10}{taken:>7}{:>7}{total:>12.3}{:>10.4}{:>16.9e}{:>16.9e}",
+                    problem.nodes(),
+                    problem.elements.len(),
+                    trace.evaluations,
+                    total / trace.passes.max(1) as f64,
+                    trace.initial,
+                    trace.values.last().copied().unwrap_or(trace.initial),
+                );
+                let phases = *on_device.phases.borrow();
+                let waited: f64 = phases.iter().sum();
+                let line: Vec<String> = Phase::ALL
+                    .iter()
+                    .map(|phase| {
+                        let time = phases[*phase as usize];
+                        format!(
+                            "{} {:.4} ms ({:.0}%)",
+                            phase.name(),
+                            time / trace.passes.max(1) as f64,
+                            100.0 * time / waited
+                        )
+                    })
+                    .collect();
+                println!(
+                    "        per step, each part waited for: {}",
+                    line.join(", ")
+                );
+                *on_device.phases.borrow_mut() = [0.0; PHASES];
+            }
         }
     }
 }

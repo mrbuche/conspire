@@ -550,3 +550,274 @@ pub unsafe fn subtract_pair(
     // SAFETY: the item is among the `count` values, and the index is one of the scalars.
     unsafe { *y.add(item) -= (*alphas.add(index) + *betas.add(index)) * *x.add(item) };
 }
+
+// The kernels of the compact form of the limited-memory BFGS.
+//
+// The corrections are kept in two pools, one of the steps `s` and one of the changes of the
+// gradient `y`, each `CORRECTIONS + 1` vectors of `count` values one after another, so that a
+// correction in the slot `slot` is at `slot * count`. The corrections that are in use, oldest
+// first, are the slots in `order`.
+
+/// The most corrections that the kernels of the compact form take.
+pub const CORRECTIONS: usize = 8;
+/// The dot products of the first pass of a step: the gradient with itself, the iterate with
+/// itself, and the gradient with the steps and with the changes of the gradient.
+#[allow(dead_code)]
+pub const ROWS_HISTORY: usize = 2 + 2 * CORRECTIONS;
+/// The dot products of the update of the history: the new step with the new change, the new step
+/// with itself, the new change with itself, and the new correction with the old ones.
+#[allow(dead_code)]
+pub const ROWS_UPDATE: usize = 3 + 3 * CORRECTIONS;
+
+/// The positions in the pools of the corrections in use.
+///
+/// # Safety
+///
+/// `order` must be `active` values, which are at most `CORRECTIONS`.
+unsafe fn positions(active: usize, order: *const u32, count: usize) -> [usize; CORRECTIONS] {
+    let mut positions = [0; CORRECTIONS];
+    for j in 0..CORRECTIONS {
+        if j < active {
+            // SAFETY: the correction is one of the `active`.
+            positions[j] = unsafe { *order.add(j) } as usize * count;
+        }
+    }
+    positions
+}
+
+/// The first pass of the dot products against the history: the thread `item` of `threads` adds
+/// up, over the values that are `threads` apart from the one at `item`, the products that make
+/// each of the `ROWS_HISTORY` dot products, in order, into `partials[row * threads + item]`. The
+/// rows are `g . g`, `x . x`, the dot products of each step in use with `g`, and then those of
+/// each change of the gradient in use. The rows of the corrections that are not in use are zero.
+///
+/// # Safety
+///
+/// `g` and `x` must be `count` values, the pools must be `CORRECTIONS + 1` vectors of them, the
+/// slots in `order` must be among those, and `partials` must be `ROWS_HISTORY * threads`.
+pub unsafe fn history_dots(
+    item: usize,
+    count: usize,
+    threads: usize,
+    active: usize,
+    order: *const u32,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    g: *const f64,
+    x: *const f64,
+    partials: *mut f64,
+) {
+    if item >= threads {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let positions = unsafe { positions(active, order, count) };
+    let (mut gg, mut xx) = (0.0, 0.0);
+    let (mut sg, mut yg) = ([0.0; CORRECTIONS], [0.0; CORRECTIONS]);
+    let mut index = item;
+    while index < count {
+        // SAFETY: the index is among the `count` values.
+        let (gi, xi) = unsafe { (*g.add(index), *x.add(index)) };
+        gg += gi * gi;
+        xx += xi * xi;
+        for j in 0..CORRECTIONS {
+            if j < active {
+                // SAFETY: the correction is in the pools, and the index is among its values.
+                let (s, y) = unsafe {
+                    (
+                        *pool_s.add(positions[j] + index),
+                        *pool_y.add(positions[j] + index),
+                    )
+                };
+                sg[j] += s * gi;
+                yg[j] += y * gi;
+            }
+        }
+        index += threads;
+    }
+    // SAFETY: there is a partial sum for each row and each thread.
+    unsafe {
+        *partials.add(item) = gg;
+        *partials.add(threads + item) = xx;
+        for j in 0..CORRECTIONS {
+            *partials.add((2 + j) * threads + item) = sg[j];
+            *partials.add((2 + CORRECTIONS + j) * threads + item) = yg[j];
+        }
+    }
+}
+
+/// The first pass of the dot products of the update of the history, after the correction in the
+/// slot `slot` is written: as [`history_dots`], for the `ROWS_UPDATE` dot products. The rows are
+/// `s . y`, `s . s` and `y . y` of the new correction, then the dot products of each old step
+/// with the new change, of the new step with each old change, and of each old change with the new
+/// one.
+///
+/// # Safety
+///
+/// The pools must be `CORRECTIONS + 1` vectors of `count` values, `slot` and the slots in `order`
+/// must be among those, and `partials` must be `ROWS_UPDATE * threads`.
+pub unsafe fn update_dots(
+    item: usize,
+    count: usize,
+    threads: usize,
+    active: usize,
+    order: *const u32,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    slot: usize,
+    partials: *mut f64,
+) {
+    if item >= threads {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let positions = unsafe { positions(active, order, count) };
+    let new = slot * count;
+    let (mut sy, mut ss, mut yy) = (0.0, 0.0, 0.0);
+    let mut old_s_new_y = [0.0; CORRECTIONS];
+    let mut new_s_old_y = [0.0; CORRECTIONS];
+    let mut old_y_new_y = [0.0; CORRECTIONS];
+    let mut index = item;
+    while index < count {
+        // SAFETY: the new correction is in the pools, and the index is among its values.
+        let (sn, yn) = unsafe { (*pool_s.add(new + index), *pool_y.add(new + index)) };
+        sy += sn * yn;
+        ss += sn * sn;
+        yy += yn * yn;
+        for j in 0..CORRECTIONS {
+            if j < active {
+                // SAFETY: the correction is in the pools, and the index is among its values.
+                let (so, yo) = unsafe {
+                    (
+                        *pool_s.add(positions[j] + index),
+                        *pool_y.add(positions[j] + index),
+                    )
+                };
+                old_s_new_y[j] += so * yn;
+                new_s_old_y[j] += sn * yo;
+                old_y_new_y[j] += yo * yn;
+            }
+        }
+        index += threads;
+    }
+    // SAFETY: there is a partial sum for each row and each thread.
+    unsafe {
+        *partials.add(item) = sy;
+        *partials.add(threads + item) = ss;
+        *partials.add(2 * threads + item) = yy;
+        for j in 0..CORRECTIONS {
+            *partials.add((3 + j) * threads + item) = old_s_new_y[j];
+            *partials.add((3 + CORRECTIONS + j) * threads + item) = new_s_old_y[j];
+            *partials.add((3 + 2 * CORRECTIONS + j) * threads + item) = old_y_new_y[j];
+        }
+    }
+}
+
+/// A pass of the sums of `rows` rows of `count` values after the first: the thread `item` is a
+/// group of a row, and adds up its `group` values, in order, into `sums[item]`, where the groups
+/// of a row are `count.div_ceil(group)` and follow the groups of the row before.
+///
+/// # Safety
+///
+/// `values` must be `rows * count` values and `sums` must be `rows * count.div_ceil(group)`.
+pub unsafe fn sum_columns(
+    item: usize,
+    count: usize,
+    group: usize,
+    rows: usize,
+    values: *const f64,
+    sums: *mut f64,
+) {
+    let groups = count.div_ceil(group);
+    if item >= rows * groups {
+        return;
+    }
+    let (row, member) = (item / groups, item % groups);
+    let first = row * count + member * group;
+    let last = row * count + ((member + 1) * group).min(count);
+    let mut sum = 0.0;
+    for index in first..last {
+        // SAFETY: the index is among the values of the row.
+        sum += unsafe { *values.add(index) };
+    }
+    // SAFETY: there is a sum for each group of each row.
+    unsafe { *sums.add(item) = sum };
+}
+
+/// `d = coefficients[0] * g + sum of coefficients[1 + j] * s_j + coefficients[1 + CORRECTIONS +
+/// j] * y_j`, over the corrections in use, in order, which is the direction of the compact form.
+///
+/// # Safety
+///
+/// `g` and `d` must be `count` values, `coefficients` must be `1 + 2 * CORRECTIONS`, and the
+/// pools and the slots in `order` must be as for [`history_dots`].
+pub unsafe fn combine(
+    item: usize,
+    count: usize,
+    active: usize,
+    order: *const u32,
+    coefficients: *const f64,
+    pool_s: *const f64,
+    pool_y: *const f64,
+    g: *const f64,
+    d: *mut f64,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: as the caller says.
+    let positions = unsafe { positions(active, order, count) };
+    // SAFETY: the item is among the `count` values.
+    let mut value = unsafe { *coefficients * *g.add(item) };
+    for j in 0..CORRECTIONS {
+        if j < active {
+            // SAFETY: the correction is in the pools, and the item is among its values.
+            value += unsafe {
+                *coefficients.add(1 + j) * *pool_s.add(positions[j] + item)
+                    + *coefficients.add(1 + CORRECTIONS + j) * *pool_y.add(positions[j] + item)
+            };
+        }
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *d.add(item) = value };
+}
+
+/// `out[offset + item] = alpha * x[item]`.
+///
+/// # Safety
+///
+/// `x` must be `count` values and `out` must have `count` values from `offset`.
+pub unsafe fn scale_at(
+    item: usize,
+    count: usize,
+    alpha: f64,
+    x: *const f64,
+    out: *mut f64,
+    offset: usize,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *out.add(offset + item) = alpha * *x.add(item) };
+}
+
+/// `out[offset + item] = new[item] - old[item]`.
+///
+/// # Safety
+///
+/// `new` and `old` must be `count` values and `out` must have `count` values from `offset`.
+pub unsafe fn difference_at(
+    item: usize,
+    count: usize,
+    new: *const f64,
+    old: *const f64,
+    out: *mut f64,
+    offset: usize,
+) {
+    if item >= count {
+        return;
+    }
+    // SAFETY: the item is among the `count` values.
+    unsafe { *out.add(offset + item) = *new.add(item) - *old.add(item) };
+}
