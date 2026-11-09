@@ -733,15 +733,16 @@ fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
         }
     }
     while partials.len() > 1 {
-        let groups = partials.len().div_ceil(GROUP);
+        let groups = partials.len().div_ceil(solver::BATCH_GROUP);
         let mut sums = vec![0.0; groups];
         for item in 0..groups {
             // SAFETY: the values are `partials.len()` and the sums are `groups`.
             unsafe {
-                shared::sum_groups(
+                shared::sum_columns(
                     item,
                     partials.len(),
-                    GROUP,
+                    solver::BATCH_GROUP,
+                    1,
                     partials.as_ptr(),
                     sums.as_mut_ptr(),
                 )
@@ -1166,25 +1167,44 @@ mod device {
                 ],
             );
         }
-        /// The three passes that add the energies up.
+        /// The passes that add the energies up, the first by many threads and then the three of the
+        /// batches, of one row.
         fn add_up(&self) {
             let count = (self.layout.elements + self.layout.nodes) as u32;
-            let (summers, group, groups) =
-                (SUMMERS as u32, GROUP as u32, SUMMERS.div_ceil(GROUP) as u32);
+            let (threads, group, rows) = (BATCH_THREADS as u32, BATCH_GROUP as u32, 1_u32);
+            let second = (BATCH_THREADS / BATCH_GROUP) as u32;
+            let third = second / group;
             self.launch(
                 &self.kernels.sum_strided,
-                SUMMERS,
-                &[&count, &summers, &self.energies, &self.partials],
+                BATCH_THREADS,
+                &[&count, &threads, &self.energies, &self.batch_partials],
             );
             self.launch(
-                &self.kernels.sum_groups,
-                SUMMERS.div_ceil(GROUP),
-                &[&summers, &group, &self.partials, &self.groups],
+                &self.kernels.sum_columns,
+                second as usize,
+                &[
+                    &threads,
+                    &group,
+                    &rows,
+                    &self.batch_partials,
+                    &self.batch_level2,
+                ],
             );
             self.launch(
-                &self.kernels.sum_groups,
+                &self.kernels.sum_columns,
+                third as usize,
+                &[
+                    &second,
+                    &group,
+                    &rows,
+                    &self.batch_level2,
+                    &self.batch_level3,
+                ],
+            );
+            self.launch(
+                &self.kernels.sum_columns,
                 1,
-                &[&groups, &group, &self.groups, &self.total],
+                &[&third, &group, &rows, &self.batch_level3, &self.total],
             );
         }
         fn objective_of(&self, x: &Buffer<f64>) -> f64 {

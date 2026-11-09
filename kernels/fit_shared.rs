@@ -18,7 +18,72 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments)]
 
 use super::sqrt;
-use core::slice::{from_raw_parts, from_raw_parts_mut};
+use core::{
+    ops::{Index, IndexMut, Range},
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
+
+/// Values that are checked against their number in a debug build, as the tests of the host are,
+/// and are not in a release build, as the kernels are, where a check is a branch in every thread.
+struct View<'a, T>(&'a [T]);
+
+/// The same to write to.
+struct ViewMut<'a, T>(&'a mut [T]);
+
+/// # Safety
+///
+/// `pointer` must be `length` values.
+unsafe fn view<'a, T>(pointer: *const T, length: usize) -> View<'a, T> {
+    // SAFETY: as the caller says.
+    View(unsafe { from_raw_parts(pointer, length) })
+}
+
+/// # Safety
+///
+/// `pointer` must be `length` values, which nothing else is using.
+unsafe fn view_mut<'a, T>(pointer: *mut T, length: usize) -> ViewMut<'a, T> {
+    // SAFETY: as the caller says.
+    ViewMut(unsafe { from_raw_parts_mut(pointer, length) })
+}
+
+impl<T> Index<usize> for View<'_, T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, index: usize) -> &T {
+        debug_assert!(index < self.0.len(), "{index} of {}", self.0.len());
+        // SAFETY: the index is among the values, as the kernel's caller says.
+        unsafe { self.0.get_unchecked(index) }
+    }
+}
+
+impl<T> Index<Range<usize>> for View<'_, T> {
+    type Output = [T];
+    #[inline(always)]
+    fn index(&self, range: Range<usize>) -> &[T] {
+        debug_assert!(range.start <= range.end && range.end <= self.0.len());
+        // SAFETY: the range is among the values, as the kernel's caller says.
+        unsafe { self.0.get_unchecked(range) }
+    }
+}
+
+impl<T> Index<usize> for ViewMut<'_, T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, index: usize) -> &T {
+        debug_assert!(index < self.0.len(), "{index} of {}", self.0.len());
+        // SAFETY: the index is among the values, as the kernel's caller says.
+        unsafe { self.0.get_unchecked(index) }
+    }
+}
+
+impl<T> IndexMut<usize> for ViewMut<'_, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        debug_assert!(index < self.0.len(), "{index} of {}", self.0.len());
+        // SAFETY: the index is among the values, as the kernel's caller says.
+        unsafe { self.0.get_unchecked_mut(index) }
+    }
+}
 
 type Point = [f64; 3];
 
@@ -26,18 +91,6 @@ type Point = [f64; 3];
 pub const BALANCE: f64 = 2.5e3;
 /// The least that the squared distance of a face over the squared size of a node counts for.
 pub const WEIGHT_FLOOR: f64 = 0.3;
-/// The corners of a hexahedron and the three nodes that they are joined to.
-const CORNERS: [(usize, [usize; 3]); 8] = [
-    (0, [1, 3, 4]),
-    (1, [2, 0, 5]),
-    (2, [3, 1, 6]),
-    (3, [0, 2, 7]),
-    (4, [7, 5, 0]),
-    (5, [4, 6, 1]),
-    (6, [5, 7, 2]),
-    (7, [6, 4, 3]),
-];
-
 fn minus(a: Point, b: Point) -> Point {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -78,8 +131,8 @@ unsafe fn points(
     // SAFETY: as the caller says.
     let (connectivity, coordinates) = unsafe {
         (
-            from_raw_parts(connectivity, 8 * elements),
-            from_raw_parts(coordinates, 3 * nodes),
+            view(connectivity, 8 * elements),
+            view(coordinates, 3 * nodes),
         )
     };
     let mut points = [[0.0; 3]; 8];
@@ -105,6 +158,43 @@ fn corner(points: &[Point; 8], corner: usize, adjacent: &[usize; 3]) -> ([Point;
     (e, trace, dot(e[0], cross(e[1], e[2])))
 }
 
+/// The energy of the corner `C`, with the nodes `A0`, `A1` and `A2` next to it.
+#[inline(always)]
+fn corner_energy<const C: usize, const A0: usize, const A1: usize, const A2: usize>(
+    points: &[Point; 8],
+    epsilon: f64,
+) -> f64 {
+    let (_, trace, determinant) = corner(points, C, &[A0, A1, A2]);
+    trace * sqrt(trace) / chi(epsilon, determinant)
+}
+
+/// What the corner `C`, with the nodes `A0`, `A1` and `A2` next to it, adds to how the energy of its
+/// element changes with each node.
+#[inline(always)]
+fn corner_term<const C: usize, const A0: usize, const A1: usize, const A2: usize>(
+    points: &[Point; 8],
+    local: &mut [Point; 8],
+    epsilon: f64,
+) {
+    let adjacent = [A0, A1, A2];
+    let (e, trace, determinant) = corner(points, C, &adjacent);
+    let denominator = chi(epsilon, determinant);
+    let root = sqrt(trace);
+    let alpha = 3.0 * root / denominator;
+    let beta = trace
+        * root
+        * 0.5
+        * (1.0 + determinant / sqrt(epsilon * epsilon + determinant * determinant))
+        / (denominator * denominator);
+    let crosses = [cross(e[1], e[2]), cross(e[2], e[0]), cross(e[0], e[1])];
+    for i in 0..3 {
+        for d in 0..3 {
+            local[C][d] += crosses[i][d] * beta - e[i][d] * alpha;
+            local[adjacent[i]][d] += e[i][d] * alpha - crosses[i][d] * beta;
+        }
+    }
+}
+
 /// The first pass of the gradient: the thread `item` writes how the energy of its element changes
 /// with each of its corners, times the size of the element.
 ///
@@ -125,34 +215,25 @@ pub unsafe fn corner_contributions(
         return;
     }
     // SAFETY: as the caller says.
-    let (points, scales, contributions) = unsafe {
+    let (points, scales, mut contributions) = unsafe {
         (
             points(item, elements, nodes, connectivity, coordinates),
-            from_raw_parts(scales, elements),
-            from_raw_parts_mut(contributions, 24 * elements),
+            view(scales, elements),
+            view_mut(contributions, 24 * elements),
         )
     };
     let scale = scales[item];
     let epsilon = scale * scale * scale * epsilon;
     let mut local = [[0.0; 3]; 8];
-    for (index, adjacent) in &CORNERS {
-        let (e, trace, determinant) = corner(&points, *index, adjacent);
-        let denominator = chi(epsilon, determinant);
-        let root = sqrt(trace);
-        let alpha = 3.0 * root / denominator;
-        let beta = trace
-            * root
-            * 0.5
-            * (1.0 + determinant / sqrt(epsilon * epsilon + determinant * determinant))
-            / (denominator * denominator);
-        let crosses = [cross(e[1], e[2]), cross(e[2], e[0]), cross(e[0], e[1])];
-        for i in 0..3 {
-            for d in 0..3 {
-                local[*index][d] += crosses[i][d] * beta - e[i][d] * alpha;
-                local[adjacent[i]][d] += e[i][d] * alpha - crosses[i][d] * beta;
-            }
-        }
-    }
+    // The corners of `CORNERS`, in its order.
+    corner_term::<0, 1, 3, 4>(&points, &mut local, epsilon);
+    corner_term::<1, 2, 0, 5>(&points, &mut local, epsilon);
+    corner_term::<2, 3, 1, 6>(&points, &mut local, epsilon);
+    corner_term::<3, 0, 2, 7>(&points, &mut local, epsilon);
+    corner_term::<4, 7, 5, 0>(&points, &mut local, epsilon);
+    corner_term::<5, 4, 6, 1>(&points, &mut local, epsilon);
+    corner_term::<6, 5, 7, 2>(&points, &mut local, epsilon);
+    corner_term::<7, 6, 4, 3>(&points, &mut local, epsilon);
     for c in 0..8 {
         for d in 0..3 {
             contributions[(d * 8 + c) * elements + item] = local[c][d] * scale;
@@ -179,20 +260,25 @@ pub unsafe fn element_energies(
         return;
     }
     // SAFETY: as the caller says.
-    let (points, scales, energies) = unsafe {
+    let (points, scales, mut energies) = unsafe {
         (
             points(item, elements, nodes, connectivity, coordinates),
-            from_raw_parts(scales, elements),
-            from_raw_parts_mut(energies, elements),
+            view(scales, elements),
+            view_mut(energies, elements),
         )
     };
     let scale = scales[item];
     let epsilon = scale * scale * scale * epsilon;
     let mut sum = 0.0;
-    for (index, adjacent) in &CORNERS {
-        let (_, trace, determinant) = corner(&points, *index, adjacent);
-        sum += trace * sqrt(trace) / chi(epsilon, determinant);
-    }
+    // The corners of a hexahedron, each with the three nodes that it is joined to.
+    sum += corner_energy::<0, 1, 3, 4>(&points, epsilon);
+    sum += corner_energy::<1, 2, 0, 5>(&points, epsilon);
+    sum += corner_energy::<2, 3, 1, 6>(&points, epsilon);
+    sum += corner_energy::<3, 0, 2, 7>(&points, epsilon);
+    sum += corner_energy::<4, 7, 5, 0>(&points, epsilon);
+    sum += corner_energy::<5, 4, 6, 1>(&points, epsilon);
+    sum += corner_energy::<6, 5, 7, 2>(&points, epsilon);
+    sum += corner_energy::<7, 6, 4, 3>(&points, epsilon);
     energies[item] = scale * sum;
 }
 
@@ -202,9 +288,9 @@ fn deviation(
     nodes: usize,
     face: usize,
     faces: usize,
-    coordinates: &[f64],
-    points: &[f64],
-    normals: &[f64],
+    coordinates: &View<f64>,
+    points: &View<f64>,
+    normals: &View<f64>,
 ) -> f64 {
     (coordinates[node] - points[face]) * normals[face]
         + (coordinates[nodes + node] - points[faces + face]) * normals[faces + face]
@@ -238,22 +324,22 @@ pub unsafe fn node_energies(
     // SAFETY: as the caller says.
     let (face_starts, points, normals, distances, coordinates, lengths) = unsafe {
         (
-            from_raw_parts(face_starts, nodes + 1),
-            from_raw_parts(points, 3 * faces),
-            from_raw_parts(normals, 3 * faces),
-            from_raw_parts(distances, faces),
-            from_raw_parts(coordinates, 3 * nodes),
-            from_raw_parts(lengths, nodes),
+            view(face_starts, nodes + 1),
+            view(points, 3 * faces),
+            view(normals, 3 * faces),
+            view(distances, faces),
+            view(coordinates, 3 * nodes),
+            view(lengths, nodes),
         )
     };
     let (first, last) = (face_starts[item] as usize, face_starts[item + 1] as usize);
     // SAFETY: the entries are as many as the last of the starts says.
-    let face_entries = unsafe { from_raw_parts(face_entries, last) };
+    let face_entries = unsafe { view(face_entries, last) };
     let length = lengths[item];
     let mut sum = 0.0;
     for &face in &face_entries[first..last] {
         let face = face as usize;
-        let deviation = deviation(item, nodes, face, faces, coordinates, points, normals);
+        let deviation = deviation(item, nodes, face, faces, &coordinates, &points, &normals);
         sum += weight(distances[face], length) * deviation * deviation;
     }
     // SAFETY: the energy of this node has a place.
@@ -290,13 +376,13 @@ pub unsafe fn gradient(
     // SAFETY: as the caller says.
     let (starts, face_starts, points, normals, distances, coordinates, lengths) = unsafe {
         (
-            from_raw_parts(starts, nodes + 1),
-            from_raw_parts(face_starts, nodes + 1),
-            from_raw_parts(points, 3 * faces),
-            from_raw_parts(normals, 3 * faces),
-            from_raw_parts(distances, faces),
-            from_raw_parts(coordinates, 3 * nodes),
-            from_raw_parts(lengths, nodes),
+            view(starts, nodes + 1),
+            view(face_starts, nodes + 1),
+            view(points, 3 * faces),
+            view(normals, 3 * faces),
+            view(distances, faces),
+            view(coordinates, 3 * nodes),
+            view(lengths, nodes),
         )
     };
     let plane = 8 * elements;
@@ -305,9 +391,9 @@ pub unsafe fn gradient(
     // SAFETY: the entries are as many as the last of the starts say.
     let (entries, face_entries, contributions) = unsafe {
         (
-            from_raw_parts(entries, last),
-            from_raw_parts(face_entries, last_face),
-            from_raw_parts(contributions, 3 * plane),
+            view(entries, last),
+            view(face_entries, last_face),
+            view(contributions, 3 * plane),
         )
     };
     let mut sum = [0.0; 3];
@@ -319,14 +405,14 @@ pub unsafe fn gradient(
     let length = lengths[item];
     for &face in &face_entries[first_face..last_face] {
         let face = face as usize;
-        let deviation = deviation(item, nodes, face, faces, coordinates, points, normals);
+        let deviation = deviation(item, nodes, face, faces, &coordinates, &points, &normals);
         let factor = 2.0 * BALANCE / length * weight(distances[face], length) * deviation;
         for d in 0..3 {
             sum[d] += normals[d * faces + face] * factor;
         }
     }
     // SAFETY: the gradient has three values for each node.
-    let gradient = unsafe { from_raw_parts_mut(gradient, 3 * nodes) };
+    let mut gradient = unsafe { view_mut(gradient, 3 * nodes) };
     for d in 0..3 {
         gradient[d * nodes + item] = sum[d];
     }
@@ -349,12 +435,7 @@ pub unsafe fn sum_strided(
         return;
     }
     // SAFETY: as the caller says.
-    let (values, partials) = unsafe {
-        (
-            from_raw_parts(values, count),
-            from_raw_parts_mut(partials, threads),
-        )
-    };
+    let (values, mut partials) = unsafe { (view(values, count), view_mut(partials, threads)) };
     let mut sum = 0.0;
     let mut index = item;
     while index < count {
@@ -382,12 +463,7 @@ pub unsafe fn sum_groups(
         return;
     }
     // SAFETY: as the caller says.
-    let (values, sums) = unsafe {
-        (
-            from_raw_parts(values, count),
-            from_raw_parts_mut(sums, groups),
-        )
-    };
+    let (values, mut sums) = unsafe { (view(values, count), view_mut(sums, groups)) };
     let mut sum = 0.0;
     for &value in &values[item * group..((item + 1) * group).min(count)] {
         sum += value;

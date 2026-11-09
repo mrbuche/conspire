@@ -375,7 +375,7 @@ impl Backend for Emulated<'_> {
         vector.borrow().clone()
     }
     fn objective(&self, x: &Self::Vector) -> f64 {
-        objective_on_host(self.layout, &x.borrow(), SUMMERS)
+        objective_on_host(self.layout, &x.borrow(), BATCH_THREADS)
     }
     fn gradient(&self, x: &Self::Vector, gradient: &Self::Vector) {
         *gradient.borrow_mut() = gradient_on_host(self.layout, &x.borrow());
