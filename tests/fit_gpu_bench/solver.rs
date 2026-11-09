@@ -557,6 +557,20 @@ fn the_solver_on_the_kernels_follows_the_reference() {
 /// groups, and the groups to groups, until there is one sum.
 pub const BATCH_THREADS: usize = 32768;
 pub const BATCH_GROUP: usize = 32;
+/// The threads of the first pass of the sums of a batch that were fastest on an H100 for vectors
+/// of `count` values: enough to keep the memory busy, and not so many that their partial sums, a
+/// row of them for each dot product, are a part of what is read. For vectors of ten thousand values
+/// to ten million and more it was 16384 to 131072 threads.
+pub fn automatic_threads(count: usize) -> usize {
+    (count / 16).next_power_of_two().clamp(16384, 131072)
+}
+
+/// The partial sums that a thread of the later passes adds up, for the threads of the first pass:
+/// short chains for few threads, and few passes for many.
+pub fn automatic_group(threads: usize) -> usize {
+    if threads <= 32768 { 32 } else { 64 }
+}
+
 /// The most dot products of a batch.
 pub const BATCH: usize = shared::ROWS_UPDATE;
 /// The dot products of the first pass of a step.
@@ -1070,6 +1084,25 @@ fn the_compact_solver_does_not_depend_on_how_the_dot_products_are_batched() {
         assert!(
             error < 1.0e-8,
             "{threads} threads, groups of {group}: {error}"
+        );
+    }
+}
+
+#[test]
+fn the_automatic_batch_is_what_was_fastest() {
+    // The sizes that were timed: 22, 46, 90, 150 and 300 cells on a side, three values a node.
+    for (count, threads, group) in [
+        (36_501, 16384, 32),
+        (311_469, 32768, 32),
+        (2_260_713, 131072, 64),
+        (10_328_853, 131072, 64),
+        (81_812_703, 131072, 64),
+    ] {
+        let found = automatic_threads(count);
+        assert_eq!(
+            (found, automatic_group(found)),
+            (threads, group),
+            "{count} values"
         );
     }
 }

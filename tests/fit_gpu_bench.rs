@@ -51,8 +51,9 @@
 //! `compact` or `both` (the default) for the method of its steps, `REPETITIONS` is how
 //! many times each is timed, 5 by default, `DEVICE` is the ordinal of
 //! the device, `BLOCK` is the threads in a block of a launch, 128 by default, `BATCH_THREADS` and
-//! `BATCH_GROUP` are the threads of the first pass of the sums of a batch of dot products, 32768 by
-//! default, and the sums that a thread of the passes after it adds up, 32 by default, and
+//! `BATCH_GROUP` are the threads of the first pass of the sums of a batch of dot products and the
+//! sums that a thread of the passes after it adds up, which are chosen by the size of the vectors
+//! unless they are set, and
 //! `FIT_KERNELS` is
 //! the PTX of the kernels, where `kernels/fit.sh` builds it by default.
 
@@ -1049,8 +1050,8 @@ mod device {
     impl<'a> OnDevice<'a> {
         fn new(kernels: &'a Kernels, layout: &'a Layout) -> Self {
             let device = &kernels.device;
-            let batch_threads = setting("BATCH_THREADS", BATCH_THREADS);
-            let batch_group = setting("BATCH_GROUP", BATCH_GROUP);
+            let batch_threads = setting("BATCH_THREADS", automatic_threads(3 * layout.nodes));
+            let batch_group = setting("BATCH_GROUP", automatic_group(batch_threads));
             assert!(batch_threads >= 2 && batch_group >= 2);
             // The passes after the first take the sums to groups of sums until there is one.
             let mut levels = Vec::new();
@@ -1695,12 +1696,7 @@ mod device {
         };
         println!();
         println!("{}", kernels.device.name());
-        println!(
-            "batch threads {}, groups of {}, block {}",
-            setting("BATCH_THREADS", BATCH_THREADS),
-            setting("BATCH_GROUP", BATCH_GROUP),
-            block()
-        );
+        println!("block {}", block());
         println!(
             "{:>7}{:>10}{:>11}{:>10}{:>7}{:>7}{:>12}{:>10}{:>16}{:>16}",
             "cells",
@@ -1718,6 +1714,10 @@ mod device {
             let problem = Problem::new(cells, 1.0);
             let layout = Layout::new(&problem);
             let on_device = OnDevice::new(&kernels, &layout);
+            println!(
+                "        batch threads {}, groups of {}",
+                on_device.batch_threads, on_device.batch_group
+            );
             let typical = problem.lengths.iter().sum::<f64>() / problem.nodes() as f64;
             let settings = Settings {
                 steps,
