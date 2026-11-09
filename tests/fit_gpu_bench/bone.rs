@@ -26,7 +26,7 @@ use super::{
 };
 use conspire::geometry::{
     Coordinate,
-    mesh::{Dualization, Mesh, Tessellation},
+    mesh::{Dualization, Input, Mesh, Tessellation},
     ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
 };
 use std::{
@@ -96,6 +96,46 @@ pub fn mesh(target: &Tessellation, scale: f64) -> Mesh<3> {
     drop(octree);
     target.trim(&mut mesh).expect("the dual is trimmed");
     mesh
+}
+
+/// The interior mesh of a case, read from `INTERIOR` by the ending of its name: `.inp` is Abaqus,
+/// `.e`, `.exo` or `.g` Exodus, `.mesh` Medit, `.vtk` or `.vtu` VTK.
+fn interior(path: &std::path::Path) -> Mesh<3> {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let input = match extension.as_str() {
+        "inp" => Input::Abaqus(path),
+        "e" | "exo" | "g" | "exodus" => Input::Exodus(path),
+        "mesh" => Input::Medit(path),
+        "vtk" | "vtu" => Input::VtkUnstructured(path),
+        other => panic!("INTERIOR ends in `{other}`, which is not a mesh format that is read"),
+    };
+    Mesh::try_from(input).unwrap_or_else(|why| panic!("{} is not read: {why}", path.display()))
+}
+
+/// A case: the surface from `STL` and the mesh of the inside of it in `INTERIOR`, with the buffer
+/// layer added as the library does before it fits, and not fitted. None unless `INTERIOR` is set.
+pub fn case() -> Option<(Tessellation, Bone)> {
+    let path = std::env::var_os("INTERIOR")?;
+    let target = read()?;
+    let started = Instant::now();
+    let interior = interior(std::path::Path::new(&path));
+    let read = started.elapsed().as_secs_f64();
+    let hexahedra = interior.number_of_elements();
+    let started = Instant::now();
+    let (mesh, _) = interior.buffer_layer().expect("the buffer layer is added");
+    let layered = started.elapsed().as_secs_f64();
+    let started = Instant::now();
+    let bone = layout_of(&mesh);
+    let converted = started.elapsed().as_secs_f64();
+    eprintln!(
+        "case: {hexahedra} hexahedra in the interior, {} with the buffer layer, {} nodes, {} faces; read {read:.1} s, layer {layered:.1} s, layout {converted:.1} s",
+        bone.layout.elements, bone.layout.nodes, bone.layout.faces
+    );
+    Some((target, bone))
 }
 
 /// A mesh as the problem that the kernels take, and where its nodes start, on planes.
@@ -630,6 +670,41 @@ fn the_fit_with_the_surface_kernel_matches_the_fit_with_the_library() {
     );
 }
 
+/// The fit of a case on the threads of the host: `INTERIOR` is the mesh of the inside of `STL`.
+#[test]
+#[ignore]
+fn case_fit_cpu() {
+    let Some((target, bone)) = case() else {
+        return;
+    };
+    let Bone {
+        layout,
+        coordinates,
+    } = bone;
+    let settings = Settings {
+        steps: setting("STEPS", 100),
+        ..Default::default()
+    };
+    let limit = setting("SWEEPS", 50);
+    let (elements, nodes) = (layout.elements, layout.nodes);
+    let targets = SurfaceTargets::new(&target, &layout);
+    let backend = Threaded::new(layout).with_targets(targets.targets());
+    header(&format!("{} threads of the host", backend.threads()));
+    let mut x = backend.vector();
+    backend.upload(&x, &coordinates);
+    let started = Instant::now();
+    let found = fit(&backend, &mut x, settings, limit, 1.0);
+    let total = started.elapsed().as_secs_f64();
+    row(
+        0.0,
+        elements,
+        nodes,
+        &found,
+        total,
+        backend.target_seconds(),
+    );
+}
+
 /// The fit of a bone on the threads of the host, for each size of the octree in `SCALES`.
 #[test]
 #[ignore]
@@ -679,4 +754,36 @@ fn bone_fit_cpu() {
             backend.target_seconds(),
         );
     }
+}
+
+/// The buffer layer has an element for each face of the boundary of the inside, and a mesh that
+/// the kernels take, whose gradient is the derivative of the energy at the start of its fit, where
+/// the layer has no thickness.
+#[test]
+fn the_buffer_layer_is_a_layout() {
+    let Some(target) = read() else {
+        return;
+    };
+    let interior = mesh(&target, 5.0);
+    let elements = interior.number_of_elements();
+    let faces = interior.exterior_faces().len();
+    let (layered, layer) = interior.buffer_layer().expect("the layer is added");
+    assert_eq!(layered.number_of_elements(), elements + faces);
+    assert!(!layer.is_empty());
+    let Bone {
+        layout,
+        coordinates,
+    } = layout_of(&layered);
+    assert_eq!(layout.elements, elements + faces);
+    assert_eq!(layout.faces, faces);
+    let targets = SurfaceTargets::new(&target, &layout);
+    let backend = Emulated::new(&layout).with_targets(targets.targets());
+    let x = backend.vector();
+    backend.upload(&x, &coordinates);
+    let typical = backend.start_sweep(&x);
+    assert!(typical.is_finite() && typical > 0.0);
+    let (quality, worst) = backend.measure(&x);
+    assert!(quality.is_finite(), "{quality}");
+    // The layer starts flat, so the least determinant is zero.
+    assert!(worst.abs() < 1.0e-9, "{worst}");
 }

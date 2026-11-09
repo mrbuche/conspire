@@ -138,15 +138,26 @@ fn manifold_boundary(mut mesh: Mesh<3>) -> Result<Mesh<3>, &'static str> {
 }
 
 impl Mesh<3> {
-    pub fn buffer(mut self, target: &Tessellation, fitting: Fitting) -> Result<Self, &'static str> {
+    pub fn buffer(self, target: &Tessellation, fitting: Fitting) -> Result<Self, &'static str> {
+        let (mut mesh, layer) = self.buffer_layer()?;
+        // The nodes of the layer first, as the order in which a fit adds up its elements follows.
+        let count = mesh.number_of_nodes() - layer.len();
+        let nodes: Vec<usize> = layer.iter().copied().chain(0..count).collect();
+        mesh.fit_to(&nodes, &layer, target, fitting)?;
+        Ok(mesh)
+    }
+    /// Adds the buffer layer of hexahedra, whose nodes start where those of the boundary are, and
+    /// does not fit it. Gives the mesh and the nodes of the outer face of the layer, which
+    /// [`buffer`](Self::buffer) fits to the target with all the nodes free.
+    pub fn buffer_layer(mut self) -> Result<(Self, Vec<usize>), &'static str> {
         self.restrict()?;
         let boundary = self.exterior_faces();
         let Peeled {
             mut connectivities,
             coordinates,
-            count,
             duplicates,
             layer,
+            ..
         } = self.peel(&boundary, 4, "non-quadrilateral boundary face")?;
         let cells = boundary
             .iter()
@@ -169,10 +180,7 @@ impl Mesh<3> {
             |connectivity| matches!(connectivity, Connectivity::Hexahedral(_)),
             Connectivity::Hexahedral,
         )?;
-        let mut mesh = Self::from((connectivities, coordinates));
-        let nodes: Vec<usize> = layer.iter().copied().chain(0..count).collect();
-        mesh.fit_to(&nodes, &layer, target, fitting)?;
-        Ok(mesh)
+        Ok((Self::from((connectivities, coordinates)), layer))
     }
     /// Adds a buffer layer of tetrahedra to a tetrahedral mesh and fits it to
     /// the target.

@@ -2147,6 +2147,48 @@ mod device {
         assert!(on_device.target_seconds() > 0.0);
     }
 
+    /// The fit of a case on the device: `INTERIOR` is the mesh of the inside of `STL`, which gets
+    /// the buffer layer on the host and is fitted on the device with the targets found there.
+    #[cfg(feature = "geometry")]
+    #[test]
+    #[ignore]
+    fn case_fit_gpu() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let Some((target, bone)) = bone::case() else {
+            return;
+        };
+        let Bone {
+            layout,
+            coordinates,
+        } = bone;
+        let settings = Settings {
+            steps: bone::setting("STEPS", 100),
+            ..Default::default()
+        };
+        let limit = bone::setting("SWEEPS", 50);
+        let surface = crate::surface::Surface::new(&bone::soup_of(&target));
+        bone::header(&format!("{}, block {}", kernels.device.name(), block()));
+        let (elements, nodes) = (layout.elements, layout.nodes);
+        let on_device = OnDevice::new(&kernels, &layout).with_surface(&surface);
+        let mut x = on_device.vector();
+        on_device.upload(&x, &coordinates);
+        on_device.wait();
+        let started = Instant::now();
+        let found = fit(&on_device, &mut x, settings, limit, layout.epsilon);
+        on_device.wait();
+        let total = started.elapsed().as_secs_f64();
+        bone::row(
+            0.0,
+            elements,
+            nodes,
+            &found,
+            total,
+            on_device.target_seconds(),
+        );
+    }
+
     /// The fit of a bone on the device, for each size of the octree in `SCALES`: the mesh is made on
     /// the host, and each sweep finds its targets from the surface, on the device unless `TARGETS`
     /// is `host`, where they are found by the library and sent over.
