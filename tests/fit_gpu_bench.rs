@@ -677,6 +677,11 @@ mod shared;
 #[path = "fit_gpu_bench/solver.rs"]
 mod solver;
 
+/// The fit of a bone, which needs the library to make the mesh from the surface.
+#[cfg(feature = "geometry")]
+#[path = "fit_gpu_bench/bone.rs"]
+mod bone;
+
 fn sqrt(x: f64) -> f64 {
     x.sqrt()
 }
@@ -976,6 +981,8 @@ fn the_kernels_run_on_the_host_are_the_reference() {
 
 #[cfg(feature = "gpu")]
 mod device {
+    #[cfg(feature = "geometry")]
+    use super::bone::{self, Bone, SurfaceTargets};
     use super::{
         GROUP, Layout, Point, Problem, SUMMERS, cells, disagreement, moved, planes, points_of,
         repetitions, solver::*, time_of,
@@ -1148,6 +1155,10 @@ mod device {
         extreme: Buffer<f64>,
         /// The regularization, which a sweep sets.
         epsilon: Cell<f64>,
+        /// What finds the targets of the faces on the host, where they are not those of a sphere,
+        /// and the seconds that it and the transfers have taken.
+        host_targets: Option<Targets<'a>>,
+        target_seconds: Cell<f64>,
         /// The order that is on the device, so that it is not sent again.
         uploaded: RefCell<Option<Vec<usize>>>,
         /// Whether the phases of a step are waited for, to time them.
@@ -1210,11 +1221,20 @@ mod device {
                 scratch: device.buffer(layout.elements.max(layout.nodes)).unwrap(),
                 extreme: device.buffer(1).unwrap(),
                 epsilon: Cell::new(layout.epsilon),
+                host_targets: None,
+                target_seconds: Cell::new(0.0),
                 uploaded: RefCell::new(None),
                 profiling: Cell::new(false),
                 started: Cell::new(None),
                 phases: RefCell::new([0.0; PHASES]),
             }
+        }
+        /// With the targets of the faces found by `targets` on the host, from where the nodes are
+        /// that sweep.
+        #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+        fn with_targets(mut self, targets: Targets<'a>) -> Self {
+            self.host_targets = Some(targets);
+            self
         }
         fn launch(&self, function: &Function, threads: usize, arguments: &[&dyn Argument]) {
             self.kernels
@@ -1553,21 +1573,32 @@ mod device {
                     &self.scales,
                 ],
             );
-            let radius = super::RADIUS;
-            self.launch(
-                &self.kernels.face_targets,
-                self.layout.faces,
-                &[
-                    &faces,
-                    &nodes,
-                    &self.face_nodes,
-                    x,
-                    &radius,
-                    &self.points,
-                    &self.normals,
-                    &self.distances,
-                ],
-            );
+            if let Some(targets) = &self.host_targets {
+                let started = Instant::now();
+                let coordinates = self.download(x);
+                let (points, normals, distances) = targets(&coordinates);
+                self.points.upload(&points).unwrap();
+                self.normals.upload(&normals).unwrap();
+                self.distances.upload(&distances).unwrap();
+                self.target_seconds
+                    .set(self.target_seconds.get() + started.elapsed().as_secs_f64());
+            } else {
+                let radius = super::RADIUS;
+                self.launch(
+                    &self.kernels.face_targets,
+                    self.layout.faces,
+                    &[
+                        &faces,
+                        &nodes,
+                        &self.face_nodes,
+                        x,
+                        &radius,
+                        &self.points,
+                        &self.normals,
+                        &self.distances,
+                    ],
+                );
+            }
             // The mean size of the nodes.
             let threads = self.batch_threads as u32;
             self.launch(
@@ -1629,6 +1660,9 @@ mod device {
         }
         fn set_epsilon(&self, epsilon: f64) {
             self.epsilon.set(epsilon);
+        }
+        fn target_seconds(&self) -> f64 {
+            self.target_seconds.get()
         }
         fn shift(&self, start: &Buffer<f64>, x: &Buffer<f64>) -> f64 {
             let (nodes, threads) = (self.layout.nodes as u32, self.batch_threads as u32);
@@ -1964,6 +1998,108 @@ mod device {
         }
         let error = disagreement(&expected_x, &points_of(&on_device.download(&x)));
         assert!(error < 1.0e-4, "the points differ by {error}");
+    }
+
+    /// The fit of a bone on the device takes the sweeps that the kernels run on the host do, with
+    /// the targets found from the surface.
+    #[cfg(feature = "geometry")]
+    #[test]
+    fn the_device_bone_fit_follows_the_emulation() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let Some(target) = bone::read() else {
+            return;
+        };
+        let Bone {
+            layout,
+            coordinates,
+        } = bone::layout_of(&bone::mesh(&target, 3.0));
+        let targets = SurfaceTargets::new(&target, &layout);
+        let settings = Settings {
+            steps: 15,
+            ..Default::default()
+        };
+        let emulated = Emulated::new(&layout).with_targets(targets.targets());
+        let mut expected_x = emulated.vector();
+        emulated.upload(&expected_x, &coordinates);
+        let expected = fit(&emulated, &mut expected_x, settings, 3, layout.epsilon);
+        let on_device = OnDevice::new(&kernels, &layout).with_targets(targets.targets());
+        let mut x = on_device.vector();
+        on_device.upload(&x, &coordinates);
+        let found = fit(&on_device, &mut x, settings, 3, layout.epsilon);
+        assert_eq!(found.sweeps.len(), expected.sweeps.len());
+        let close = |a: f64, b: f64, tolerance: f64| (a - b).abs() <= 1.0e-6 + tolerance * b.abs();
+        for (index, (a, b)) in found.sweeps.iter().zip(&expected.sweeps).enumerate() {
+            let at = format!("sweep {index}: {a:?} against {b:?}");
+            assert_eq!(a.passes, b.passes, "{at}");
+            assert!(close(a.epsilon, b.epsilon, 1.0e-4), "{at}");
+            assert!(close(a.quality, b.quality, 1.0e-6), "{at}");
+            assert!(close(a.worst, b.worst, 1.0e-4), "{at}");
+            assert!(close(a.value, b.value, 1.0e-5), "{at}");
+            assert!(close(a.shift, b.shift, 1.0e-4), "{at}");
+        }
+    }
+
+    /// The fit of a bone on the device, for each size of the octree in `SCALES`: the mesh is made on
+    /// the host, and each sweep finds its targets from the surface on the host and sends them over.
+    #[cfg(feature = "geometry")]
+    #[test]
+    #[ignore]
+    fn bone_fit_gpu() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let Some(target) = bone::read() else {
+            return;
+        };
+        let settings = Settings {
+            steps: bone::setting("STEPS", 100),
+            ..Default::default()
+        };
+        let limit = bone::setting("SWEEPS", 50);
+        bone::header(&format!("{}, block {}", kernels.device.name(), block()));
+        for scale in bone::scales() {
+            let started = Instant::now();
+            let mesh = bone::mesh(&target, scale);
+            let made = started.elapsed().as_secs_f64();
+            let started = Instant::now();
+            let Bone {
+                layout,
+                coordinates,
+            } = bone::layout_of(&mesh);
+            drop(mesh);
+            let converted = started.elapsed().as_secs_f64();
+            let (elements, nodes) = (layout.elements, layout.nodes);
+            eprintln!(
+                "scale {scale}: {elements} hexahedra, {nodes} nodes, {} faces; mesh {made:.1} s, layout {converted:.1} s",
+                layout.faces
+            );
+            let targets = SurfaceTargets::new(&target, &layout);
+            let started = Instant::now();
+            let on_device = OnDevice::new(&kernels, &layout).with_targets(targets.targets());
+            let mut x = on_device.vector();
+            on_device.upload(&x, &coordinates);
+            on_device.wait();
+            eprintln!(
+                "        on the device in {:.1} s; batch threads {}, groups of {}",
+                started.elapsed().as_secs_f64(),
+                on_device.batch_threads,
+                on_device.batch_group
+            );
+            let started = Instant::now();
+            let found = fit(&on_device, &mut x, settings, limit, layout.epsilon);
+            on_device.wait();
+            let total = started.elapsed().as_secs_f64();
+            bone::row(
+                scale,
+                elements,
+                nodes,
+                &found,
+                total,
+                on_device.target_seconds(),
+            );
+        }
     }
 
     /// The whole fit on the device: every sweep, with the sizes, the targets, the quality and the

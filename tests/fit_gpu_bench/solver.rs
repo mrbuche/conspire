@@ -19,7 +19,14 @@ use super::{
     GROUP, Layout, Point, Problem, SUMMERS, chi, dot, gradient_on_host, min_by_passes, minus,
     objective_on_host, planes, points_of, shared, sum_by_passes,
 };
-use std::{cell::RefCell, collections::VecDeque, marker::PhantomData, mem::swap, time::Instant};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    marker::PhantomData,
+    mem::swap,
+    thread::scope,
+    time::Instant,
+};
 
 /// The corrections kept.
 pub const HISTORY: usize = 8;
@@ -344,6 +351,7 @@ pub struct Emulated<'a> {
     /// The problem, with the sizes and the targets that a sweep sets.
     layout: RefCell<Layout>,
     marker: PhantomData<&'a Layout>,
+    targets: Option<Targets<'a>>,
     threads: usize,
     group: usize,
     dots: RefCell<[f64; SLOTS]>,
@@ -356,12 +364,20 @@ impl<'a> Emulated<'a> {
     pub fn new(layout: &'a Layout) -> Self {
         Self::with_batch(layout, BATCH_THREADS, BATCH_GROUP)
     }
+    /// With the targets of the faces found by `targets` from where the nodes are, in place of
+    /// those of a sphere.
+    #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+    pub fn with_targets(mut self, targets: Targets<'a>) -> Self {
+        self.targets = Some(targets);
+        self
+    }
     /// With other threads for the first pass of the sums of a batch, and other groups after it.
     pub fn with_batch(layout: &'a Layout, threads: usize, group: usize) -> Self {
         assert!(threads >= 2 && group >= 2);
         Self {
             layout: RefCell::new(layout.clone()),
             marker: PhantomData,
+            targets: None,
             threads,
             group,
             dots: RefCell::new([0.0; SLOTS]),
@@ -573,6 +589,10 @@ pub fn automatic_threads(count: usize) -> usize {
 pub fn automatic_group(threads: usize) -> usize {
     if threads <= 32768 { 32 } else { 64 }
 }
+
+/// What finds the targets of the faces from where the nodes are: the points, the normals and the
+/// squared distances of the faces, on planes, as the layout has them.
+pub type Targets<'a> = Box<dyn Fn(&[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>) + 'a>;
 
 /// The most dot products of a batch.
 pub const BATCH: usize = shared::ROWS_UPDATE;
@@ -1149,6 +1169,11 @@ pub trait SweepBackend: CompactBackend {
     fn set_epsilon(&self, epsilon: f64);
     /// The greatest of how far a node is from where it was, over its size.
     fn shift(&self, start: &Self::Vector, x: &Self::Vector) -> f64;
+    /// The seconds so far of finding the targets, where they are found outside the backend.
+    #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+    fn target_seconds(&self) -> f64 {
+        0.0
+    }
 }
 
 /// A sweep.
@@ -1362,7 +1387,12 @@ impl SweepBackend for Emulated<'_> {
                 }
             }
         }
-        {
+        if let Some(targets) = &self.targets {
+            let (points, normals, distances) = targets(&x);
+            layout.points = points;
+            layout.normals = normals;
+            layout.distances = distances;
+        } else {
             let Layout {
                 face_nodes,
                 points,
@@ -1496,4 +1526,730 @@ fn the_sweeps_on_the_kernels_follow_the_reference() {
     assert_eq!(found.stop, expected.stop);
     let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
     assert!(error < 1.0e-5, "the points differ by {error}");
+}
+
+// The host.
+//
+// The same fit on the threads of the host, as the other side of a comparison with a device. The
+// arithmetic of the kernels for each element, node and face is run on the threads, since each
+// writes only what is its own, as the threads of a device do. The work on whole vectors is done in
+// contiguous runs, one to a thread, which is what a host does best, and not by the strided threads
+// of a device, so its sums are added in another order than the device's.
+
+/// A pointer to what threads read.
+#[derive(Clone, Copy)]
+struct Reader<T>(*const T);
+
+/// A pointer to what threads write, each in its own places.
+#[derive(Clone, Copy)]
+struct Writer<T>(*mut T);
+
+// SAFETY: the threads that share these only read what none of them writes, or write to places
+// that belong to one of them alone, which is the property that lets the kernels run on a device.
+unsafe impl<T> Send for Reader<T> {}
+unsafe impl<T> Sync for Reader<T> {}
+unsafe impl<T> Send for Writer<T> {}
+unsafe impl<T> Sync for Writer<T> {}
+
+impl<T> Reader<T> {
+    fn get(self) -> *const T {
+        self.0
+    }
+}
+
+impl<T> Writer<T> {
+    fn get(self) -> *mut T {
+        self.0
+    }
+}
+
+/// Calls `work(first, last)` for runs of the items `0..count`, a run to a thread, and gives what
+/// the runs return in the order of the runs.
+fn collect<T: Send>(
+    threads: usize,
+    count: usize,
+    work: impl Fn(usize, usize) -> T + Sync,
+) -> Vec<T> {
+    let workers = threads.clamp(1, count.max(1));
+    let per = count.div_ceil(workers).max(1);
+    let bounds: Vec<(usize, usize)> = (0..workers)
+        .map(|worker| (worker * per, ((worker + 1) * per).min(count)))
+        .filter(|(first, last)| first < last)
+        .collect();
+    if bounds.len() <= 1 {
+        return bounds
+            .iter()
+            .map(|&(first, last)| work(first, last))
+            .collect();
+    }
+    scope(|scope| {
+        let work = &work;
+        bounds
+            .iter()
+            .map(|&(first, last)| scope.spawn(move || work(first, last)))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect()
+    })
+}
+
+/// Gives each run of `out`, with the position of its first value, to `work`, a run to a thread.
+fn fill(threads: usize, out: &mut [f64], work: impl Fn(usize, &mut [f64]) + Sync) {
+    let workers = threads.clamp(1, out.len().max(1));
+    let per = out.len().div_ceil(workers).max(1);
+    if workers <= 1 {
+        work(0, out);
+        return;
+    }
+    scope(|scope| {
+        let work = &work;
+        for (run, chunk) in out.chunks_mut(per).enumerate() {
+            scope.spawn(move || work(run * per, chunk));
+        }
+    });
+}
+
+fn parallel_sum(threads: usize, values: &[f64]) -> f64 {
+    collect(threads, values.len(), |first, last| {
+        values[first..last].iter().sum::<f64>()
+    })
+    .into_iter()
+    .fold(0.0, |sum, part| sum + part)
+}
+
+fn parallel_min(threads: usize, values: &[f64]) -> f64 {
+    collect(threads, values.len(), |first, last| {
+        values[first..last]
+            .iter()
+            .fold(f64::INFINITY, |least, &value| least.min(value))
+    })
+    .into_iter()
+    .fold(f64::INFINITY, f64::min)
+}
+
+/// The fit on the threads of the host.
+pub struct Threaded<'a> {
+    layout: RefCell<Layout>,
+    threads: usize,
+    targets: Option<Targets<'a>>,
+    target_seconds: Cell<f64>,
+    dots: RefCell<[f64; SLOTS]>,
+    alphas: RefCell<[f64; HISTORY + 1]>,
+    betas: RefCell<[f64; HISTORY + 1]>,
+    batch: RefCell<[f64; BATCH]>,
+    /// The energies of the elements and then of the nodes, the contributions of the corners, and
+    /// room for a value for each element or node, which are kept from call to call.
+    energies: RefCell<Vec<f64>>,
+    contributions: RefCell<Vec<f64>>,
+    scratch: RefCell<Vec<f64>>,
+}
+
+impl<'a> Threaded<'a> {
+    /// The fit of a problem on the threads that the system has, or `THREADS` of them.
+    pub fn new(layout: Layout) -> Self {
+        let threads = std::env::var("THREADS")
+            .ok()
+            .and_then(|threads| threads.parse().ok())
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+        let (nodes, elements) = (layout.nodes, layout.elements);
+        Self {
+            threads,
+            targets: None,
+            target_seconds: Cell::new(0.0),
+            dots: RefCell::new([0.0; SLOTS]),
+            alphas: RefCell::new([0.0; HISTORY + 1]),
+            betas: RefCell::new([0.0; HISTORY + 1]),
+            batch: RefCell::new([0.0; BATCH]),
+            energies: RefCell::new(vec![0.0; elements + nodes]),
+            contributions: RefCell::new(vec![0.0; 24 * elements]),
+            scratch: RefCell::new(vec![0.0; elements.max(nodes)]),
+            layout: RefCell::new(layout),
+        }
+    }
+    pub fn with_threads(mut self, threads: usize) -> Self {
+        self.threads = threads.max(1);
+        self
+    }
+    /// With the targets of the faces found by `targets` from where the nodes are, in place of
+    /// those of a sphere.
+    #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+    pub fn with_targets(mut self, targets: Targets<'a>) -> Self {
+        self.targets = Some(targets);
+        self
+    }
+    #[cfg_attr(not(feature = "geometry"), allow(dead_code))]
+    pub fn threads(&self) -> usize {
+        self.threads
+    }
+}
+
+impl Backend for Threaded<'_> {
+    type Vector = RefCell<Vec<f64>>;
+    fn count(&self) -> usize {
+        3 * self.layout.borrow().nodes
+    }
+    fn vector(&self) -> Self::Vector {
+        RefCell::new(vec![0.0; self.count()])
+    }
+    fn upload(&self, vector: &Self::Vector, planes: &[f64]) {
+        vector.borrow_mut().copy_from_slice(planes);
+    }
+    fn download(&self, vector: &Self::Vector) -> Vec<f64> {
+        vector.borrow().clone()
+    }
+    fn objective(&self, x: &Self::Vector) -> f64 {
+        let layout = self.layout.borrow();
+        let x = x.borrow();
+        let mut energies = self.energies.borrow_mut();
+        let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+        let out = Writer(energies.as_mut_ptr());
+        let coordinates = Reader(x.as_ptr());
+        let (connectivity, scales) = (
+            Reader(layout.connectivity.as_ptr()),
+            Reader(layout.scales.as_ptr()),
+        );
+        let epsilon = layout.epsilon;
+        collect(self.threads, elements, |first, last| {
+            for item in first..last {
+                // SAFETY: the arrays are those of the layout, and each item writes its own value.
+                unsafe {
+                    shared::element_energies(
+                        item,
+                        elements,
+                        nodes,
+                        connectivity.get(),
+                        coordinates.get(),
+                        scales.get(),
+                        epsilon,
+                        out.get(),
+                    )
+                }
+            }
+        });
+        let (face_starts, face_entries) = (
+            Reader(layout.face_starts.as_ptr()),
+            Reader(layout.face_entries.as_ptr()),
+        );
+        let (points, normals, distances, lengths) = (
+            Reader(layout.points.as_ptr()),
+            Reader(layout.normals.as_ptr()),
+            Reader(layout.distances.as_ptr()),
+            Reader(layout.lengths.as_ptr()),
+        );
+        collect(self.threads, nodes, |first, last| {
+            for item in first..last {
+                // SAFETY: the arrays are those of the layout, and each item writes its own value.
+                unsafe {
+                    shared::node_energies(
+                        item,
+                        nodes,
+                        elements,
+                        face_starts.get(),
+                        face_entries.get(),
+                        faces,
+                        points.get(),
+                        normals.get(),
+                        distances.get(),
+                        coordinates.get(),
+                        lengths.get(),
+                        out.get(),
+                    )
+                }
+            }
+        });
+        parallel_sum(self.threads, &energies)
+    }
+    fn gradient(&self, x: &Self::Vector, gradient: &Self::Vector) {
+        let layout = self.layout.borrow();
+        let x = x.borrow();
+        let mut contributions = self.contributions.borrow_mut();
+        let mut gradient = gradient.borrow_mut();
+        let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+        let coordinates = Reader(x.as_ptr());
+        let (connectivity, scales) = (
+            Reader(layout.connectivity.as_ptr()),
+            Reader(layout.scales.as_ptr()),
+        );
+        let epsilon = layout.epsilon;
+        let written = Writer(contributions.as_mut_ptr());
+        collect(self.threads, elements, |first, last| {
+            for item in first..last {
+                // SAFETY: the arrays are those of the layout, and each item writes its own corners.
+                unsafe {
+                    shared::corner_contributions(
+                        item,
+                        elements,
+                        nodes,
+                        connectivity.get(),
+                        coordinates.get(),
+                        scales.get(),
+                        epsilon,
+                        written.get(),
+                    )
+                }
+            }
+        });
+        let read = Reader(contributions.as_ptr());
+        let (starts, entries, face_starts, face_entries) = (
+            Reader(layout.starts.as_ptr()),
+            Reader(layout.entries.as_ptr()),
+            Reader(layout.face_starts.as_ptr()),
+            Reader(layout.face_entries.as_ptr()),
+        );
+        let (points, normals, distances, lengths) = (
+            Reader(layout.points.as_ptr()),
+            Reader(layout.normals.as_ptr()),
+            Reader(layout.distances.as_ptr()),
+            Reader(layout.lengths.as_ptr()),
+        );
+        let out = Writer(gradient.as_mut_ptr());
+        collect(self.threads, nodes, |first, last| {
+            for item in first..last {
+                // SAFETY: the arrays are those of the layout, and each item writes its own node.
+                unsafe {
+                    shared::gradient(
+                        item,
+                        nodes,
+                        elements,
+                        starts.get(),
+                        entries.get(),
+                        read.get(),
+                        face_starts.get(),
+                        face_entries.get(),
+                        faces,
+                        points.get(),
+                        normals.get(),
+                        distances.get(),
+                        coordinates.get(),
+                        lengths.get(),
+                        out.get(),
+                    )
+                }
+            }
+        });
+    }
+    fn axpy(&self, alpha: f64, x: &Self::Vector, y: &Self::Vector, out: &Self::Vector) {
+        let (x, y) = (x.borrow(), y.borrow());
+        let (x, y): (&[f64], &[f64]) = (&x, &y);
+        fill(self.threads, &mut out.borrow_mut(), |first, chunk| {
+            for (k, out) in chunk.iter_mut().enumerate() {
+                *out = y[first + k] + alpha * x[first + k];
+            }
+        });
+    }
+    fn scale(&self, alpha: f64, x: &Self::Vector, out: &Self::Vector) {
+        let x = x.borrow();
+        let x: &[f64] = &x;
+        fill(self.threads, &mut out.borrow_mut(), |first, chunk| {
+            for (k, out) in chunk.iter_mut().enumerate() {
+                *out = alpha * x[first + k];
+            }
+        });
+    }
+    fn scale_in_place(&self, alpha: f64, y: &Self::Vector) {
+        fill(self.threads, &mut y.borrow_mut(), |_, chunk| {
+            chunk.iter_mut().for_each(|value| *value *= alpha)
+        });
+    }
+    fn dot(&self, a: &Self::Vector, b: &Self::Vector, slot: usize) {
+        let (a, b) = (a.borrow(), b.borrow());
+        let (a, b): (&[f64], &[f64]) = (&a, &b);
+        let total = collect(self.threads, a.len(), |first, last| {
+            let mut sum = 0.0;
+            for index in first..last {
+                sum += a[index] * b[index];
+            }
+            sum
+        })
+        .into_iter()
+        .fold(0.0, |sum, part| sum + part);
+        self.dots.borrow_mut()[slot] = total;
+    }
+    fn read(&self) -> [f64; SLOTS] {
+        *self.dots.borrow()
+    }
+    fn times(&self, factor: f64, slot: usize, beta: bool, index: usize) {
+        let value = factor * self.dots.borrow()[slot];
+        if beta {
+            self.betas.borrow_mut()[index] = value;
+        } else {
+            self.alphas.borrow_mut()[index] = value;
+        }
+    }
+    fn subtract_alpha(&self, index: usize, x: &Self::Vector, y: &Self::Vector) {
+        let alpha = self.alphas.borrow()[index];
+        let x = x.borrow();
+        let x: &[f64] = &x;
+        fill(self.threads, &mut y.borrow_mut(), |first, chunk| {
+            for (k, y) in chunk.iter_mut().enumerate() {
+                *y -= alpha * x[first + k];
+            }
+        });
+    }
+    fn subtract_pair(&self, index: usize, x: &Self::Vector, y: &Self::Vector) {
+        let both = self.alphas.borrow()[index] + self.betas.borrow()[index];
+        let x = x.borrow();
+        let x: &[f64] = &x;
+        fill(self.threads, &mut y.borrow_mut(), |first, chunk| {
+            for (k, y) in chunk.iter_mut().enumerate() {
+                *y -= both * x[first + k];
+            }
+        });
+    }
+}
+
+impl CompactBackend for Threaded<'_> {
+    type Pool = EmulatedPool;
+    fn pool(&self) -> EmulatedPool {
+        EmulatedPool {
+            s: RefCell::new(vec![0.0; (HISTORY + 1) * self.count()]),
+            y: RefCell::new(vec![0.0; (HISTORY + 1) * self.count()]),
+        }
+    }
+    fn store_step(&self, alpha: f64, x: &Self::Vector, pool: &EmulatedPool, slot: usize) {
+        let count = self.count();
+        let x = x.borrow();
+        let x: &[f64] = &x;
+        fill(
+            self.threads,
+            &mut pool.s.borrow_mut()[slot * count..(slot + 1) * count],
+            |first, chunk| {
+                for (k, out) in chunk.iter_mut().enumerate() {
+                    *out = alpha * x[first + k];
+                }
+            },
+        );
+    }
+    fn store_change(
+        &self,
+        new: &Self::Vector,
+        old: &Self::Vector,
+        pool: &EmulatedPool,
+        slot: usize,
+    ) {
+        let count = self.count();
+        let (new, old) = (new.borrow(), old.borrow());
+        let (new, old): (&[f64], &[f64]) = (&new, &old);
+        fill(
+            self.threads,
+            &mut pool.y.borrow_mut()[slot * count..(slot + 1) * count],
+            |first, chunk| {
+                for (k, out) in chunk.iter_mut().enumerate() {
+                    *out = new[first + k] - old[first + k];
+                }
+            },
+        );
+    }
+    fn history_dots(
+        &self,
+        pool: &EmulatedPool,
+        order: &[usize],
+        g: &Self::Vector,
+        x: &Self::Vector,
+    ) {
+        let count = self.count();
+        let (s, y, g, x) = (pool.s.borrow(), pool.y.borrow(), g.borrow(), x.borrow());
+        let (s, y, g, x): (&[f64], &[f64], &[f64], &[f64]) = (&s, &y, &g, &x);
+        let positions: Vec<usize> = order.iter().map(|&slot| slot * count).collect();
+        let active = positions.len();
+        let rows = collect(self.threads, count, |first, last| {
+            let mut row = [0.0; ROWS_HISTORY];
+            for i in first..last {
+                let (gi, xi) = (g[i], x[i]);
+                row[0] += gi * gi;
+                row[1] += xi * xi;
+                for j in 0..active {
+                    row[2 + j] += s[positions[j] + i] * gi;
+                    row[2 + HISTORY + j] += y[positions[j] + i] * gi;
+                }
+            }
+            row
+        });
+        let mut batch = self.batch.borrow_mut();
+        batch.fill(0.0);
+        for row in rows {
+            for (total, part) in batch.iter_mut().zip(row) {
+                *total += part;
+            }
+        }
+    }
+    fn update_dots(&self, pool: &EmulatedPool, order: &[usize], slot: usize) {
+        let count = self.count();
+        let (s, y) = (pool.s.borrow(), pool.y.borrow());
+        let (s, y): (&[f64], &[f64]) = (&s, &y);
+        let positions: Vec<usize> = order.iter().map(|&slot| slot * count).collect();
+        let active = positions.len();
+        let new = slot * count;
+        let rows = collect(self.threads, count, |first, last| {
+            let mut row = [0.0; ROWS_UPDATE];
+            for i in first..last {
+                let (sn, yn) = (s[new + i], y[new + i]);
+                row[0] += sn * yn;
+                row[1] += sn * sn;
+                row[2] += yn * yn;
+                for j in 0..active {
+                    let (so, yo) = (s[positions[j] + i], y[positions[j] + i]);
+                    row[3 + j] += so * yn;
+                    row[3 + HISTORY + j] += sn * yo;
+                    row[3 + 2 * HISTORY + j] += yo * yn;
+                }
+            }
+            row
+        });
+        let mut batch = self.batch.borrow_mut();
+        batch.fill(0.0);
+        for row in rows {
+            for (total, part) in batch.iter_mut().zip(row) {
+                *total += part;
+            }
+        }
+    }
+    fn read_batch(&self, rows: usize) -> Vec<f64> {
+        self.batch.borrow()[..rows].to_vec()
+    }
+    fn combine(
+        &self,
+        pool: &EmulatedPool,
+        order: &[usize],
+        coefficients: &[f64; 1 + 2 * HISTORY],
+        g: &Self::Vector,
+        d: &Self::Vector,
+    ) {
+        let count = self.count();
+        let (s, y, g) = (pool.s.borrow(), pool.y.borrow(), g.borrow());
+        let (s, y, g): (&[f64], &[f64], &[f64]) = (&s, &y, &g);
+        let positions: Vec<usize> = order.iter().map(|&slot| slot * count).collect();
+        fill(self.threads, &mut d.borrow_mut(), |first, chunk| {
+            for (k, out) in chunk.iter_mut().enumerate() {
+                let i = first + k;
+                let mut value = coefficients[0] * g[i];
+                for (j, &position) in positions.iter().enumerate() {
+                    value += coefficients[1 + j] * s[position + i]
+                        + coefficients[1 + HISTORY + j] * y[position + i];
+                }
+                *out = value;
+            }
+        });
+    }
+}
+
+impl SweepBackend for Threaded<'_> {
+    fn start_sweep(&self, x: &Self::Vector) -> f64 {
+        let x = x.borrow();
+        let mut layout = self.layout.borrow_mut();
+        let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+        let coordinates = Reader(x.as_ptr());
+        {
+            let Layout {
+                neighbor_starts,
+                neighbor_entries,
+                lengths,
+                ..
+            } = &mut *layout;
+            let (starts, entries) = (
+                Reader(neighbor_starts.as_ptr()),
+                Reader(neighbor_entries.as_ptr()),
+            );
+            let out = Writer(lengths.as_mut_ptr());
+            collect(self.threads, nodes, |first, last| {
+                for item in first..last {
+                    // SAFETY: the arrays are those of the layout, and each item writes its node.
+                    unsafe {
+                        shared::node_lengths(
+                            item,
+                            nodes,
+                            starts.get(),
+                            entries.get(),
+                            coordinates.get(),
+                            out.get(),
+                        )
+                    }
+                }
+            });
+        }
+        {
+            let Layout {
+                connectivity,
+                lengths,
+                scales,
+                ..
+            } = &mut *layout;
+            let (connectivity, lengths) = (Reader(connectivity.as_ptr()), Reader(lengths.as_ptr()));
+            let out = Writer(scales.as_mut_ptr());
+            collect(self.threads, elements, |first, last| {
+                for item in first..last {
+                    // SAFETY: the arrays are those of the layout, and each item writes its own.
+                    unsafe {
+                        shared::element_scales(
+                            item,
+                            elements,
+                            nodes,
+                            connectivity.get(),
+                            lengths.get(),
+                            out.get(),
+                        )
+                    }
+                }
+            });
+        }
+        if let Some(targets) = &self.targets {
+            let started = Instant::now();
+            let (points, normals, distances) = targets(&x);
+            layout.points = points;
+            layout.normals = normals;
+            layout.distances = distances;
+            self.target_seconds
+                .set(self.target_seconds.get() + started.elapsed().as_secs_f64());
+        } else {
+            let Layout {
+                face_nodes,
+                points,
+                normals,
+                distances,
+                ..
+            } = &mut *layout;
+            let face_nodes = Reader(face_nodes.as_ptr());
+            let (points, normals, distances) = (
+                Writer(points.as_mut_ptr()),
+                Writer(normals.as_mut_ptr()),
+                Writer(distances.as_mut_ptr()),
+            );
+            collect(self.threads, faces, |first, last| {
+                for item in first..last {
+                    // SAFETY: the arrays are those of the layout, and each item writes its face.
+                    unsafe {
+                        shared::face_targets(
+                            item,
+                            faces,
+                            nodes,
+                            face_nodes.get(),
+                            coordinates.get(),
+                            super::RADIUS,
+                            points.get(),
+                            normals.get(),
+                            distances.get(),
+                        )
+                    }
+                }
+            });
+        }
+        parallel_sum(self.threads, &layout.lengths) / nodes as f64
+    }
+    fn measure(&self, x: &Self::Vector) -> (f64, f64) {
+        let x = x.borrow();
+        let layout = self.layout.borrow();
+        let (nodes, elements) = (layout.nodes, layout.elements);
+        let mut energies = self.energies.borrow_mut();
+        let mut worst = self.scratch.borrow_mut();
+        let (coordinates, connectivity, scales) = (
+            Reader(x.as_ptr()),
+            Reader(layout.connectivity.as_ptr()),
+            Reader(layout.scales.as_ptr()),
+        );
+        let epsilon = layout.epsilon;
+        let (out_energy, out_worst) = (Writer(energies.as_mut_ptr()), Writer(worst.as_mut_ptr()));
+        collect(self.threads, elements, |first, last| {
+            for item in first..last {
+                // SAFETY: the arrays are those of the layout, and each item writes its own values.
+                unsafe {
+                    shared::element_energies(
+                        item,
+                        elements,
+                        nodes,
+                        connectivity.get(),
+                        coordinates.get(),
+                        scales.get(),
+                        epsilon,
+                        out_energy.get(),
+                    );
+                    shared::element_worst(
+                        item,
+                        elements,
+                        nodes,
+                        connectivity.get(),
+                        coordinates.get(),
+                        scales.get(),
+                        out_worst.get(),
+                    )
+                }
+            }
+        });
+        (
+            parallel_sum(self.threads, &energies[..elements]),
+            parallel_min(self.threads, &worst[..elements]),
+        )
+    }
+    fn set_epsilon(&self, epsilon: f64) {
+        self.layout.borrow_mut().epsilon = epsilon;
+    }
+    fn shift(&self, start: &Self::Vector, x: &Self::Vector) -> f64 {
+        let (start, x) = (start.borrow(), x.borrow());
+        let layout = self.layout.borrow();
+        let nodes = layout.nodes;
+        let mut values = self.scratch.borrow_mut();
+        let (start, x, lengths) = (
+            Reader(start.as_ptr()),
+            Reader(x.as_ptr()),
+            Reader(layout.lengths.as_ptr()),
+        );
+        let out = Writer(values.as_mut_ptr());
+        collect(self.threads, nodes, |first, last| {
+            for item in first..last {
+                // SAFETY: the vectors and the sizes are those of the layout, each item writes its own.
+                unsafe {
+                    shared::shift_values(
+                        item,
+                        nodes,
+                        start.get(),
+                        x.get(),
+                        lengths.get(),
+                        out.get(),
+                    )
+                }
+            }
+        });
+        -parallel_min(self.threads, &values[..nodes])
+    }
+    fn target_seconds(&self) -> f64 {
+        self.target_seconds.get()
+    }
+}
+
+#[test]
+fn the_sweeps_on_the_threads_follow_the_reference() {
+    let mut problem = Problem::new(6, 1.0);
+    let layout = Layout::new(&problem);
+    let start = problem.coordinates.clone();
+    let settings = Settings {
+        steps: 15,
+        ..Default::default()
+    };
+    let (expected, expected_x) = fit_reference(&mut problem, &start, settings, 3);
+    for threads in [1, 3, 8] {
+        let backend = Threaded::new(layout.clone()).with_threads(threads);
+        let mut x = backend.vector();
+        backend.upload(&x, &planes(&start));
+        let found = fit(&backend, &mut x, settings, 3, layout.epsilon);
+        assert_eq!(
+            found.sweeps.len(),
+            expected.sweeps.len(),
+            "{threads} threads"
+        );
+        let close = |a: f64, b: f64, tolerance: f64| (a - b).abs() <= 1.0e-6 + tolerance * b.abs();
+        for (index, (a, b)) in found.sweeps.iter().zip(&expected.sweeps).enumerate() {
+            let at = format!("{threads} threads, sweep {index}: {a:?} against {b:?}");
+            assert_eq!(a.passes, b.passes, "{at}");
+            assert!(close(a.epsilon, b.epsilon, 1.0e-4), "{at}");
+            assert!(close(a.quality, b.quality, 1.0e-6), "{at}");
+            assert!(close(a.worst, b.worst, 1.0e-4), "{at}");
+            assert!(close(a.value, b.value, 1.0e-5), "{at}");
+            assert!(close(a.shift, b.shift, 1.0e-4), "{at}");
+        }
+        let error = super::disagreement(&expected_x, &points_of(&backend.download(&x)));
+        assert!(
+            error < 1.0e-4,
+            "{threads} threads: the points differ by {error}"
+        );
+    }
 }
