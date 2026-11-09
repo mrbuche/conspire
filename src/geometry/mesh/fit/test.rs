@@ -1,4 +1,4 @@
-use super::{Oracle, energy, scatter};
+use super::{Oracle, PLACE_GRAIN, energy, place, scatter};
 use crate::math::assert::perturbation;
 use crate::{
     EPSILON,
@@ -11,12 +11,52 @@ use crate::{
         },
     },
     math::{
-        Reference, TensorRank1,
+        Reference, Tensor, TensorRank1,
         assert::{Assert, AssertionError},
     },
     units::ReciprocalLength,
 };
 use core::array::from_fn;
+
+#[test]
+fn placing_in_parallel_is_placing_in_order() {
+    let total = 3 * PLACE_GRAIN;
+    let before = |node: usize| [node as f64, -(node as f64), 0.5];
+    let coordinates: Coordinates<3> = (0..total).map(&before).collect::<Vec<_>>().into();
+    let nodes: Vec<usize> = (0..total)
+        .filter(|node| node % 3 != 0)
+        .map(|node| (node * 7919) % total)
+        .collect();
+    assert!(nodes.len() >= PLACE_GRAIN);
+    let x: Coordinates<3> = (0..nodes.len())
+        .map(|index| [index as f64, 2.0 * index as f64, 3.0])
+        .collect::<Vec<_>>()
+        .into();
+    let mut sorted: Vec<(usize, usize)> = nodes.iter().copied().zip(0..).collect();
+    sorted.sort_by_key(|&(node, _)| node);
+    let mut expected = coordinates.clone();
+    nodes
+        .iter()
+        .zip(x.iter())
+        .for_each(|(&node, entry)| expected[node] = entry.clone());
+    for threads in [1, 2, 4, 7, 32] {
+        let mut placed = coordinates.clone();
+        place(&sorted, threads, &mut placed, &x);
+        assert!(
+            placed
+                .iter()
+                .zip(expected.iter())
+                .all(|(a, b)| (0..3).all(|i| a[i].value() == b[i].value())),
+            "{threads} threads"
+        );
+    }
+    let mut untouched = coordinates.clone();
+    place(&sorted, 4, &mut untouched, &x);
+    let placed: std::collections::HashSet<usize> = nodes.into_iter().collect();
+    (0..total)
+        .filter(|node| !placed.contains(node))
+        .for_each(|node| assert_eq!(untouched[node][0].value(), before(node)[0]));
+}
 
 fn gradient<const N: usize>(
     corners: &[(usize, [usize; 3]); N],

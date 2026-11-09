@@ -45,6 +45,7 @@ const TIE_TOLERANCE: Scalar = 1.0e-6;
 const TOLERANCE: Scalar = 1.0e-3;
 const WEIGHT_FLOOR: Quantity = Dimensionless::of(0.3);
 const WINDOW: usize = 3;
+const PLACE_GRAIN: usize = 1 << 14;
 
 /// The parts of a fit that are timed when profiling.
 #[derive(Clone, Copy)]
@@ -151,7 +152,9 @@ struct Sweep<'a> {
     nodes: &'a [usize],
     scales: Vec<Quantity<Length>>,
     slot: &'a [Option<usize>],
+    sorted: &'a [(usize, usize)],
     targets: Vec<Target>,
+    threads: usize,
     tracked: &'a [usize],
     unknowns: usize,
 }
@@ -274,6 +277,8 @@ impl Mesh<3> {
             .iter()
             .enumerate()
             .for_each(|(index, &node)| slot[node] = Some(index));
+        let mut sorted: Vec<(usize, usize)> = nodes.iter().copied().zip(0..).collect();
+        sorted.sort_by_key(|&(node, _)| node);
         let unknowns = nodes.len();
         let mut epsilon: Scalar = 1.0;
         let mut previous = Quantity::<Length>::new(Scalar::INFINITY);
@@ -291,9 +296,11 @@ impl Mesh<3> {
                 nodes,
                 scales,
                 slot: &slot,
+                sorted: &sorted,
                 targets: timed(Part::Targets, || {
                     oracle.targets(&faces, coordinates, face_chunk)
                 })?,
+                threads,
                 tracked: &tracked,
                 unknowns,
             };
@@ -633,11 +640,7 @@ impl Sweep<'_> {
         let shared = RefCell::new(coordinates);
         let assign = |x: &Coordinates<3>| {
             timed(Part::Assign, || {
-                let mut coordinates = shared.borrow_mut();
-                self.nodes
-                    .iter()
-                    .zip(x.iter())
-                    .for_each(|(&node, entry)| coordinates[node] = entry.clone())
+                place(self.sorted, self.threads, &mut shared.borrow_mut(), x)
             })
         };
         let descent = timed(Part::Descent, || {
@@ -676,6 +679,42 @@ impl Sweep<'_> {
             descent.converged && descent.steps == 0,
         ))
     }
+}
+
+/// Puts the entries of `x` at their nodes, `sorted` holding each node with the index of its entry
+/// in `x`, in the order of the nodes. The nodes are split into ranges, one for each thread, so
+/// that no thread writes where another does.
+fn place(
+    sorted: &[(usize, usize)],
+    threads: usize,
+    coordinates: &mut Coordinates<3>,
+    x: &Coordinates<3>,
+) {
+    if threads < 2 || sorted.len() < PLACE_GRAIN {
+        sorted
+            .iter()
+            .for_each(|&(node, index)| coordinates[node] = x[index].clone());
+        return;
+    }
+    let chunk = coordinates.len().div_ceil(threads).max(1);
+    scope(|scope| {
+        coordinates
+            .as_mut_slice()
+            .chunks_mut(chunk)
+            .enumerate()
+            .for_each(|(block, entries)| {
+                let first = block * chunk;
+                let low = sorted.partition_point(|&(node, _)| node < first);
+                let high = sorted.partition_point(|&(node, _)| node < first + entries.len());
+                let own = &sorted[low..high];
+                if !own.is_empty() {
+                    scope.spawn(move || {
+                        own.iter()
+                            .for_each(|&(node, index)| entries[node - first] = x[index].clone())
+                    });
+                }
+            })
+    });
 }
 
 fn sizes(
