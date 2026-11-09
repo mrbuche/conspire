@@ -454,7 +454,6 @@ fn profile_fit() {
     for (name, part, passes) in [
         ("norm of the gradient", SolverPart::Norm, 1.0),
         ("two-loop recursion", SolverPart::TwoLoop, 4.0 * m + 2.0),
-        ("negated direction", SolverPart::Decrement, 2.0),
         ("slope", SolverPart::Slope, 2.0),
         ("trial point", SolverPart::Trial, 3.0),
         ("history update", SolverPart::History, 11.0),

@@ -1,4 +1,6 @@
-use super::{BLOCK, Corrections, LimitedMemoryBFGS, dot, two_loop_with};
+use super::{
+    BLOCK, Corrections, LimitedMemoryBFGS, dot, fill, partial, sums, two_loop_with, update,
+};
 use crate::{
     math::{
         Matrix, Quantity, Reference, Scalar, Tensor, TensorRank1Vec, Vector,
@@ -365,6 +367,104 @@ fn the_recursion_does_not_depend_on_the_number_of_workers() -> Result<(), Assert
         Assert::eq(flat(&result), flat(&reference))?
     }
     Ok(())
+}
+
+const LENGTHS: [usize; 7] = [
+    0,
+    1,
+    BLOCK - 1,
+    BLOCK,
+    BLOCK + 1,
+    5 * BLOCK + 17,
+    40 * BLOCK + 3,
+];
+
+#[test]
+fn the_sums_do_not_depend_on_the_number_of_workers() {
+    for length in LENGTHS {
+        let a: Vec<Scalar> = (0..length).map(|i| sample(i, 3.0)).collect();
+        let b: Vec<Scalar> = (0..length).map(|i| sample(i, 5.0)).collect();
+        let sum = |workers| {
+            sums(workers, length, |range| {
+                [
+                    partial(&a[range.clone()], &b[range.clone()]),
+                    partial(&a[range.clone()], &a[range]),
+                ]
+            })
+        };
+        let reference = sum(1);
+        for workers in [2, 3, 7, 64] {
+            assert_eq!(
+                sum(workers),
+                reference,
+                "{length} entries, {workers} workers"
+            );
+        }
+        assert_eq!(dot(&a, &b), reference[0], "{length} entries");
+    }
+}
+
+#[test]
+fn the_update_does_not_depend_on_the_number_of_workers() {
+    for length in LENGTHS {
+        let direction: Vec<Scalar> = (0..length).map(|i| sample(i, 11.0)).collect();
+        let new: Vec<Scalar> = (0..length).map(|i| sample(i, 13.0)).collect();
+        let old: Vec<Scalar> = (0..length).map(|i| sample(i, 17.0)).collect();
+        let run = |workers| {
+            let (mut s, mut y) = (vec![0.0; length], vec![0.0; length]);
+            let sums = update(workers, &mut s, &mut y, |offset, s, y| {
+                s.iter_mut()
+                    .zip(&direction[offset..])
+                    .for_each(|(s, direction)| *s = direction * 0.7);
+                y.iter_mut()
+                    .zip(new[offset..].iter().zip(&old[offset..]))
+                    .for_each(|(y, (new, old))| *y = new - old);
+                [partial(s, y), partial(s, s), partial(y, y)]
+            });
+            (s, y, sums)
+        };
+        let reference = run(1);
+        for workers in [2, 3, 7, 64] {
+            assert_eq!(
+                run(workers),
+                reference,
+                "{length} entries, {workers} workers"
+            );
+        }
+        let (s, y, [sy, ss, yy]) = reference;
+        assert!(
+            s.iter()
+                .zip(&direction)
+                .all(|(s, direction)| *s == direction * 0.7)
+        );
+        assert!(
+            y.iter()
+                .zip(new.iter().zip(&old))
+                .all(|(y, (new, old))| *y == new - old)
+        );
+        assert_eq!((sy, ss, yy), (dot(&s, &y), dot(&s, &s), dot(&y, &y)));
+    }
+}
+
+#[test]
+fn filling_in_runs_fills_every_entry_once() {
+    for length in LENGTHS {
+        for workers in [1, 2, 3, 7, 64] {
+            let mut entries = vec![-1.0; length];
+            fill(workers, &mut entries, |offset, run| {
+                run.iter_mut()
+                    .enumerate()
+                    .for_each(|(index, entry)| *entry = (offset + index) as Scalar)
+            });
+            assert!(
+                entries
+                    .iter()
+                    .enumerate()
+                    .all(|(index, &entry)| entry == index as Scalar),
+                "{length} entries, {workers} workers"
+            );
+        }
+    }
 }
 
 #[test]

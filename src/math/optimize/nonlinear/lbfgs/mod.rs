@@ -12,6 +12,7 @@ use crate::math::{
 use crate::units::{Dimensionless, UnitDiv, UnitMul};
 use alloc::collections::VecDeque;
 use core::{
+    cell::OnceCell,
     fmt::{self, Debug, Formatter},
     mem::swap,
     ops::Range,
@@ -26,7 +27,6 @@ use std::{
 #[derive(Clone, Copy)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum Part {
-    Decrement,
     History,
     Norm,
     Slope,
@@ -38,7 +38,7 @@ pub(crate) enum Part {
 pub(crate) mod profile {
     use super::Part;
     use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
-    pub(crate) const PARTS: usize = 6;
+    pub(crate) const PARTS: usize = 5;
     pub(crate) static NANOSECONDS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
     pub(crate) static CALLS: [AtomicU64; PARTS] = [const { AtomicU64::new(0) }; PARTS];
     #[allow(dead_code)]
@@ -70,6 +70,9 @@ fn timed<T>(_: Part, work: impl FnOnce() -> T) -> T {
 
 const BLOCK: usize = 4096;
 const GRAIN: usize = 3 * BLOCK;
+/// The entries, counting each vector a pass reads or writes, that a thread must have to pay for
+/// its start, which is about the time it takes to read a megabyte or two.
+const PASS: usize = 1 << 18;
 const CURVATURE_FLOOR: Scalar = 1.0e-12;
 
 /// The limited-memory Broyden-Fletcher-Goldfarb-Shanno method.[^1]
@@ -311,7 +314,9 @@ where
         let mut steps = 0;
         let mut converged = false;
         while steps < self.max_steps {
-            let magnitude = timed(Part::Norm, || residual.norm());
+            let magnitude = timed(Part::Norm, || {
+                Quantity::<<J as Tensor>::Unit>::new(norm(residual.as_flat()))
+            });
             let scale = *reference.get_or_insert(magnitude);
             if magnitude < self.abs_tol.residual()
                 || self
@@ -330,18 +335,23 @@ where
                     direction.as_mut_slice(),
                 )
             });
-            let decrement: X = timed(Part::Decrement, || {
-                direction
-                    .iter()
-                    .map(|direction| -direction)
-                    .collect::<Vector>()
-                    .into()
+            let initial_slope = timed(Part::Slope, || {
+                Quantity::<U>::new(-dot(residual.as_flat(), direction.as_slice()))
             });
-            let initial_slope = timed(Part::Slope, || residual.contract_with(&decrement));
             if initial_slope <= Quantity::default() {
                 history.clear();
                 continue;
             }
+            let decrement = OnceCell::<X>::new();
+            let negated = || {
+                decrement.get_or_init(|| {
+                    direction
+                        .iter()
+                        .map(|direction| -direction)
+                        .collect::<Vector>()
+                        .into()
+                })
+            };
             let mut accepted = None;
             let mut merit = |step: Quantity<Dimensionless>| {
                 if step.value() == 0.0 {
@@ -349,13 +359,19 @@ where
                 }
                 let step = step.value();
                 timed(Part::Trial, || {
-                    trial
-                        .as_flat_mut()
-                        .iter_mut()
-                        .zip(solution.as_flat().iter().zip(&direction))
-                        .for_each(|(trial, (solution, direction))| {
-                            *trial = solution + direction * step
-                        })
+                    let (from, along) = (solution.as_flat(), direction.as_slice());
+                    fill(
+                        workers_for(from.len(), 3),
+                        trial.as_flat_mut(),
+                        |offset, entries| {
+                            entries
+                                .iter_mut()
+                                .zip(from[offset..].iter().zip(&along[offset..]))
+                                .for_each(|(trial, (solution, direction))| {
+                                    *trial = solution + direction * step
+                                })
+                        },
+                    )
                 });
                 let candidate = function(&trial)?;
                 accepted = Some((candidate, step));
@@ -377,7 +393,7 @@ where
                             .for_each(|(point, (solution, direction))| {
                                 *point = solution + direction * step.value()
                             });
-                        Ok(gradient(&point)?.contract_with(&decrement))
+                        Ok(gradient(&point)?.contract_with(negated()))
                     },
                     Dimensionless::of(1.0),
                 )
@@ -405,14 +421,23 @@ where
                 } else {
                     (Vector::zero(n), Vector::zero(n))
                 };
-                s.iter_mut()
-                    .zip(direction.iter())
-                    .for_each(|(s, direction)| *s = direction * step);
-                y.iter_mut()
-                    .zip(updated.as_flat().iter().zip(residual.as_flat()))
-                    .for_each(|(y, (updated, residual))| *y = updated - residual);
-                let curvature = dot(s.as_slice(), y.as_slice());
-                if curvature > CURVATURE_FLOOR * norm(s.as_slice()) * norm(y.as_slice()) {
+                let (along, new, old) =
+                    (direction.as_slice(), updated.as_flat(), residual.as_flat());
+                let [curvature, s_squared, y_squared] = update(
+                    workers_for(n, 5),
+                    s.as_mut_slice(),
+                    y.as_mut_slice(),
+                    |offset, s, y| {
+                        s.iter_mut()
+                            .zip(&along[offset..])
+                            .for_each(|(s, direction)| *s = direction * step);
+                        y.iter_mut()
+                            .zip(new[offset..].iter().zip(&old[offset..]))
+                            .for_each(|(y, (updated, residual))| *y = updated - residual);
+                        [partial(s, y), partial(s, s), partial(y, y)]
+                    },
+                );
+                if curvature > CURVATURE_FLOOR * s_squared.sqrt() * y_squared.sqrt() {
                     history.push_back((s, y, 1.0 / curvature));
                 }
             });
@@ -554,6 +579,112 @@ fn two_loop_with(
     }
 }
 
+/// The threads that a pass over `streams` vectors of `length` entries pays for.
+fn workers_for(length: usize, streams: usize) -> usize {
+    let threads = available_parallelism().map_or(1, |threads| threads.get());
+    (length * streams / PASS).clamp(1, threads)
+}
+
+/// Adds up the sums of the blocks in the order of the blocks.
+fn total<const K: usize>(partials: &[[Scalar; K]]) -> [Scalar; K] {
+    partials.iter().fold([0.0; K], |mut total, partial| {
+        total
+            .iter_mut()
+            .zip(partial)
+            .for_each(|(total, partial)| *total = total.algebraic_add(*partial));
+        total
+    })
+}
+
+/// Sums `K` quantities over the blocks of a vector of `length` entries, with `workers` threads
+/// taking runs of whole blocks. The blocks are added in order, so the sums are the same for
+/// any number of workers.
+fn sums<const K: usize>(
+    workers: usize,
+    length: usize,
+    block: impl Fn(Range<usize>) -> [Scalar; K] + Sync,
+) -> [Scalar; K] {
+    let blocks = length.div_ceil(BLOCK);
+    let mut partials = vec![[0.0; K]; blocks];
+    let per = blocks.div_ceil(workers.clamp(1, blocks.max(1))).max(1);
+    let run = |first: usize, partials: &mut [[Scalar; K]]| {
+        partials
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, partial)| {
+                let low = (first + index) * BLOCK;
+                *partial = block(low..(low + BLOCK).min(length))
+            })
+    };
+    if per >= blocks {
+        run(0, &mut partials)
+    } else {
+        scope(|scope| {
+            partials
+                .chunks_mut(per)
+                .enumerate()
+                .for_each(|(worker, partials)| {
+                    let run = &run;
+                    scope.spawn(move || run(worker * per, partials));
+                })
+        });
+    }
+    total(&partials)
+}
+
+/// Gives `work` each run of the entries, with the position of its first, one run to a thread.
+fn fill(workers: usize, entries: &mut [Scalar], work: impl Fn(usize, &mut [Scalar]) + Sync) {
+    let per = entries.len().div_ceil(workers.max(1)).max(1);
+    if per >= entries.len() {
+        work(0, entries)
+    } else {
+        scope(|scope| {
+            entries
+                .chunks_mut(per)
+                .enumerate()
+                .for_each(|(worker, entries)| {
+                    let work = &work;
+                    scope.spawn(move || work(worker * per, entries));
+                })
+        });
+    }
+}
+
+/// Gives `block` each block of two vectors, with the position of its first entry, and adds up
+/// the three sums it returns over the blocks in order, as `sums` does.
+fn update(
+    workers: usize,
+    s: &mut [Scalar],
+    y: &mut [Scalar],
+    block: impl Fn(usize, &mut [Scalar], &mut [Scalar]) -> [Scalar; 3] + Sync,
+) -> [Scalar; 3] {
+    let blocks = s.len().div_ceil(BLOCK);
+    let mut partials = vec![[0.0; 3]; blocks];
+    let per = blocks.div_ceil(workers.clamp(1, blocks.max(1))).max(1);
+    let run = |first: usize, s: &mut [Scalar], y: &mut [Scalar], partials: &mut [[Scalar; 3]]| {
+        s.chunks_mut(BLOCK)
+            .zip(y.chunks_mut(BLOCK))
+            .zip(partials.iter_mut())
+            .enumerate()
+            .for_each(|(index, ((s, y), partial))| *partial = block((first + index) * BLOCK, s, y))
+    };
+    if per >= blocks {
+        run(0, s, y, &mut partials)
+    } else {
+        scope(|scope| {
+            s.chunks_mut(per * BLOCK)
+                .zip(y.chunks_mut(per * BLOCK))
+                .zip(partials.chunks_mut(per))
+                .enumerate()
+                .for_each(|(worker, ((s, y), partials))| {
+                    let run = &run;
+                    scope.spawn(move || run(worker * per, s, y, partials));
+                })
+        });
+    }
+    total(&partials)
+}
+
 fn partial(a: &[Scalar], b: &[Scalar]) -> Scalar {
     a.iter()
         .zip(b.iter())
@@ -562,12 +693,14 @@ fn partial(a: &[Scalar], b: &[Scalar]) -> Scalar {
 }
 
 fn dot(a: &[Scalar], b: &[Scalar]) -> Scalar {
-    a.chunks(BLOCK)
-        .zip(b.chunks(BLOCK))
-        .map(|(a, b)| partial(a, b))
-        .fold(0.0, Scalar::algebraic_add)
+    sums(workers_for(a.len(), 2), a.len(), |range| {
+        [partial(&a[range.clone()], &b[range])]
+    })[0]
 }
 
 fn norm(a: &[Scalar]) -> Scalar {
-    dot(a, a).sqrt()
+    sums(workers_for(a.len(), 1), a.len(), |range| {
+        [partial(&a[range.clone()], &a[range])]
+    })[0]
+        .sqrt()
 }
