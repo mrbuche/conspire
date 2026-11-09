@@ -1,10 +1,19 @@
 //! The energy fit of a structured grid of hexahedra, written from scratch on flat arrays, as a
 //! yardstick for the fit of the library and, in the parts that follow, for the fit on a device.
 //!
-//! This part is the host. It makes the problem, which is a grid of hexahedra with every node free
-//! to move onto a sphere, and it has the objective and the gradient of the fit energy as plain
-//! loops. Nothing here uses the library: the energy is that of `src/geometry/mesh/fit`, written
-//! out again, so that it can be checked against that and against a device.
+//! This makes the problem, which is a grid of hexahedra with every node free to move onto a
+//! sphere, and it has the objective and the gradient of the fit energy as plain loops, the host
+//! reference. Then it has the same on a CUDA device, with the `gpu` feature. Nothing here uses the
+//! library but its device: the energy is that of `src/geometry/mesh/fit`, written out again, so that
+//! it can be checked against that and against the device.
+//!
+//! The kernels are in `kernels/fit.rs`, which `kernels/fit.sh` builds to PTX, and the arithmetic
+//! that they run for each thread is in `kernels/fit_shared.rs`. The test
+//! `the_kernels_run_on_the_host_are_the_reference` runs that arithmetic on the host, one thread
+//! after another, as the kernels are launched, and checks it against the reference, so that the
+//! layout of the data and the sums are checked without a device. The tests of the device check it
+//! against the host and, when there is no device, say so and pass, unless `CONSPIRE_REQUIRE_GPU`
+//! is set.
 //!
 //! The energy is a sum over the elements of the regularized quality of each corner, weighted by
 //! the size of the element, and a term that holds each node of the boundary near the faces it is on:
@@ -24,11 +33,15 @@
 //! library has them for the sweeps. The library holds these in a tessellation with a bounding
 //! volume hierarchy, which is not part of what is timed here.
 //!
-//! Run alone, in release mode:
-//! `cargo test --release --test fit_gpu_bench -- --ignored --nocapture --test-threads=1`
+//! Run alone, in release mode, the host reference and then the device:
+//! `cargo test --release --test fit_gpu_bench -- host_reference --ignored --nocapture --test-threads=1`
+//! `kernels/fit.sh` and then
+//! `CONSPIRE_REQUIRE_GPU=1 cargo test --release -F gpu --test fit_gpu_bench -- device --ignored --nocapture --test-threads=1`
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids, `22,46,90` by
-//! default, and `REPETITIONS` is how many times each is timed, 5 by default.
+//! default, `REPETITIONS` is how many times each is timed, 5 by default, `DEVICE` is the ordinal of
+//! the device, `BLOCK` is the threads in a block of a launch, 128 by default, and `FIT_KERNELS` is
+//! the PTX of the kernels, where `kernels/fit.sh` builds it by default.
 
 use std::time::Instant;
 
@@ -599,5 +612,632 @@ fn host_reference() {
             objective * 1.0e3 / elements,
             gradient * 1.0e3 / elements,
         );
+    }
+}
+
+/// The arithmetic of the kernels, for one thread at a time. The host runs it a thread after another
+/// to check it, and a device runs it for all the threads at once.
+#[path = "../kernels/fit_shared.rs"]
+mod shared;
+
+fn sqrt(x: f64) -> f64 {
+    x.sqrt()
+}
+
+/// The threads of the first pass of a sum, and the values that each thread of the later passes
+/// adds up.
+const SUMMERS: usize = 4096;
+const GROUP: usize = 64;
+
+/// A problem as the kernels take it: values on planes, and indices of 32 bits.
+pub struct Layout {
+    pub nodes: usize,
+    pub elements: usize,
+    pub faces: usize,
+    pub epsilon: f64,
+    pub connectivity: Vec<u32>,
+    pub scales: Vec<f64>,
+    pub lengths: Vec<f64>,
+    pub starts: Vec<u32>,
+    pub entries: Vec<u32>,
+    pub face_starts: Vec<u32>,
+    pub face_entries: Vec<u32>,
+    pub points: Vec<f64>,
+    pub normals: Vec<f64>,
+    pub distances: Vec<f64>,
+}
+
+/// The components of points one plane after another.
+fn planes(points: &[Point]) -> Vec<f64> {
+    (0..3)
+        .flat_map(|d| points.iter().map(move |point| point[d]))
+        .collect()
+}
+
+/// The points of components that are one plane after another.
+fn points_of(planes: &[f64]) -> Vec<Point> {
+    let count = planes.len() / 3;
+    (0..count)
+        .map(|index| {
+            [
+                planes[index],
+                planes[count + index],
+                planes[2 * count + index],
+            ]
+        })
+        .collect()
+}
+
+impl Layout {
+    pub fn new(problem: &Problem) -> Self {
+        let elements = problem.elements.len();
+        let connectivity = (0..8)
+            .flat_map(|corner| problem.elements.iter().map(move |element| element[corner]))
+            .collect();
+        // A corner is at `8 * element + corner` on the host and at `corner * elements + element`
+        // on the planes.
+        let entries = problem
+            .entries
+            .iter()
+            .map(|&position| {
+                let (element, corner) = (position as usize / 8, position as usize % 8);
+                (corner * elements + element) as u32
+            })
+            .collect();
+        Self {
+            nodes: problem.nodes(),
+            elements,
+            faces: problem.points.len(),
+            epsilon: problem.epsilon,
+            connectivity,
+            scales: problem.scales.clone(),
+            lengths: problem.lengths.clone(),
+            starts: problem.starts.clone(),
+            entries,
+            face_starts: problem.face_starts.clone(),
+            face_entries: problem.face_entries.clone(),
+            points: planes(&problem.points),
+            normals: planes(&problem.normals),
+            distances: problem.distances.clone(),
+        }
+    }
+}
+
+/// The sum of `values` as the passes of the kernels make it, run on the host.
+fn sum_by_passes(values: &[f64], summers: usize) -> f64 {
+    let mut partials = vec![0.0; summers];
+    for item in 0..summers {
+        // SAFETY: the values are `values.len()` and the partials are `summers`.
+        unsafe {
+            shared::sum_strided(
+                item,
+                values.len(),
+                summers,
+                values.as_ptr(),
+                partials.as_mut_ptr(),
+            )
+        }
+    }
+    while partials.len() > 1 {
+        let groups = partials.len().div_ceil(GROUP);
+        let mut sums = vec![0.0; groups];
+        for item in 0..groups {
+            // SAFETY: the values are `partials.len()` and the sums are `groups`.
+            unsafe {
+                shared::sum_groups(
+                    item,
+                    partials.len(),
+                    GROUP,
+                    partials.as_ptr(),
+                    sums.as_mut_ptr(),
+                )
+            }
+        }
+        partials = sums;
+    }
+    partials[0]
+}
+
+/// The objective as the kernels compute it, run on the host.
+fn objective_on_host(layout: &Layout, coordinates: &[f64], summers: usize) -> f64 {
+    let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+    let mut energies = vec![0.0; elements + nodes];
+    for item in 0..elements {
+        // SAFETY: the arrays are those of the layout.
+        unsafe {
+            shared::element_energies(
+                item,
+                elements,
+                nodes,
+                layout.connectivity.as_ptr(),
+                coordinates.as_ptr(),
+                layout.scales.as_ptr(),
+                layout.epsilon,
+                energies.as_mut_ptr(),
+            )
+        }
+    }
+    for item in 0..nodes {
+        // SAFETY: the arrays are those of the layout, and there is an energy for each node after
+        // those of the elements.
+        unsafe {
+            shared::node_energies(
+                item,
+                nodes,
+                elements,
+                layout.face_starts.as_ptr(),
+                layout.face_entries.as_ptr(),
+                faces,
+                layout.points.as_ptr(),
+                layout.normals.as_ptr(),
+                layout.distances.as_ptr(),
+                coordinates.as_ptr(),
+                layout.lengths.as_ptr(),
+                energies.as_mut_ptr(),
+            )
+        }
+    }
+    sum_by_passes(&energies, summers)
+}
+
+/// The gradient as the kernels compute it, run on the host, on planes.
+fn gradient_on_host(layout: &Layout, coordinates: &[f64]) -> Vec<f64> {
+    let (nodes, elements, faces) = (layout.nodes, layout.elements, layout.faces);
+    let mut contributions = vec![0.0; 24 * elements];
+    for item in 0..elements {
+        // SAFETY: the arrays are those of the layout.
+        unsafe {
+            shared::corner_contributions(
+                item,
+                elements,
+                nodes,
+                layout.connectivity.as_ptr(),
+                coordinates.as_ptr(),
+                layout.scales.as_ptr(),
+                layout.epsilon,
+                contributions.as_mut_ptr(),
+            )
+        }
+    }
+    let mut gradient = vec![0.0; 3 * nodes];
+    for item in 0..nodes {
+        // SAFETY: the arrays are those of the layout.
+        unsafe {
+            shared::gradient(
+                item,
+                nodes,
+                elements,
+                layout.starts.as_ptr(),
+                layout.entries.as_ptr(),
+                contributions.as_ptr(),
+                layout.face_starts.as_ptr(),
+                layout.face_entries.as_ptr(),
+                faces,
+                layout.points.as_ptr(),
+                layout.normals.as_ptr(),
+                layout.distances.as_ptr(),
+                coordinates.as_ptr(),
+                layout.lengths.as_ptr(),
+                gradient.as_mut_ptr(),
+            )
+        }
+    }
+    gradient
+}
+
+/// The largest difference between two gradients over the largest component of the first.
+fn disagreement(a: &[Point], b: &[Point]) -> f64 {
+    let largest = a
+        .iter()
+        .flatten()
+        .fold(0.0_f64, |largest, &c| largest.max(c.abs()));
+    let difference = a
+        .iter()
+        .zip(b)
+        .flat_map(|(a, b)| (0..3).map(|d| (a[d] - b[d]).abs()))
+        .fold(0.0_f64, f64::max);
+    difference / largest.max(1.0)
+}
+
+/// Coordinates that are away from where the fit starts, so that the boundary has something to pull.
+fn moved(problem: &Problem) -> Vec<Point> {
+    let mut state = 7;
+    problem
+        .coordinates
+        .iter()
+        .map(|point| point.map(|c| c * 1.05 + 0.01 * random(&mut state)))
+        .collect()
+}
+
+#[test]
+fn the_kernels_run_on_the_host_are_the_reference() {
+    let problem = Problem::new(6, 1.0);
+    let layout = Layout::new(&problem);
+    let x = moved(&problem);
+    let coordinates = planes(&x);
+    let expected = problem.objective(&x);
+    // However many threads add up the energies, the sum is the same to within the rounding.
+    for summers in [1, 7, 64, SUMMERS, 100_000] {
+        let objective = objective_on_host(&layout, &coordinates, summers);
+        assert!(
+            (objective - expected).abs() < 1.0e-12 * expected.abs(),
+            "{summers} summers: {objective} against {expected}"
+        );
+    }
+    let gradient = points_of(&gradient_on_host(&layout, &coordinates));
+    let error = disagreement(&problem.gradient(&x), &gradient);
+    assert!(error < 1.0e-12, "the gradients disagree by {error}");
+}
+
+#[cfg(feature = "gpu")]
+mod device {
+    use super::*;
+    use conspire::gpu::{Buffer, Device, Function, GpuError};
+
+    /// How many threads are in a block.
+    fn block() -> usize {
+        std::env::var("BLOCK")
+            .ok()
+            .and_then(|block| block.parse().ok())
+            .unwrap_or(128)
+    }
+
+    fn skip<T>(why: &str) -> Option<T> {
+        assert!(
+            std::env::var_os("CONSPIRE_REQUIRE_GPU").is_none(),
+            "CONSPIRE_REQUIRE_GPU is set and {why}"
+        );
+        eprintln!("skipped: {why}");
+        None
+    }
+
+    /// The device and the functions of the kernels.
+    struct Kernels {
+        device: Device,
+        corner_contributions: Function,
+        element_energies: Function,
+        node_energies: Function,
+        gradient: Function,
+        sum_strided: Function,
+        sum_groups: Function,
+    }
+
+    impl Kernels {
+        fn new() -> Option<Self> {
+            let ordinal = std::env::var("DEVICE")
+                .ok()
+                .and_then(|ordinal| ordinal.parse().ok())
+                .unwrap_or(0);
+            let device = match Device::new(ordinal) {
+                Ok(device) => device,
+                Err(GpuError::Unavailable(message)) => {
+                    return skip(&format!("there is no device: {message}"));
+                }
+                Err(error) => panic!("{error}"),
+            };
+            let path = std::env::var("FIT_KERNELS").unwrap_or_else(|_| {
+                format!(
+                    "{}/target/nvptx64-nvidia-cuda/release/examples/fit_kernels.ptx",
+                    env!("CARGO_MANIFEST_DIR")
+                )
+            });
+            let Ok(ptx) = std::fs::read_to_string(&path) else {
+                return skip(&format!(
+                    "the kernels are not built at {path}: run kernels/fit.sh"
+                ));
+            };
+            let module = device
+                .module_from_ptx(&ptx)
+                .expect("the driver loads the kernels");
+            let function = |name: &str| module.function(name).expect("the kernel is there");
+            Some(Self {
+                corner_contributions: function("corner_contributions"),
+                element_energies: function("element_energies"),
+                node_energies: function("node_energies"),
+                gradient: function("gradient"),
+                sum_strided: function("sum_strided"),
+                sum_groups: function("sum_groups"),
+                device,
+            })
+        }
+    }
+
+    /// A problem on the device, with the buffers that the passes use.
+    struct OnDevice<'a> {
+        kernels: &'a Kernels,
+        layout: &'a Layout,
+        block: usize,
+        connectivity: Buffer<u32>,
+        scales: Buffer<f64>,
+        lengths: Buffer<f64>,
+        starts: Buffer<u32>,
+        entries: Buffer<u32>,
+        face_starts: Buffer<u32>,
+        face_entries: Buffer<u32>,
+        points: Buffer<f64>,
+        normals: Buffer<f64>,
+        distances: Buffer<f64>,
+        coordinates: Buffer<f64>,
+        contributions: Buffer<f64>,
+        gradient: Buffer<f64>,
+        energies: Buffer<f64>,
+        partials: Buffer<f64>,
+        groups: Buffer<f64>,
+        total: Buffer<f64>,
+    }
+
+    impl<'a> OnDevice<'a> {
+        fn new(kernels: &'a Kernels, layout: &'a Layout) -> Self {
+            let device = &kernels.device;
+            Self {
+                kernels,
+                layout,
+                block: block(),
+                connectivity: device.buffer_of(&layout.connectivity).unwrap(),
+                scales: device.buffer_of(&layout.scales).unwrap(),
+                lengths: device.buffer_of(&layout.lengths).unwrap(),
+                starts: device.buffer_of(&layout.starts).unwrap(),
+                entries: device.buffer_of(&layout.entries).unwrap(),
+                face_starts: device.buffer_of(&layout.face_starts).unwrap(),
+                face_entries: device.buffer_of(&layout.face_entries).unwrap(),
+                points: device.buffer_of(&layout.points).unwrap(),
+                normals: device.buffer_of(&layout.normals).unwrap(),
+                distances: device.buffer_of(&layout.distances).unwrap(),
+                coordinates: device.buffer(3 * layout.nodes).unwrap(),
+                contributions: device.buffer(24 * layout.elements).unwrap(),
+                gradient: device.buffer(3 * layout.nodes).unwrap(),
+                energies: device.buffer(layout.elements + layout.nodes).unwrap(),
+                partials: device.buffer(SUMMERS).unwrap(),
+                groups: device.buffer(SUMMERS.div_ceil(GROUP)).unwrap(),
+                total: device.buffer(1).unwrap(),
+            }
+        }
+        fn set_coordinates(&self, coordinates: &[f64]) {
+            self.coordinates.upload(coordinates).unwrap();
+        }
+        /// The first pass of the gradient.
+        fn corners(&self) {
+            let (elements, nodes) = (self.layout.elements as u32, self.layout.nodes as u32);
+            self.kernels
+                .device
+                .launch(
+                    &self.kernels.corner_contributions,
+                    self.layout.elements,
+                    self.block,
+                    &[
+                        &elements,
+                        &nodes,
+                        &self.connectivity,
+                        &self.coordinates,
+                        &self.scales,
+                        &self.layout.epsilon,
+                        &self.contributions,
+                    ],
+                )
+                .unwrap();
+        }
+        /// The second pass of the gradient.
+        fn gather(&self) {
+            let (nodes, elements, faces) = (
+                self.layout.nodes as u32,
+                self.layout.elements as u32,
+                self.layout.faces as u32,
+            );
+            self.kernels
+                .device
+                .launch(
+                    &self.kernels.gradient,
+                    self.layout.nodes,
+                    self.block,
+                    &[
+                        &nodes,
+                        &elements,
+                        &self.starts,
+                        &self.entries,
+                        &self.contributions,
+                        &self.face_starts,
+                        &self.face_entries,
+                        &faces,
+                        &self.points,
+                        &self.normals,
+                        &self.distances,
+                        &self.coordinates,
+                        &self.lengths,
+                        &self.gradient,
+                    ],
+                )
+                .unwrap();
+        }
+        /// The energies of the elements and of the nodes, before they are added up.
+        fn energies(&self) {
+            let (elements, nodes, faces) = (
+                self.layout.elements as u32,
+                self.layout.nodes as u32,
+                self.layout.faces as u32,
+            );
+            let device = &self.kernels.device;
+            device
+                .launch(
+                    &self.kernels.element_energies,
+                    self.layout.elements,
+                    self.block,
+                    &[
+                        &elements,
+                        &nodes,
+                        &self.connectivity,
+                        &self.coordinates,
+                        &self.scales,
+                        &self.layout.epsilon,
+                        &self.energies,
+                    ],
+                )
+                .unwrap();
+            device
+                .launch(
+                    &self.kernels.node_energies,
+                    self.layout.nodes,
+                    self.block,
+                    &[
+                        &nodes,
+                        &elements,
+                        &self.face_starts,
+                        &self.face_entries,
+                        &faces,
+                        &self.points,
+                        &self.normals,
+                        &self.distances,
+                        &self.coordinates,
+                        &self.lengths,
+                        &self.energies,
+                    ],
+                )
+                .unwrap();
+        }
+        /// The three passes that add the energies up.
+        fn add_up(&self) {
+            let device = &self.kernels.device;
+            let count = (self.layout.elements + self.layout.nodes) as u32;
+            let (summers, group, groups) =
+                (SUMMERS as u32, GROUP as u32, SUMMERS.div_ceil(GROUP) as u32);
+            device
+                .launch(
+                    &self.kernels.sum_strided,
+                    SUMMERS,
+                    self.block,
+                    &[&count, &summers, &self.energies, &self.partials],
+                )
+                .unwrap();
+            device
+                .launch(
+                    &self.kernels.sum_groups,
+                    SUMMERS.div_ceil(GROUP),
+                    self.block,
+                    &[&summers, &group, &self.partials, &self.groups],
+                )
+                .unwrap();
+            device
+                .launch(
+                    &self.kernels.sum_groups,
+                    1,
+                    self.block,
+                    &[&groups, &group, &self.groups, &self.total],
+                )
+                .unwrap();
+        }
+        fn objective(&self) -> f64 {
+            self.energies();
+            self.add_up();
+            self.kernels.device.synchronize().unwrap();
+            let mut total = [0.0];
+            self.total.download(&mut total).unwrap();
+            total[0]
+        }
+        fn gradient(&self) -> Vec<Point> {
+            self.corners();
+            self.gather();
+            self.kernels.device.synchronize().unwrap();
+            let mut gradient = vec![0.0; 3 * self.layout.nodes];
+            self.gradient.download(&mut gradient).unwrap();
+            points_of(&gradient)
+        }
+        fn wait(&self) {
+            self.kernels.device.synchronize().unwrap();
+        }
+    }
+
+    #[test]
+    fn the_device_agrees_with_the_host() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        let problem = Problem::new(6, 1.0);
+        let layout = Layout::new(&problem);
+        let on_device = OnDevice::new(&kernels, &layout);
+        let x = moved(&problem);
+        on_device.set_coordinates(&planes(&x));
+        let expected = problem.objective(&x);
+        let objective = on_device.objective();
+        assert!(
+            (objective - expected).abs() < 1.0e-11 * expected.abs(),
+            "the objective is {objective} on the device and {expected} on the host"
+        );
+        let error = disagreement(&problem.gradient(&x), &on_device.gradient());
+        assert!(error < 1.0e-11, "the gradients disagree by {error}");
+    }
+
+    /// The objective and the gradient on the device, against the host, for the sizes in `CELLS`.
+    ///
+    /// The kernels are timed with the coordinates already on the device, which is what a fit that
+    /// keeps its state there pays for each evaluation.
+    #[test]
+    #[ignore]
+    fn device_reference() {
+        let Some(kernels) = Kernels::new() else {
+            return;
+        };
+        println!();
+        println!("{}", kernels.device.name());
+        println!(
+            "{:>7}{:>10}{:>11}{:>16}{:>14}{:>12}{:>12}{:>14}{:>14}",
+            "cells",
+            "nodes",
+            "elements",
+            "objective ms",
+            "gradient ms",
+            "corners ms",
+            "gather ms",
+            "host obj ms",
+            "host grad ms"
+        );
+        for cells in cells() {
+            let problem = Problem::new(cells, 1.0);
+            let layout = Layout::new(&problem);
+            let on_device = OnDevice::new(&kernels, &layout);
+            let x = problem.coordinates.clone();
+            on_device.set_coordinates(&planes(&x));
+            let expected = problem.objective(&x);
+            let objective = on_device.objective();
+            assert!(
+                (objective - expected).abs() < 1.0e-11 * expected.abs(),
+                "the objective is {objective} on the device and {expected} on the host"
+            );
+            let error = disagreement(&problem.gradient(&x), &on_device.gradient());
+            assert!(error < 1.0e-11, "the gradients disagree by {error}");
+            let repetitions = repetitions();
+            let device_objective = time_of(repetitions, || {
+                on_device.energies();
+                on_device.add_up();
+                on_device.wait();
+            });
+            let corners = time_of(repetitions, || {
+                on_device.corners();
+                on_device.wait();
+            });
+            let gather = time_of(repetitions, || {
+                on_device.gather();
+                on_device.wait();
+            });
+            let device_gradient = time_of(repetitions, || {
+                on_device.corners();
+                on_device.gather();
+                on_device.wait();
+            });
+            let mut contributions = vec![[0.0; 3]; 8 * problem.elements.len()];
+            let mut forces = vec![[0.0; 3]; problem.nodes()];
+            let host_objective = time_of(repetitions, || {
+                std::hint::black_box(problem.objective(&x));
+            });
+            let host_gradient = time_of(repetitions, || {
+                problem.gradient_into(&x, &mut contributions, &mut forces);
+                std::hint::black_box(&forces);
+            });
+            println!(
+                "{cells:>7}{:>10}{:>11}{device_objective:>16.4}{device_gradient:>14.4}{corners:>12.4}{gather:>12.4}{host_objective:>14.3}{host_gradient:>14.3}   (x{:.0}, x{:.0})",
+                problem.nodes(),
+                problem.elements.len(),
+                host_objective / device_objective,
+                host_gradient / device_gradient,
+            );
+        }
     }
 }

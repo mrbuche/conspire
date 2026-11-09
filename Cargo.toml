@@ -48,6 +48,12 @@ required-features = ["constitutive", "doc"]
 
 [[example]]
 crate-type = ["cdylib"]
+name = "fit_kernels"
+path = "kernels/fit.rs"
+required-features = ["kernels"]
+
+[[example]]
+crate-type = ["cdylib"]
 name = "kernels"
 path = "kernels/lib.rs"
 required-features = ["kernels"]
