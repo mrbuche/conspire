@@ -32,7 +32,7 @@ mod common;
 
 use common::{
     Work, agree, close, components, deformed, density, disjoint, flat, imposed_by, lattice,
-    loads_on, on_device, rubber, schedule_of, slab, steel, targets_at,
+    loads_on, on_device, rubber, schedule_of, skip, slab, steel, targets_at,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
@@ -47,7 +47,7 @@ use conspire::{
             mass::LumpedMassElements,
         },
     },
-    gpu::DeviceBlocks,
+    gpu::{Device, DeviceBlocks, GpuError},
     math::{Quantity, Tensor, integrate::VelocityVerlet},
     units::{Density, Length, Time},
 };
@@ -554,4 +554,91 @@ fn steps() {
             return;
         }
     }
+}
+
+/// The sizes of the transfers in megabytes, from `TRANSFER_MB`.
+fn transfer_sizes() -> Vec<usize> {
+    std::env::var("TRANSFER_MB")
+        .ok()
+        .map(|sizes| {
+            sizes
+                .split(',')
+                .filter_map(|size| size.parse().ok())
+                .collect()
+        })
+        .unwrap_or_else(|| vec![1, 8, 64, 256])
+}
+
+/// How fast values go between the host and a device, from memory that can be paged out, from
+/// memory that the driver has locked, and from a vector through locked memory, which is what a
+/// run would do to keep its transfers fast; the cost of locking the memory; and what the host
+/// does on either side of the transfer for the coordinates of the finest grid.
+#[test]
+#[ignore]
+fn transfers() {
+    let device = match Device::new(0) {
+        Ok(device) => device,
+        Err(GpuError::Unavailable(message)) => {
+            skip::<()>(&format!("there is no device: {message}"));
+            return;
+        }
+        Err(error) => panic!("{error}"),
+    };
+    println!("\n{}, GB/s", device.name());
+    println!(
+        "{:>6} | {:>9} {:>9} | {:>9} {:>9} | {:>9} {:>9} | {:>9}",
+        "MB", "page up", "page down", "pin up", "pin down", "via up", "via down", "lock ms"
+    );
+    for megabytes in transfer_sizes() {
+        let count = megabytes * 1_000_000 / 8;
+        let rate = |milliseconds: f64| count as f64 * 8.0 / (milliseconds * 1e-3) / 1e9;
+        let buffer = device.buffer::<f64>(count).expect("the buffer");
+        let mut host = vec![1.0_f64; count];
+        let page_up = time_of(repetitions(), || buffer.upload(&host).expect("the upload"));
+        let page_down = time_of(repetitions(), || {
+            buffer.download(&mut host).expect("the download")
+        });
+        let start = Instant::now();
+        let mut pinned = device.pinned(count, 1.0_f64).expect("the locked memory");
+        let lock = start.elapsed().as_secs_f64() * 1e3;
+        let pin_up = time_of(repetitions(), || {
+            buffer.upload(&pinned).expect("the upload")
+        });
+        let pin_down = time_of(repetitions(), || {
+            buffer.download(&mut pinned).expect("the download")
+        });
+        // From and to a vector, which is where the values are when a run has them.
+        let via_up = time_of(repetitions(), || {
+            pinned.copy_from_slice(&host);
+            buffer.upload(&pinned).expect("the upload");
+        });
+        let via_down = time_of(repetitions(), || {
+            buffer.download(&mut pinned).expect("the download");
+            host.copy_from_slice(&pinned);
+        });
+        println!(
+            "{megabytes:>6} | {:>9.2} {:>9.2} | {:>9.2} {:>9.2} | {:>9.2} {:>9.2} | {lock:>9.2}",
+            rate(page_up),
+            rate(page_down),
+            rate(pin_up),
+            rate(pin_down),
+            rate(via_up),
+            rate(via_down),
+        );
+    }
+    // What the host does around a transfer of the coordinates of the 90^3 grid: making the
+    // values from the nodes, and the nodes from the values.
+    let current = deformed(&lattice(90, 90));
+    let nodes = current.len();
+    let values = vec![0.5_f64; 3 * nodes];
+    let making_values = time_of(repetitions(), || {
+        black_box(flat(black_box(&current)));
+    });
+    let making_nodes = time_of(repetitions(), || {
+        let nodes: NodalCoordinates<3> = black_box(&values).as_chunks::<3>().0.to_vec().into();
+        black_box(nodes);
+    });
+    println!(
+        "\nthe host, {nodes} nodes: values from the nodes {making_values:.2} ms, nodes from the values {making_nodes:.2} ms"
+    );
 }

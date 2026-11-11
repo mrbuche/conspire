@@ -16,7 +16,9 @@ use core::{
     ffi::{CStr, c_char, c_int, c_uint, c_void},
     marker::PhantomData,
     mem::size_of,
+    ops::{Deref, DerefMut},
     ptr::{null, null_mut},
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 #[cfg(target_os = "linux")]
@@ -33,6 +35,7 @@ const COMPUTE_CAPABILITY_MINOR: c_int = 76;
 const MAX_THREADS_PER_MULTIPROCESSOR: c_int = 39;
 const FUNCTION_LOCAL_SIZE_BYTES: c_int = 3;
 const FUNCTION_NUM_REGISTERS: c_int = 4;
+const HOST_ALLOC_PORTABLE: c_uint = 1;
 
 type Result<T> = core::result::Result<T, GpuError>;
 type DevicePointer = u64;
@@ -103,6 +106,8 @@ struct Api {
     upload: unsafe extern "C" fn(DevicePointer, *const c_void, usize) -> c_int,
     download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
     fill: unsafe extern "C" fn(DevicePointer, c_uint, usize) -> c_int,
+    host_alloc: unsafe extern "C" fn(*mut *mut c_void, usize, c_uint) -> c_int,
+    host_free: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
     module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     module_function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
@@ -146,6 +151,8 @@ impl Api {
             upload: driver.function("cuMemcpyHtoD_v2")?,
             download: driver.function("cuMemcpyDtoH_v2")?,
             fill: driver.function("cuMemsetD32_v2")?,
+            host_alloc: driver.function("cuMemHostAlloc")?,
+            host_free: driver.function("cuMemFreeHost")?,
             module_load: driver.function("cuModuleLoadData")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
@@ -221,8 +228,6 @@ impl Device {
         let api = Arc::new(Api::load()?);
         // SAFETY: the calls are those of the driver API, with pointers to locals.
         unsafe {
-            // That the driver does not start is that this node has no device to offer, or a driver
-            // that is not for it, and either way there is no device to use.
             api.check((api.init)(0), "cuInit")
                 .map_err(|error| GpuError::Unavailable(error.to_string()))?;
             let mut count = 0;
@@ -285,7 +290,6 @@ impl Device {
     pub fn buffer<T: Copy>(&self, len: usize) -> Result<Buffer<T>> {
         self.context.bind()?;
         let mut pointer = 0;
-        // A buffer is never empty, so that it always has an address.
         let bytes = len.max(1) * size_of::<T>();
         // SAFETY: `pointer` is written by the driver.
         self.context.api.check(
@@ -304,6 +308,32 @@ impl Device {
         let buffer = self.buffer(values.len())?;
         buffer.upload(values)?;
         Ok(buffer)
+    }
+    /// `len` values of host memory that the driver has locked, all of them `value`, which the
+    /// device copies to and from without going through memory of its own first: a copy of a slice
+    /// of it, such as `buffer.upload(&pinned)`, is faster than one of memory that can be paged out.
+    ///
+    /// It is made once and kept, since locking it costs far more than copying through it does, and
+    /// the memory that can be locked is limited, so it can fail where the memory of a vector does not.
+    pub fn pinned<T: Copy>(&self, len: usize, value: T) -> Result<PinnedBuffer<T>> {
+        self.context.bind()?;
+        let mut pointer = null_mut();
+        let bytes = (len.max(1) * size_of::<T>()).max(1);
+        // SAFETY: `pointer` is written by the driver.
+        self.context.api.check(
+            unsafe { (self.context.api.host_alloc)(&mut pointer, bytes, HOST_ALLOC_PORTABLE) },
+            "cuMemHostAlloc",
+        )?;
+        let pointer = pointer.cast::<T>();
+        for index in 0..len {
+            // SAFETY: the allocation has at least `len` values of room.
+            unsafe { pointer.add(index).write(value) };
+        }
+        Ok(PinnedBuffer {
+            context: self.context.clone(),
+            pointer,
+            len,
+        })
     }
     /// Loads kernels that are PTX, such as those that Rust code is built to, which the driver
     /// compiles for this device when they are loaded.
@@ -455,11 +485,46 @@ impl<T> Buffer<T> {
 
 impl<T> Drop for Buffer<T> {
     fn drop(&mut self) {
-        // There is nothing to do about a failure while dropping, and a buffer that the device
-        // could not free is lost with its context.
         if self.context.bind().is_ok() {
             // SAFETY: the allocation is that of this buffer.
             unsafe { (self.context.api.free)(self.pointer) };
+        }
+    }
+}
+
+/// Values in host memory that the driver has locked, so that the device copies them to and from
+/// directly. It is a slice of them.
+pub struct PinnedBuffer<T> {
+    context: Arc<Context>,
+    pointer: *mut T,
+    len: usize,
+}
+
+// SAFETY: the memory is owned by this value, as that of a vector is, and is only a region of
+// memory, which any thread may use, with the context bound where it is made and freed.
+unsafe impl<T: Send> Send for PinnedBuffer<T> {}
+unsafe impl<T: Sync> Sync for PinnedBuffer<T> {}
+
+impl<T> Deref for PinnedBuffer<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        // SAFETY: the allocation has `len` values that were made when it was.
+        unsafe { from_raw_parts(self.pointer, self.len) }
+    }
+}
+
+impl<T> DerefMut for PinnedBuffer<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        // SAFETY: as above, and this is the only reference to them.
+        unsafe { from_raw_parts_mut(self.pointer, self.len) }
+    }
+}
+
+impl<T> Drop for PinnedBuffer<T> {
+    fn drop(&mut self) {
+        if self.context.bind().is_ok() {
+            // SAFETY: the allocation is that of this buffer.
+            unsafe { (self.context.api.host_free)(self.pointer.cast()) };
         }
     }
 }

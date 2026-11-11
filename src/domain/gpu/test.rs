@@ -134,6 +134,49 @@ fn values_make_the_trip_to_the_device_and_back() {
 }
 
 #[test]
+fn values_make_the_trip_through_pinned_memory_to_the_device_and_back() {
+    let Some(device) = device() else { return };
+    let mut pinned = device.pinned(1000, 0.0).unwrap();
+    assert_eq!(pinned.len(), 1000);
+    assert!(pinned.iter().all(|&value| value == 0.0));
+    pinned
+        .iter_mut()
+        .enumerate()
+        .for_each(|(index, value)| *value = index as f64 * 0.5);
+    let buffer = device.buffer::<f64>(1000).unwrap();
+    buffer.upload(&pinned).unwrap();
+    let mut back = device.pinned(1000, -1.0).unwrap();
+    assert!(back.iter().all(|&value| value == -1.0));
+    buffer.download(&mut back).unwrap();
+    assert_eq!(*back, *pinned);
+    let mut found = vec![0.0; 1000];
+    buffer.download(&mut found).unwrap();
+    assert_eq!(found, back.to_vec());
+}
+
+#[test]
+fn pinned_memory_may_be_empty_and_moves_between_threads() {
+    let Some(device) = device() else { return };
+    let empty = device.pinned::<f64>(0, 0.0).unwrap();
+    assert!(empty.is_empty());
+    let mut pinned = device.pinned(8, 1.0).unwrap();
+    std::thread::scope(|scope| {
+        scope.spawn(|| pinned.iter_mut().for_each(|value| *value += 1.0));
+    });
+    assert!(pinned.iter().all(|&value| value == 2.0));
+    let moved = std::thread::spawn(move || pinned.iter().sum::<f64>());
+    assert_eq!(moved.join().unwrap(), 16.0);
+}
+
+#[test]
+fn pinned_memory_outlives_its_device() {
+    let Some(device) = device() else { return };
+    let pinned = device.pinned(10, 3.0).unwrap();
+    drop(device);
+    assert!(pinned.iter().all(|&value| value == 3.0));
+}
+
+#[test]
 fn a_buffer_and_a_kernel_outlive_their_device() {
     let Some(device) = device() else { return };
     let Some(module) = kernels_on(&device, true) else {
