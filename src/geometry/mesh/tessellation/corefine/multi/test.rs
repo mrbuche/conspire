@@ -397,3 +397,43 @@ fn four_solids_with_a_face_through_one_point_meet_there() {
     ];
     assert_sampled(&solids, 3000);
 }
+
+fn faces_along(surface: &Tessellation, axis: usize, height: f64, direction: f64) {
+    let mesh = surface.mesh();
+    assert!(
+        mesh.coordinates()
+            .iter()
+            .all(|point| (point[axis].value() - height).abs() < 1e-12)
+    );
+    let normals: Vec<_> = surface.normals().iter().flatten().collect();
+    assert!(!normals.is_empty());
+    assert!(
+        normals
+            .iter()
+            .all(|normal| (normal[axis].value() - direction).abs() < 1e-12)
+    );
+}
+
+#[test]
+fn the_surface_between_touching_boxes_is_their_shared_face() {
+    let boxes = [
+        ([0, 0, 0], [4, 4, 4]),
+        ([4, 0, 0], [8, 4, 4]),
+        ([12, 0, 0], [16, 4, 4]),
+    ];
+    let interfaces = Interfaces::new(&make(&boxes)).unwrap();
+    faces_along(&interfaces.between(0, 1).unwrap(), 0, 1.0, 1.0);
+    faces_along(&interfaces.between(1, 0).unwrap(), 0, 1.0, -1.0);
+    assert!(interfaces.between(0, 2).is_err());
+    assert!(interfaces.between(0, 0).is_err());
+}
+
+#[test]
+fn the_surface_between_nested_boxes_encloses_the_inner_one() -> Result<(), AssertionError> {
+    let boxes = [([0, 0, 0], [8, 8, 8]), ([2, 2, 2], [6, 6, 6])];
+    let interfaces = Interfaces::new(&make(&boxes)).unwrap();
+    let inner = interfaces.between(1, 0).unwrap();
+    let outer = interfaces.between(0, 1).unwrap();
+    Assert::default().eq_within_tols(inner.enclosed_volume(), &Quantity::new(1.0))?;
+    Assert::default().eq_within_tols(outer.enclosed_volume(), &Quantity::new(-1.0))
+}
