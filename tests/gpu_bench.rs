@@ -165,6 +165,25 @@ where
         let transfers = time_of(repetitions, || {
             black_box(resident.nodal_forces(model, current).expect("the forces"));
         });
+        // The parts of that call, each timed alone: the coordinates, which are flattened and
+        // copied up; the kernels; the check for a failure; and the forces, which are copied down
+        // into nodes that are made for them and then taken as the forces of the model.
+        let flattening = time_of(repetitions, || {
+            black_box(conspire::gpu::flatten(black_box(current)));
+        });
+        let setting = time_of(repetitions, || {
+            resident.set_coordinates(current).expect("the coordinates");
+        });
+        let failing = time_of(repetitions, || {
+            black_box(resident.failure().expect("the failures"));
+        });
+        let downloading = time_of(repetitions, || {
+            black_box(resident.download().expect("the forces"));
+        });
+        println!(
+            "{:>30}  a call of {transfers:.3} ms: flattening {flattening:.3}, setting the coordinates {setting:.3} with that, the kernels {kernels:.3}, the failures {failing:.3}, downloading {downloading:.3}",
+            "",
+        );
         println!(
             "{:>30}  {} {:>7}: kernels {kernels:9.3} ms {:7.2} ns/element | with transfers {transfers:9.3} ms | setup {setup:8.1} ms | {:5.1}x serial {:5.1}x threads",
             "",
@@ -598,6 +617,26 @@ fn transfers() {
         let nodes: NodalCoordinates<3> = values.into();
         black_box(nodes);
     });
+    // Writing into nodes that were just made and into nodes that were written before, which is
+    // what a download into new nodes and into the same nodes does to the memory under them.
+    let source = vec![[0.5_f64; 3]; nodes];
+    let fresh = time_of(repetitions(), || {
+        let mut values = vec![[0.0_f64; 3]; nodes];
+        values
+            .as_flattened_mut()
+            .copy_from_slice(source.as_flattened());
+        black_box(values);
+    });
+    let mut reused = vec![[0.0_f64; 3]; nodes];
+    let again = time_of(repetitions(), || {
+        reused
+            .as_flattened_mut()
+            .copy_from_slice(source.as_flattened());
+        black_box(&reused);
+    });
+    println!(
+        "writing {nodes} nodes: into new nodes {fresh:.2} ms, into nodes written before {again:.2} ms"
+    );
     println!(
         "\nthe host, {nodes} nodes: values from the nodes {collecting:.2} ms collecting, {making_values:.2} ms now; nodes to download into {making_nodes:.2} ms"
     );
