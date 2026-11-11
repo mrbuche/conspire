@@ -1,6 +1,7 @@
 #![cfg(all(feature = "gpu", feature = "fem"))]
 
-//! The nodal forces of a model on the calling thread, on threads, and on a CUDA device.
+//! The nodal forces of a model on the calling thread, on threads, and on a CUDA device; and, in
+//! `steps`, the steps of explicit dynamics.
 //!
 //! On a device two things are timed. The kernels are the forces with the coordinates already on
 //! the device, which is what a run that keeps its state there pays for each evaluation. The
@@ -17,26 +18,38 @@
 //! `single_block`, `22,46,90` by default, `ELEMENTS` is the elements of each shape of
 //! `element_shapes`, 200000 by default, `THREADS` is the threads, 4 by default, `DEVICE` is the
 //! ordinal of the device, and `REPETITIONS` is how many times each is timed, 5 by default.
+//!
+//! `steps` times whole steps of velocity Verlet on a grid of hexahedra, without loads, with loads,
+//! and with loads and a moved top: on the calling thread and on threads, with the integrator of
+//! the library, and on a device with the state kept there. The cost of a step on the host is the
+//! difference between a long run and a short one over the difference in their steps, which leaves
+//! out what a run does once and is how the integrator that keeps a history is timed; on a device
+//! it is the time of a long run of steps, from when the run is started, so the setup, which is
+//! large, is left out and reported. `CELLS` for `steps` is `10,22,46,90` by default, and
+//! `HOST=0` leaves out the host, which is slow on the large grids.
 
 mod common;
 
 use common::{
-    agree, components, deformed, density, disjoint, lattice, on_device, rubber, slab, steel,
+    Work, agree, close, components, deformed, density, disjoint, flat, imposed_by, lattice,
+    loads_on, on_device, rubber, schedule_of, slab, steel, targets_at,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
+        boundary::{BoundaryConditions, ConstrainAt, Displacement, LoadAt, Solid},
         element::linear::{Hexahedron, LinearElement},
         solid::{
-            NodalForcesSolid,
+            ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid, Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
+            mass::LumpedMassElements,
         },
     },
     gpu::DeviceBlocks,
-    math::{Quantity, Tensor},
-    units::Density,
+    math::{Quantity, Tensor, integrate::VelocityVerlet},
+    units::{Density, Length, Time},
 };
 use std::{hint::black_box, str::FromStr, time::Instant};
 
@@ -311,4 +324,232 @@ fn three_blocks_that_share_nodes() {
         &deformed(&coordinates),
         repetitions(),
     );
+}
+
+/// The step of the runs of dynamics, which is exact in binary and small enough that the grids
+/// stay stable and the elements stay valid however many steps a device takes.
+const STEP: f64 = 1.0 / 134_217_728.0;
+
+/// The most steps that a device takes in a timed run, so that the motion of the top and the
+/// loads of time stay small next to the cells of the smallest grids.
+const MOST_STEPS: usize = 100_000;
+
+fn step_cells() -> Vec<usize> {
+    if std::env::var_os("CELLS").is_some() {
+        cells()
+    } else {
+        vec![10, 22, 46, 90]
+    }
+}
+
+/// The steps of the runs on the host that keep a history, which is large, so fewer for larger
+/// grids.
+fn history_steps(nodes: usize) -> (usize, usize) {
+    let short = (400_000 / nodes).clamp(1, 20);
+    (short, 3 * short + 1)
+}
+
+/// The cost of a step in milliseconds, from runs of `short` and `long` steps.
+fn marginal(short: usize, long: usize, mut run: impl FnMut(usize)) -> f64 {
+    let short_time = time_of_run(&mut run, short);
+    let long_time = time_of_run(&mut run, long);
+    (long_time - short_time) / (long - short) as f64
+}
+
+fn time_of_run(run: &mut impl FnMut(usize), steps: usize) -> f64 {
+    time_of(repetitions(), || run(steps))
+}
+
+/// The coordinates, velocities and accelerations at the end of `steps` steps with the integrator
+/// of the library, each as `3 * node + component`.
+fn on_host<B, L>(
+    work: &Work<B>,
+    loads: &L,
+    moved: bool,
+    execution: Execution,
+    steps: usize,
+) -> [Vec<f64>; 3]
+where
+    B: ParallelElasticElements<3> + LumpedMassElements<3>,
+    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
+{
+    let base = 0..work.layer;
+    let top = if moved { work.top.clone() } else { Vec::new() };
+    let conditions = BoundaryConditions::<Solid<3>>::new()
+        .fix_nodes(Displacement::<0>, base.clone())
+        .fix_nodes(Displacement::<1>, base.clone())
+        .fix_nodes(Displacement::<2>, base)
+        .prescribe_nodes_with(Displacement::<0>, top, |time| {
+            Length::meters(common::RATE * time.value())
+        });
+    let time = (0..=steps).map(time_of_step).collect::<Vec<_>>();
+    let (_, x, v, a) = work
+        .model
+        .integrate(
+            execution,
+            Unchecked,
+            Lumped,
+            &VelocityVerlet::new(Time::seconds(STEP)),
+            &time,
+            (deformed(&work.coordinates), work.velocities()),
+            loads,
+            &conditions,
+        )
+        .expect("the run on the host");
+    [
+        flat(x.iter().last().expect("coordinates")),
+        flat(v.iter().last().expect("velocities")),
+        flat(a.iter().last().expect("accelerations")),
+    ]
+}
+
+fn time_of_step(row: usize) -> Quantity<Time> {
+    common::time_of(row, STEP)
+}
+
+/// The cost of a step on a device, and of the setup of a run, and of the forces alone, in
+/// milliseconds; or nothing if there is no device. The state after the first steps is checked
+/// against `expected`, which the host made.
+#[allow(clippy::too_many_arguments)]
+fn on_a_device<B, L>(
+    work: &Work<B>,
+    loads: &L,
+    moved: bool,
+    fused: bool,
+    expected: Option<(&[Vec<f64>; 3], usize)>,
+) -> Option<(f64, f64, f64)>
+where
+    B: DeviceBlocks + ElasticElements<3> + LumpedMassElements<3>,
+    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
+{
+    let (start, velocities) = (deformed(&work.coordinates), work.velocities());
+    let forces = loads.device_forces().expect("loads that a device takes");
+    let (imposed, components) = imposed_by(work, forces, moved, STEP);
+    let targets = |row| targets_at(work, &flat(&start), row, STEP);
+    let schedule = schedule_of(Some(&targets), &components);
+    let masses = Lumped.masses(&work.model);
+    let setup_start = Instant::now();
+    let mut resident = on_device(&work.model, fused)?;
+    let restart = |resident: &mut conspire::gpu::Resident| {
+        resident
+            .start_dynamics(&masses, &start, &velocities, &imposed, &schedule)
+            .expect("the start");
+    };
+    restart(&mut resident);
+    let setup = setup_start.elapsed().as_secs_f64() * 1e3;
+    if let Some((expected, steps)) = expected {
+        resident.steps(STEP, steps, &schedule).expect("the steps");
+        let (x, v, a) = resident.dynamics_state().expect("the state");
+        close(&flat(&x), &expected[0], "coordinates");
+        close(&flat(&v), &expected[1], "velocities");
+        close(&flat(&a), &expected[2], "accelerations");
+        restart(&mut resident);
+    }
+    // Enough steps to take about a second, found from a few.
+    resident.steps(STEP, 20, &schedule).expect("the steps");
+    restart(&mut resident);
+    let trial = Instant::now();
+    resident.steps(STEP, 50, &schedule).expect("the steps");
+    let per_step = trial.elapsed().as_secs_f64() * 1e3 / 50.0;
+    let steps = ((1000.0 / per_step) as usize).clamp(50, MOST_STEPS);
+    let mut step = f64::INFINITY;
+    for _ in 0..repetitions() {
+        restart(&mut resident);
+        let start = Instant::now();
+        resident.steps(STEP, steps, &schedule).expect("the steps");
+        step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
+    }
+    resident.set_coordinates(&start).expect("the coordinates");
+    let forces = time_of(repetitions(), || resident.run().expect("the forces"));
+    Some((step, setup, forces))
+}
+
+/// Times a variant of the run on a grid, and prints a row for each way of running it. A device
+/// that is not there ends the benchmark, which is whether to go on.
+fn variant<B, L>(label: &str, work: &Work<B>, loads: &L, moved: bool) -> bool
+where
+    B: ParallelElasticElements<3> + LumpedMassElements<3> + DeviceBlocks,
+    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
+{
+    let elements = elements(&work.model);
+    let rate = |step: f64| elements as f64 / step / 1e3;
+    let (short, long) = history_steps(work.coordinates.len());
+    let host = std::env::var("HOST").map_or(true, |host| host != "0");
+    let expected = on_host(work, loads, moved, Execution::Serial, short);
+    let (serial, threaded) = if host {
+        (
+            marginal(short, long, |steps| {
+                black_box(on_host(work, loads, moved, Execution::Serial, steps));
+            }),
+            marginal(short, long, |steps| {
+                black_box(on_host(
+                    work,
+                    loads,
+                    moved,
+                    Execution::Threads(threads()),
+                    steps,
+                ));
+            }),
+        )
+    } else {
+        (f64::NAN, f64::NAN)
+    };
+    println!("{label}");
+    println!(
+        "{:>22} {:>11} {:>12} {:>10} {:>10}",
+        "", "ms/step", "Melement/s", "vs threads", "setup ms"
+    );
+    let row = |name: &str, step: f64, setup: f64| {
+        println!(
+            "{name:>22} {step:>11.3} {:>12.1} {:>9.2}x {setup:>10.1}",
+            rate(step),
+            threaded / step
+        );
+    };
+    if host {
+        row("calling thread", serial, 0.0);
+        row("threads", threaded, 0.0);
+    }
+    for fused in [false, true] {
+        let Some((step, setup, forces)) =
+            on_a_device(work, loads, moved, fused, Some((&expected, short)))
+        else {
+            return false;
+        };
+        let name = if fused {
+            "device fused"
+        } else {
+            "device unfused"
+        };
+        row(name, step, setup);
+        if fused {
+            row("  forces alone", forces, 0.0);
+        }
+    }
+    true
+}
+
+#[test]
+#[ignore]
+fn steps() {
+    println!("\nthreads: {}, step {STEP:e} s", threads());
+    for cells in step_cells() {
+        let (model, coordinates) = grid(cells);
+        let reference = NodalReferenceCoordinates::from(coordinates.clone());
+        let work = Work::new(model, reference, coordinates, cells);
+        println!(
+            "\n{} elements, {} nodes ({cells}^3)",
+            elements(&work.model),
+            work.coordinates.len()
+        );
+        if !variant("without loads", &work, &(), false) {
+            return;
+        }
+        let loads = loads_on(&work);
+        if !variant("with loads", &work, &loads, false)
+            || !variant("with loads and a moved top", &work, &loads, true)
+        {
+            return;
+        }
+    }
 }
