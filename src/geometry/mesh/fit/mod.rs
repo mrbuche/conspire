@@ -1,3 +1,4 @@
+mod patch;
 #[cfg(test)]
 mod test;
 
@@ -6,8 +7,8 @@ use crate::{
         Coordinate, Coordinates, Direction, DirectionsRef,
         bvh::BoundingVolumeHierarchy,
         mesh::{
-            Connectivity, Mesh, Tessellation,
-            quality::metrics::{chi, hexahedron, pyramid, regularized, tetrahedron, wedge},
+            Mesh, Tessellation,
+            quality::metrics::{chi, regularized},
         },
     },
     math::{
@@ -16,9 +17,8 @@ use crate::{
     },
     units::{Area, Dimensionless, Length, ReciprocalLength},
 };
-use alloc::collections::VecDeque;
-use core::{array::from_fn, mem::replace};
-use std::thread::{available_parallelism, scope};
+use core::array::from_fn;
+use std::thread::scope;
 
 type EdgeList = TensorRank1List<3, Reference, 3>;
 type Slope = TensorRank1<3, Reference, ReciprocalLength>;
@@ -158,94 +158,7 @@ impl Mesh<3> {
         nodes: &[usize],
         target: &Tessellation,
     ) -> Result<(), &'static str> {
-        let mut elements: Vec<(&'static CornerTable, Vec<usize>)> = Vec::new();
-        for block in self.iter() {
-            let corners: &'static CornerTable = match block {
-                Connectivity::Hexahedral(_) => &hexahedron::CORNERS,
-                Connectivity::Tetrahedral(_) => &tetrahedron::CORNERS,
-                Connectivity::Pyramidal(_) => &pyramid::CORNERS,
-                Connectivity::Wedge(_) => &wedge::CORNERS,
-                _ => return Err("fit requires hexahedra, tetrahedra, pyramids or wedges"),
-            };
-            elements.extend(block.iter().map(|element| (corners, element.to_vec())));
-        }
-        let oracle = Oracle::new(target);
-        let number_of_nodes = self.number_of_nodes();
-        let mut free = vec![false; number_of_nodes];
-        nodes.iter().for_each(|&node| free[node] = true);
-        let node_elements = self.node_element_connectivity().to_vec();
-        let tracked: Vec<usize> = {
-            let mut seen = vec![false; elements.len()];
-            nodes
-                .iter()
-                .flat_map(|&node| node_elements[node].iter().copied())
-                .filter(|&element| !replace(&mut seen[element], true))
-                .collect()
-        };
-        let faces: Vec<Vec<usize>> = self
-            .exterior_faces()
-            .into_iter()
-            .filter(|face| face.iter().any(|&node| free[node]))
-            .collect();
-        let mut node_faces = vec![Vec::new(); number_of_nodes];
-        faces.iter().enumerate().for_each(|(index, face)| {
-            face.iter().for_each(|&node| {
-                if free[node] {
-                    node_faces[node].push(index)
-                }
-            })
-        });
-        let neighbors = self.node_node_connectivity().to_vec();
-        let threads = available_parallelism().map_or(1, |threads| threads.get());
-        let face_chunk = faces.len().div_ceil(threads).max(1);
-        let element_chunk = tracked.len().div_ceil(threads).max(1);
-        let node_chunk = nodes.len().div_ceil(threads).max(1);
-        let coordinates = &mut self.coordinates;
-        let mut slot = vec![None; number_of_nodes];
-        nodes
-            .iter()
-            .enumerate()
-            .for_each(|(index, &node)| slot[node] = Some(index));
-        let unknowns = nodes.len();
-        let mut epsilon: Scalar = 1.0;
-        let mut previous = Quantity::<Length>::new(Scalar::INFINITY);
-        let mut window = VecDeque::<Quantity<Length>>::with_capacity(WINDOW);
-        for sweep in 0..SWEEPS {
-            let (lengths, scales) = sizes(&neighbors, &elements, coordinates);
-            let mut state = Sweep {
-                element_chunk,
-                elements: &elements,
-                epsilon,
-                lengths,
-                node_chunk,
-                node_faces: &node_faces,
-                nodes,
-                scales,
-                slot: &slot,
-                targets: oracle.targets(&faces, coordinates, face_chunk)?,
-                tracked: &tracked,
-                unknowns,
-            };
-            let (quality, worst) = state.measure(coordinates);
-            if sweep > 0 {
-                epsilon = schedule(epsilon, quality, previous, worst);
-                state.epsilon = epsilon;
-            }
-            previous = quality;
-            let (shift, value, settled) = state.minimize(coordinates);
-            let stagnant = window.len() == WINDOW
-                && window.iter().fold(value, |high, &entry| high.max(entry))
-                    - window.iter().fold(value, |low, &entry| low.min(entry))
-                    <= value.abs() * STAGNATION;
-            if settled || shift < TOLERANCE || stagnant {
-                break;
-            }
-            if window.len() == WINDOW {
-                window.pop_front();
-            }
-            window.push_back(value);
-        }
-        Ok(())
+        self.fit_patches(nodes, &[(target, self.exterior_faces())])
     }
 }
 
@@ -317,53 +230,6 @@ impl<'a> Oracle<'a> {
             normal.normalized()
         }
     }
-    fn targets(
-        &self,
-        faces: &[Vec<usize>],
-        coordinates: &Coordinates<3>,
-        chunk: usize,
-    ) -> Result<Vec<Target>, &'static str> {
-        let mut targets = vec![None; faces.len()];
-        scope(|scope| {
-            targets
-                .chunks_mut(chunk)
-                .zip(faces.chunks(chunk))
-                .for_each(|(targets, faces)| {
-                    scope.spawn(move || {
-                        targets.iter_mut().zip(faces).for_each(|(target, face)| {
-                            let centroid = face
-                                .iter()
-                                .map(|&node| &coordinates[node])
-                                .sum::<Coordinate<3>>()
-                                / face.len() as Scalar;
-                            let tolerance = face
-                                .iter()
-                                .map(|&node| (&coordinates[node] - &centroid).norm())
-                                .sum::<Quantity<Length>>()
-                                / face.len() as Scalar
-                                * TIE_TOLERANCE;
-                            *target =
-                                self.tied_target(&centroid, tolerance)
-                                    .map(|(point, normal)| {
-                                        let distance = face
-                                            .iter()
-                                            .map(|&node| {
-                                                let deviation =
-                                                    (&coordinates[node] - &point) * &normal;
-                                                deviation * deviation
-                                            })
-                                            .fold(Quantity::default(), Quantity::max);
-                                        (point, normal, distance)
-                                    });
-                        })
-                    });
-                });
-        });
-        targets
-            .into_iter()
-            .collect::<Option<_>>()
-            .ok_or("empty tessellation")
-    }
 }
 
 fn corner_normals(surface: &Mesh<3>, normals: &[&Direction<3>]) -> Vec<[Direction<3>; 3]> {
@@ -394,7 +260,7 @@ fn corner_normals(surface: &Mesh<3>, normals: &[&Direction<3>]) -> Vec<[Directio
                 let sum = incident[triangle[corner]]
                     .iter()
                     .filter(|&&(other, _)| normals[other].contract_with(own) >= CREASE)
-                    .fold(Direction::<3>::const_from([0.0; 3]), |sum, &(other, at)| {
+                    .fold(Direction::const_from([0.0; 3]), |sum, &(other, at)| {
                         sum + normals[other] * angles[other][at]
                     });
                 if sum.norm() > NORMAL_FLOOR {

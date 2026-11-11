@@ -10,13 +10,9 @@ use crate::{
             test::octahedron,
         },
     },
-    math::{
-        Reference, TensorRank1,
-        assert::{Assert, AssertionError},
-    },
-    units::ReciprocalLength,
+    math::assert::{Assert, AssertionError},
 };
-use core::array::from_fn;
+use core::{array::from_fn, slice::from_ref};
 
 fn gradient<const N: usize>(
     corners: &[(usize, [usize; 3]); N],
@@ -27,14 +23,15 @@ fn gradient<const N: usize>(
         let scattered = scatter(corners, &element, &coordinates, epsilon);
         for node in 0..N {
             let analytic = scattered[node].clone();
-            let numerical = TensorRank1::<3, Reference, ReciprocalLength>::from(from_fn(|i| {
+            let numerical = from_fn(|i| {
                 coordinates[node][i] += perturbation(EPSILON);
                 let above = energy(corners, &element, &coordinates, epsilon);
                 coordinates[node][i] -= perturbation(2.0 * EPSILON);
                 let below = energy(corners, &element, &coordinates, epsilon);
                 coordinates[node][i] += perturbation(EPSILON);
                 (above - below) / (2.0 * EPSILON)
-            }));
+            })
+            .into();
             Assert::default().eq_within_fd_tol(analytic, &numerical)?;
         }
     }
@@ -45,7 +42,7 @@ fn gradient<const N: usize>(
 fn gradient_matches_finite_difference() -> Result<(), AssertionError> {
     gradient(
         &hexahedron::CORNERS,
-        Coordinates::from(vec![
+        vec![
             [0.03, -0.04, 0.01],
             [1.08, 0.05, -0.07],
             [1.02, 0.94, 0.11],
@@ -54,7 +51,8 @@ fn gradient_matches_finite_difference() -> Result<(), AssertionError> {
             [0.94, -0.08, 1.04],
             [1.11, 1.03, 0.93],
             [0.05, 0.92, 1.09],
-        ]),
+        ]
+        .into(),
     )
 }
 
@@ -62,12 +60,13 @@ fn gradient_matches_finite_difference() -> Result<(), AssertionError> {
 fn tetrahedral_gradient_matches_finite_difference() -> Result<(), AssertionError> {
     gradient(
         &tetrahedron::CORNERS,
-        Coordinates::from(vec![
+        vec![
             [0.03, -0.04, 0.01],
             [1.08, 0.05, -0.07],
             [0.02, 0.94, 0.11],
             [0.09, 0.01, 0.88],
-        ]),
+        ]
+        .into(),
     )
 }
 
@@ -80,26 +79,30 @@ fn targets(queries: &[[f64; 3]]) -> Vec<([f64; 3], [f64; 3])> {
         [0.0, 0.01, 0.0],
         [0.0, -0.01, 0.0],
     ];
-    let coordinates = Coordinates::from(
-        queries
-            .iter()
-            .flat_map(|query| offsets.map(|offset| from_fn(|i| query[i] + offset[i])))
-            .collect::<Vec<[f64; 3]>>(),
-    );
-    let faces: Vec<Vec<usize>> = (0..queries.len())
+    let coordinates = queries
+        .iter()
+        .flat_map(|query| offsets.map(|offset| from_fn(|i| query[i] + offset[i])))
+        .collect::<Vec<_>>()
+        .into();
+    let faces: Vec<_> = (0..queries.len())
         .map(|query| (4 * query..4 * query + 4).collect())
         .collect();
-    oracle
-        .targets(&faces, &coordinates, 1)
-        .unwrap()
-        .into_iter()
-        .map(|(point, normal, _)| {
-            (
-                from_fn(|i| point[i].value()),
-                from_fn(|i| normal[i].value()),
-            )
-        })
-        .collect()
+    Oracle::targets(
+        from_ref(&oracle),
+        &vec![0; faces.len()],
+        &faces,
+        &coordinates,
+        1,
+    )
+    .unwrap()
+    .into_iter()
+    .map(|(point, normal, _)| {
+        (
+            from_fn(|i| point[i].value()),
+            from_fn(|i| normal[i].value()),
+        )
+    })
+    .collect()
 }
 
 fn close(a: [f64; 3], b: [f64; 3]) -> bool {
@@ -134,12 +137,13 @@ fn bent(angle: f64) -> Oracle<'static> {
     let (sine, cosine) = angle.sin_cos();
     let tessellation = Box::leak(Box::new(Tessellation::from(Mesh::from((
         vec![Connectivity::Triangular(vec![[0, 1, 2], [1, 0, 3]].into())],
-        Coordinates::from(vec![
+        vec![
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
             [0.0, -cosine, sine],
-        ]),
+        ]
+        .into(),
     )))));
     Oracle::new(tessellation)
 }
@@ -177,7 +181,7 @@ fn sharp_bend_keeps_each_facet_normal_at_the_edge() {
 fn smooth_surfaces_return_a_normal_closer_to_the_true_one_than_the_facet() {
     let tessellation = octahedron(2);
     let oracle = Oracle::new(&tessellation);
-    let queries: Vec<[f64; 3]> = (0..40)
+    let queries: Vec<_> = (0..40)
         .map(|k| {
             let (u, v) = (0.37 * k as f64 + 0.2, 0.61 * k as f64 + 0.1);
             let radius = 0.9;
@@ -188,31 +192,36 @@ fn smooth_surfaces_return_a_normal_closer_to_the_true_one_than_the_facet() {
             ]
         })
         .collect();
-    let coordinates = Coordinates::from(queries.clone());
-    let faces: Vec<Vec<usize>> = (0..queries.len()).map(|query| vec![query]).collect();
+    let coordinates = queries.clone().into();
+    let faces: Vec<_> = (0..queries.len()).map(|query| vec![query]).collect();
     let (mut smooth, mut flat) = (0.0, 0.0);
-    oracle
-        .targets(&faces, &coordinates, 1)
-        .unwrap()
-        .into_iter()
-        .zip(&queries)
-        .for_each(|((_, normal, _), query)| {
-            let radial = {
-                let norm = query.iter().map(|entry| entry * entry).sum::<f64>().sqrt();
-                query.map(|entry| entry / norm)
-            };
-            let (_, index) = oracle
-                .bvh
-                .closest_point(
-                    &Coordinates::from(vec![*query])[0],
-                    oracle.coordinates,
-                    &oracle.elements,
-                )
-                .unwrap();
-            let facet = &oracle.normals[index];
-            smooth += (0..3).map(|i| normal[i].value() * radial[i]).sum::<f64>();
-            flat += (0..3).map(|i| facet[i].value() * radial[i]).sum::<f64>();
-        });
+    Oracle::targets(
+        from_ref(&oracle),
+        &vec![0; faces.len()],
+        &faces,
+        &coordinates,
+        1,
+    )
+    .unwrap()
+    .into_iter()
+    .zip(&queries)
+    .for_each(|((_, normal, _), query)| {
+        let radial = {
+            let norm = query.iter().map(|entry| entry * entry).sum::<f64>().sqrt();
+            query.map(|entry| entry / norm)
+        };
+        let (_, index) = oracle
+            .bvh
+            .closest_point(
+                &Coordinates::from(vec![*query])[0],
+                oracle.coordinates,
+                &oracle.elements,
+            )
+            .unwrap();
+        let facet = &oracle.normals[index];
+        smooth += (0..3).map(|i| normal[i].value() * radial[i]).sum::<f64>();
+        flat += (0..3).map(|i| facet[i].value() * radial[i]).sum::<f64>();
+    });
     assert!(smooth > flat, "smooth {smooth} vs flat {flat}");
 }
 
