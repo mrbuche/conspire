@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod test;
 
-use super::{CornerTable, Oracle, STAGNATION, SWEEPS, Sweep, TOLERANCE, WINDOW, schedule, sizes};
+use super::{
+    CornerTable, Oracle, STAGNATION, SWEEPS, TOLERANCE, WINDOW,
+    sweep::{Sweep, schedule, sizes},
+};
 use crate::{
     geometry::mesh::{
         Connectivity, Mesh, Tessellation,
