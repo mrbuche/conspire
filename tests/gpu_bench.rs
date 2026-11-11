@@ -588,28 +588,31 @@ fn transfer_sizes() -> Vec<usize> {
         .unwrap_or_else(|| vec![1, 8, 64, 256])
 }
 
-/// How fast values go between the host and a device, from memory that can be paged out, from
-/// memory that the driver has locked, and from a vector through locked memory, which is what a
-/// run would do to keep its transfers fast; the cost of locking the memory; and what the host
-/// does on either side of the transfer for the coordinates of the finest grid.
-#[test]
-#[ignore]
-fn transfers() {
-    // What the host does around a transfer of the coordinates of the 90^3 grid: making the
-    // values from the nodes, as it was made by collecting from nested iterators and as it is
-    // made, and making the nodes to download the values into.
-    let current = deformed(&lattice(90, 90));
+/// What the host does around a transfer of the coordinates of the 90^3 grid: making the values
+/// from the nodes, as it was made by collecting from nested iterators, as it is made, and into a
+/// vector that is made once; making the nodes to download the values into; and writing into nodes
+/// that were just made and into nodes that were written before. `when` says whether a device is
+/// open, which is part of what the host is doing it in.
+fn on_the_host(when: &str, current: &NodalCoordinates<3>) {
     let nodes = current.len();
     let collecting = time_of(repetitions(), || {
         black_box(
-            black_box(&current)
+            black_box(current)
                 .iter()
                 .flat_map(|node| node.iter().map(|component| component.value()))
                 .collect::<Vec<f64>>(),
         );
     });
     let making_values = time_of(repetitions(), || {
-        black_box(flat(black_box(&current)));
+        black_box(flat(black_box(current)));
+    });
+    let mut values = Vec::with_capacity(3 * nodes);
+    let into_values = time_of(repetitions(), || {
+        values.clear();
+        for node in black_box(current).iter() {
+            values.extend_from_slice(&[node[0].value(), node[1].value(), node[2].value()]);
+        }
+        black_box(&values);
     });
     let making_nodes = time_of(repetitions(), || {
         let mut values = vec![[0.0_f64; 3]; nodes];
@@ -617,8 +620,6 @@ fn transfers() {
         let nodes: NodalCoordinates<3> = values.into();
         black_box(nodes);
     });
-    // Writing into nodes that were just made and into nodes that were written before, which is
-    // what a download into new nodes and into the same nodes does to the memory under them.
     let source = vec![[0.5_f64; 3]; nodes];
     let fresh = time_of(repetitions(), || {
         let mut values = vec![[0.0_f64; 3]; nodes];
@@ -635,11 +636,20 @@ fn transfers() {
         black_box(&reused);
     });
     println!(
-        "writing {nodes} nodes: into new nodes {fresh:.2} ms, into nodes written before {again:.2} ms"
+        "the host, {nodes} nodes, {when}: values from the nodes {collecting:.2} ms collecting, {making_values:.2} ms now, {into_values:.2} ms into a vector that is kept; nodes to download into {making_nodes:.2} ms; writing nodes {fresh:.2} ms into new ones, {again:.2} ms into ones written before"
     );
-    println!(
-        "\nthe host, {nodes} nodes: values from the nodes {collecting:.2} ms collecting, {making_values:.2} ms now; nodes to download into {making_nodes:.2} ms"
-    );
+}
+
+/// How fast values go between the host and a device, from memory that can be paged out, from
+/// memory that the driver has locked, and from a vector through locked memory, which is what a
+/// run would do to keep its transfers fast; the cost of locking the memory; and what the host
+/// does on either side of the transfer for the coordinates of the finest grid, before a device
+/// is open and with one open.
+#[test]
+#[ignore]
+fn transfers() {
+    let current = deformed(&lattice(90, 90));
+    on_the_host("before a device is opened", &current);
 
     let device = match Device::new(0) {
         Ok(device) => device,
@@ -691,4 +701,5 @@ fn transfers() {
             rate(via_down),
         );
     }
+    on_the_host("with a device open", &current);
 }
