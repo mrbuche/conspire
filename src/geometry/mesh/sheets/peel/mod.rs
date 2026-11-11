@@ -12,10 +12,6 @@ use core::{array::from_fn, cmp::Reverse};
 type Sheet = ((usize, usize), Vec<[usize; 4]>);
 
 /// A mesh peeled along its sheets.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the mesh is conformed")
-)]
 pub(super) struct DoublePeeled {
     pub(super) mesh: Mesh<3>,
     /// The sheets between each pair of labels.
@@ -38,10 +34,6 @@ impl Mesh<3> {
     /// The hexahedra must not have an edge pinched, see [`Mesh::resolve_pinches`]. It fails where
     /// a block is not hexahedral, the labels of the blocks are missing or not distinct, a face is
     /// shared by more than two hexahedra, or a sheet reaches the boundary of the mesh.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used once the mesh is conformed")
-    )]
     pub(super) fn double_peel(&self) -> Result<DoublePeeled, &'static str> {
         let labels = self.block_labels().ok_or("every block needs a label")?;
         if labels.iter().collect::<FxHashSet<_>>().len() != labels.len() {
