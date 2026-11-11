@@ -1,24 +1,18 @@
 #[cfg(test)]
 mod test;
 
-use super::{
-    CornerTable, Oracle, STAGNATION, SWEEPS, Sweep, TIE_TOLERANCE, TOLERANCE, Target, WINDOW,
-    schedule, sizes,
-};
+use super::{CornerTable, Oracle, STAGNATION, SWEEPS, Sweep, TOLERANCE, WINDOW, schedule, sizes};
 use crate::{
-    geometry::{
-        Coordinate, Coordinates,
-        mesh::{
-            Connectivity, Mesh, Tessellation,
-            quality::metrics::{hexahedron, pyramid, tetrahedron, wedge},
-        },
+    geometry::mesh::{
+        Connectivity, Mesh, Tessellation,
+        quality::metrics::{hexahedron, pyramid, tetrahedron, wedge},
     },
-    math::{Quantity, Scalar, Tensor},
+    math::{Quantity, Scalar},
     units::Length,
 };
 use alloc::collections::VecDeque;
 use core::mem::replace;
-use std::thread::{available_parallelism, scope};
+use std::thread::available_parallelism;
 
 impl Mesh<3> {
     /// Fits the nodes to the targets, each face attracted only to the target
@@ -121,59 +115,5 @@ impl Mesh<3> {
             window.push_back(value);
         }
         Ok(())
-    }
-}
-
-impl Oracle<'_> {
-    pub(super) fn targets(
-        oracles: &[Self],
-        owners: &[usize],
-        faces: &[Vec<usize>],
-        coordinates: &Coordinates<3>,
-        chunk: usize,
-    ) -> Result<Vec<Target>, &'static str> {
-        let mut targets = vec![None; faces.len()];
-        scope(|scope| {
-            targets
-                .chunks_mut(chunk)
-                .zip(faces.chunks(chunk))
-                .zip(owners.chunks(chunk))
-                .for_each(|((targets, faces), owners)| {
-                    scope.spawn(move || {
-                        targets.iter_mut().zip(faces).zip(owners).for_each(
-                            |((target, face), &owner)| {
-                                let centroid = face
-                                    .iter()
-                                    .map(|&node| &coordinates[node])
-                                    .sum::<Coordinate<3>>()
-                                    / face.len() as Scalar;
-                                let tolerance = face
-                                    .iter()
-                                    .map(|&node| (&coordinates[node] - &centroid).norm())
-                                    .sum::<Quantity<Length>>()
-                                    / face.len() as Scalar
-                                    * TIE_TOLERANCE;
-                                *target = oracles[owner].tied_target(&centroid, tolerance).map(
-                                    |(point, normal)| {
-                                        let distance = face
-                                            .iter()
-                                            .map(|&node| {
-                                                let deviation =
-                                                    (&coordinates[node] - &point) * &normal;
-                                                deviation * deviation
-                                            })
-                                            .fold(Quantity::default(), Quantity::max);
-                                        (point, normal, distance)
-                                    },
-                                );
-                            },
-                        )
-                    });
-                });
-        });
-        targets
-            .into_iter()
-            .collect::<Option<_>>()
-            .ok_or("empty tessellation")
     }
 }
