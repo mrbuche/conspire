@@ -1025,3 +1025,24 @@ fn an_element_that_fails_in_a_run_of_dynamics_is_an_error() {
     let error = resident.steps(DT, 1, &nothing).expect_err("the step fails");
     assert!(matches!(error, GpuError::Failed { .. }), "{error}");
 }
+
+/// The components of the nodes are in the order of the nodes and then the components, which is
+/// what a kernel indexes them by. This needs no device.
+#[test]
+fn the_nodes_are_flattened_node_by_node() {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let current = deformed(&coordinates);
+    let flattened = conspire::gpu::flatten(&current);
+    assert_eq!(flattened.len(), 3 * coordinates.len());
+    for (node, nodal) in current.iter().enumerate() {
+        for component in 0..3 {
+            assert_eq!(
+                flattened[3 * node + component].to_bits(),
+                nodal[component].value().to_bits()
+            );
+        }
+    }
+    assert!(
+        conspire::gpu::flatten(&NodalCoordinates::<3>::from(Vec::<[f64; 3]>::new())).is_empty()
+    );
+}

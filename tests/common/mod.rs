@@ -134,10 +134,7 @@ pub fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
 }
 
 pub fn flat<I, U>(nodes: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
-    nodes
-        .iter()
-        .flat_map(|node| node.iter().map(|component| component.value()))
-        .collect()
+    conspire::gpu::flatten(nodes)
 }
 
 pub fn bits(values: &[f64]) -> Vec<u64> {

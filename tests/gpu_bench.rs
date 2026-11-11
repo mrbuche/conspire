@@ -576,6 +576,32 @@ fn transfer_sizes() -> Vec<usize> {
 #[test]
 #[ignore]
 fn transfers() {
+    // What the host does around a transfer of the coordinates of the 90^3 grid: making the
+    // values from the nodes, as it was made by collecting from nested iterators and as it is
+    // made, and making the nodes to download the values into.
+    let current = deformed(&lattice(90, 90));
+    let nodes = current.len();
+    let collecting = time_of(repetitions(), || {
+        black_box(
+            black_box(&current)
+                .iter()
+                .flat_map(|node| node.iter().map(|component| component.value()))
+                .collect::<Vec<f64>>(),
+        );
+    });
+    let making_values = time_of(repetitions(), || {
+        black_box(flat(black_box(&current)));
+    });
+    let making_nodes = time_of(repetitions(), || {
+        let mut values = vec![[0.0_f64; 3]; nodes];
+        black_box(values.as_flattened_mut());
+        let nodes: NodalCoordinates<3> = values.into();
+        black_box(nodes);
+    });
+    println!(
+        "\nthe host, {nodes} nodes: values from the nodes {collecting:.2} ms collecting, {making_values:.2} ms now; nodes to download into {making_nodes:.2} ms"
+    );
+
     let device = match Device::new(0) {
         Ok(device) => device,
         Err(GpuError::Unavailable(message)) => {
@@ -626,19 +652,4 @@ fn transfers() {
             rate(via_down),
         );
     }
-    // What the host does around a transfer of the coordinates of the 90^3 grid: making the
-    // values from the nodes, and the nodes from the values.
-    let current = deformed(&lattice(90, 90));
-    let nodes = current.len();
-    let values = vec![0.5_f64; 3 * nodes];
-    let making_values = time_of(repetitions(), || {
-        black_box(flat(black_box(&current)));
-    });
-    let making_nodes = time_of(repetitions(), || {
-        let nodes: NodalCoordinates<3> = black_box(&values).as_chunks::<3>().0.to_vec().into();
-        black_box(nodes);
-    });
-    println!(
-        "\nthe host, {nodes} nodes: values from the nodes {making_values:.2} ms, nodes from the values {making_nodes:.2} ms"
-    );
 }

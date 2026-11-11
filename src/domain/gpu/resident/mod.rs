@@ -599,9 +599,9 @@ impl Resident {
     > {
         let dynamics = self.started()?;
         let download = |buffer: &Buffer<f64>| -> Result<Vec<[f64; 3]>, GpuError> {
-            let mut values = vec![0.0; 3 * self.nodes];
-            buffer.download(&mut values)?;
-            Ok(values.as_chunks::<3>().0.to_vec())
+            let mut nodes = vec![[0.0; 3]; self.nodes];
+            buffer.download(nodes.as_flattened_mut())?;
+            Ok(nodes)
         };
         Ok((
             download(&self.coordinates)?.into(),
@@ -641,9 +641,9 @@ impl Resident {
     }
     /// The nodal forces that the last computation made.
     pub fn download(&self) -> Result<NodalForcesSolid<3>, GpuError> {
-        let mut values = vec![0.0; 3 * self.nodes];
-        self.nodal_forces.download(&mut values)?;
-        Ok(values.as_chunks::<3>().0.to_vec().into())
+        let mut forces = vec![[0.0; 3]; self.nodes];
+        self.nodal_forces.download(forces.as_flattened_mut())?;
+        Ok(forces.into())
     }
     /// The nodal forces of the model for the coordinates, from the device.
     ///
@@ -673,9 +673,10 @@ impl Resident {
     }
 }
 
-fn flatten<I, U>(components: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
+pub fn flatten<I, U>(components: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
     components
         .iter()
-        .flat_map(|node| node.iter().map(|component| component.value()))
-        .collect()
+        .map(|node| [node[0].value(), node[1].value(), node[2].value()])
+        .collect::<Vec<_>>()
+        .into_flattened()
 }
