@@ -133,9 +133,9 @@ fn unique_nearest_face_keeps_its_normal() {
     assert!(close(normal, [unit, unit, unit]), "{normal:?}");
 }
 
-fn bent(angle: f64) -> Oracle<'static> {
+fn bent(angle: f64) -> Tessellation {
     let (sine, cosine) = angle.sin_cos();
-    let tessellation = Box::leak(Box::new(Tessellation::from(Mesh::from((
+    Mesh::from((
         vec![Connectivity::Triangular(vec![[0, 1, 2], [1, 0, 3]].into())],
         vec![
             [0.0, 0.0, 0.0],
@@ -144,8 +144,8 @@ fn bent(angle: f64) -> Oracle<'static> {
             [0.0, -cosine, sine],
         ]
         .into(),
-    )))));
-    Oracle::new(tessellation)
+    ))
+    .into()
 }
 
 fn corner(oracle: &Oracle, triangle: usize, corner: usize) -> [f64; 3] {
@@ -158,7 +158,8 @@ fn facet(oracle: &Oracle, triangle: usize) -> [f64; 3] {
 
 #[test]
 fn shallow_bend_shares_one_normal_across_the_edge() {
-    let oracle = bent(0.2);
+    let tessellation = bent(0.2);
+    let oracle = Oracle::new(&tessellation);
     assert!(close(corner(&oracle, 0, 0), corner(&oracle, 1, 1)));
     assert!(close(corner(&oracle, 0, 1), corner(&oracle, 1, 0)));
     assert!(!close(corner(&oracle, 0, 0), facet(&oracle, 0)));
@@ -166,7 +167,8 @@ fn shallow_bend_shares_one_normal_across_the_edge() {
 
 #[test]
 fn sharp_bend_keeps_each_facet_normal_at_the_edge() {
-    let oracle = bent(1.5);
+    let tessellation = bent(1.5);
+    let oracle = Oracle::new(&tessellation);
     (0..2).for_each(|triangle| {
         (0..3).for_each(|at| {
             assert!(
