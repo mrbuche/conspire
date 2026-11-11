@@ -390,15 +390,7 @@ fn build(solids: &[Watertight]) -> Result<Interfaces, &'static str> {
             while j > 0 {
                 match cut_order(p, q, &at(between[j - 1]), &at(between[j]))? {
                     o if o == forward => break,
-                    Ordering::Equal => {
-                        eprintln!(
-                            "SAMEPTS {edge:?} {:?} {:?} {:?}",
-                            features[between[j - 1]],
-                            features[between[j]],
-                            triangle
-                        );
-                        return Err("two triple points are the same point");
-                    }
+                    Ordering::Equal => return Err("two triple points are the same point"),
                     _ => between.swap(j - 1, j),
                 }
                 j -= 1;
