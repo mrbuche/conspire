@@ -1,6 +1,6 @@
 use crate::math::assert::Assert;
 use crate::math::{Current, Reference};
-use crate::math::{TensorRank0, TensorRank1Vec, TensorVec, Vector, assert::AssertionError};
+use crate::math::{Tensor, TensorRank0, TensorRank1Vec, TensorVec, Vector, assert::AssertionError};
 
 fn get_array() -> [[TensorRank0; 3]; 2] {
     [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
@@ -93,4 +93,44 @@ fn from_tensor_rank_1_vec_into_vec_vec() {
 #[test]
 fn from_vec_vec_into_tensor_rank_1_vec() -> Result<(), AssertionError> {
     Assert::eq(get_tensor_rank_1_vec(), &get_vec_vec().into())
+}
+
+#[test]
+fn the_components_are_those_of_the_vectors_one_after_another() {
+    let vectors = get_tensor_rank_1_vec();
+    assert_eq!(vectors.components(), [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert!(
+        TensorRank1Vec::<3, Current>::from(Vec::<[TensorRank0; 3]>::new())
+            .components()
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_components_are_the_memory_of_the_vectors_and_not_a_copy() {
+    let mut vectors = get_tensor_rank_1_vec();
+    assert_eq!(
+        vectors.components().as_ptr(),
+        vectors.as_ptr().cast::<TensorRank0>()
+    );
+    vectors.components_mut()[4] = -5.0;
+    assert_eq!(vectors[1][1], -5.0);
+    vectors.components_mut().copy_from_slice(&[7.0; 6]);
+    assert!(
+        vectors
+            .iter()
+            .all(|vector| vector.iter().all(|&x| x == 7.0))
+    );
+}
+
+#[test]
+fn a_vector_of_numbers_is_as_large_as_the_numbers_it_has() {
+    assert_eq!(
+        core::mem::size_of::<crate::math::TensorRank1<3, Current>>(),
+        3 * core::mem::size_of::<TensorRank0>()
+    );
+    assert_eq!(
+        core::mem::align_of::<crate::math::TensorRank1<3, Current>>(),
+        core::mem::align_of::<TensorRank0>()
+    );
 }

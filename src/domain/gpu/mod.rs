@@ -14,7 +14,7 @@ mod test;
 pub use block::{DeviceBlock, DeviceBlocks, DeviceLayout};
 pub use cuda::{Argument, Buffer, Device, Function, Module, PinnedBuffer, Resources};
 #[cfg(feature = "fem")]
-pub use resident::{DeviceError, Imposed, ImposedLoad, Resident, Schedule, flatten};
+pub use resident::{DeviceError, Imposed, ImposedLoad, Resident, Schedule};
 
 use core::{
     error::Error,

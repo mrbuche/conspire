@@ -165,11 +165,16 @@ where
         let transfers = time_of(repetitions, || {
             black_box(resident.nodal_forces(model, current).expect("the forces"));
         });
-        // The parts of that call, each timed alone: the coordinates, which are flattened and
-        // copied up; the kernels; the check for a failure; and the forces, which are copied down
-        // into nodes that are made for them and then taken as the forces of the model.
-        let flattening = time_of(repetitions, || {
-            black_box(conspire::gpu::flatten(black_box(current)));
+        // The call that puts the forces into nodes that are kept, which makes no nodes for them,
+        // and the parts of the two calls, each timed alone: the coordinates, which are copied up
+        // from the memory of the nodes; the kernels; the check for a failure; and the forces,
+        // which are copied down into nodes that are made for them and into nodes that are kept.
+        let mut kept = NodalForcesSolid::<3>::zero(current.len());
+        let into = time_of(repetitions, || {
+            resident
+                .nodal_forces_into(model, current, &mut kept)
+                .expect("the forces");
+            black_box(&kept);
         });
         let setting = time_of(repetitions, || {
             resident.set_coordinates(current).expect("the coordinates");
@@ -180,8 +185,12 @@ where
         let downloading = time_of(repetitions, || {
             black_box(resident.download().expect("the forces"));
         });
+        let downloading_into = time_of(repetitions, || {
+            resident.download_into(&mut kept).expect("the forces");
+            black_box(&kept);
+        });
         println!(
-            "{:>30}  a call of {transfers:.3} ms: flattening {flattening:.3}, setting the coordinates {setting:.3} with that, the kernels {kernels:.3}, the failures {failing:.3}, downloading {downloading:.3}",
+            "{:>30}  a call of {transfers:.3} ms, or {into:.3} ms into nodes that are kept: setting the coordinates {setting:.3}, the kernels {kernels:.3}, the failures {failing:.3}, downloading {downloading:.3}, or {downloading_into:.3} into nodes that are kept",
             "",
         );
         println!(
@@ -588,36 +597,13 @@ fn transfer_sizes() -> Vec<usize> {
         .unwrap_or_else(|| vec![1, 8, 64, 256])
 }
 
-/// What the host does around a transfer of the coordinates of the 90^3 grid: making the values
-/// from the nodes, as it was made by collecting from nested iterators, as it is made, and into a
-/// vector that is made once; making the nodes to download the values into; and writing into nodes
-/// that were just made and into nodes that were written before. `when` says whether a device is
-/// open, which is part of what the host is doing it in.
+/// What the host does around a transfer of the coordinates of the 90^3 grid: making the nodes to
+/// download into, and writing into nodes that were just made and into nodes that were written
+/// before. `when` says whether a device is open, which is part of what the host is doing it in.
 fn on_the_host(when: &str, current: &NodalCoordinates<3>) {
     let nodes = current.len();
-    let collecting = time_of(repetitions(), || {
-        black_box(
-            black_box(current)
-                .iter()
-                .flat_map(|node| node.iter().map(|component| component.value()))
-                .collect::<Vec<f64>>(),
-        );
-    });
-    let making_values = time_of(repetitions(), || {
-        black_box(flat(black_box(current)));
-    });
-    let mut values = Vec::with_capacity(3 * nodes);
-    let into_values = time_of(repetitions(), || {
-        values.clear();
-        for node in black_box(current).iter() {
-            values.extend_from_slice(&[node[0].value(), node[1].value(), node[2].value()]);
-        }
-        black_box(&values);
-    });
     let making_nodes = time_of(repetitions(), || {
-        let mut values = vec![[0.0_f64; 3]; nodes];
-        black_box(values.as_flattened_mut());
-        let nodes: NodalCoordinates<3> = values.into();
+        let nodes: NodalCoordinates<3> = black_box(vec![[0.0_f64; 3]; nodes]).into();
         black_box(nodes);
     });
     let source = vec![[0.5_f64; 3]; nodes];
@@ -635,16 +621,14 @@ fn on_the_host(when: &str, current: &NodalCoordinates<3>) {
             .copy_from_slice(source.as_flattened());
         black_box(&reused);
     });
+    let viewing = time_of(repetitions(), || {
+        black_box(black_box(current).components());
+    });
     println!(
-        "the host, {nodes} nodes, {when}: values from the nodes {collecting:.2} ms collecting, {making_values:.2} ms now, {into_values:.2} ms into a vector that is kept; nodes to download into {making_nodes:.2} ms; writing nodes {fresh:.2} ms into new ones, {again:.2} ms into ones written before"
+        "the host, {nodes} nodes, {when}: nodes to download into {making_nodes:.2} ms, writing nodes {fresh:.2} ms into new ones and {again:.2} ms into ones written before, the components of the nodes {viewing:.4} ms"
     );
 }
 
-/// How fast values go between the host and a device, from memory that can be paged out, from
-/// memory that the driver has locked, and from a vector through locked memory, which is what a
-/// run would do to keep its transfers fast; the cost of locking the memory; and what the host
-/// does on either side of the transfer for the coordinates of the finest grid, before a device
-/// is open and with one open.
 #[test]
 #[ignore]
 fn transfers() {

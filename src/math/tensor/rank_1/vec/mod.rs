@@ -12,6 +12,7 @@ use core::{
     array::from_fn,
     mem::forget,
     ops::{Div, Sub},
+    slice::from_raw_parts,
 };
 
 use crate::math::assert::FiniteDifference;
@@ -20,6 +21,30 @@ use crate::math::assert::FiniteDifference;
 pub type TensorRank1Vec<const D: usize, I, U = Dimensionless> = TensorVector<TensorRank1<D, I, U>>;
 
 impl<const D: usize, I, U> TensorRank1Vec<D, I, U> {
+    /// The components of the vectors, one vector after another, as plain numbers: those of the
+    /// first vector, and then those of the second, as `D * vector + component`.
+    ///
+    /// This is a view of the memory of the vectors, so it copies nothing.
+    pub fn components(&self) -> &[TensorRank0] {
+        let vectors = self.as_slice();
+        // SAFETY: a rank-1 tensor is `repr(transparent)` over an array of quantities, which are
+        // `repr(transparent)` over numbers, and the other fields have no size, so the vectors are
+        // `D` numbers each, one after the other, aligned as numbers are.
+        unsafe { from_raw_parts(vectors.as_ptr().cast::<TensorRank0>(), D * vectors.len()) }
+    }
+    /// The components of the vectors as plain numbers, as [`components`](Self::components), which
+    /// can be written, so that values that are somewhere else can be put into the vectors
+    /// without making them first.
+    #[cfg(any(test, feature = "gpu"))]
+    #[cfg_attr(not(any(test, feature = "fem")), allow(dead_code))]
+    pub(crate) fn components_mut(&mut self) -> &mut [TensorRank0] {
+        let vectors = self.as_mut_slice();
+        let length = D * vectors.len();
+        // SAFETY: as for `components`, and the vectors are borrowed mutably.
+        unsafe {
+            core::slice::from_raw_parts_mut(vectors.as_mut_ptr().cast::<TensorRank0>(), length)
+        }
+    }
     pub fn bounding_box(&self) -> TensorRank1List<D, I, 2, U> {
         self.iter()
             .skip(1)

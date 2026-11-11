@@ -18,7 +18,8 @@ use conspire::{
         hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     },
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
+        NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, ConstrainAt, DeviceForce, Displacement, LoadAt, Solid},
         element::{
@@ -1027,22 +1028,85 @@ fn an_element_that_fails_in_a_run_of_dynamics_is_an_error() {
 }
 
 /// The components of the nodes are in the order of the nodes and then the components, which is
-/// what a kernel indexes them by. This needs no device.
+/// what a kernel indexes them by, and they are the memory of the nodes. This needs no device.
 #[test]
-fn the_nodes_are_flattened_node_by_node() {
+fn the_components_of_the_nodes_are_node_by_node() {
     let coordinates = lattice(COLUMNS, LAYERS);
     let current = deformed(&coordinates);
-    let flattened = conspire::gpu::flatten(&current);
-    assert_eq!(flattened.len(), 3 * coordinates.len());
+    let components = current.components();
+    assert_eq!(components.len(), 3 * coordinates.len());
     for (node, nodal) in current.iter().enumerate() {
         for component in 0..3 {
             assert_eq!(
-                flattened[3 * node + component].to_bits(),
+                components[3 * node + component].to_bits(),
                 nodal[component].value().to_bits()
             );
         }
     }
-    assert!(
-        conspire::gpu::flatten(&NodalCoordinates::<3>::from(Vec::<[f64; 3]>::new())).is_empty()
+}
+
+/// The forces and the state that are put into nodes that are kept are those that come in nodes
+/// that are made, to the bit, whatever the nodes held before, and again after more steps: nothing
+/// of what was in them is left.
+#[test]
+fn what_is_put_into_nodes_that_are_kept_is_what_comes_in_new_nodes() {
+    let work = steelwork();
+    let Some(mut resident) = on_device(&work.model, false) else {
+        return;
+    };
+    let (first, second) = (
+        deformed(&work.coordinates),
+        deformed(
+            &work
+                .coordinates
+                .iter()
+                .map(|&[x, y, z]| [x + 0.01, y, z])
+                .collect::<Vec<_>>(),
+        ),
     );
+    // Nodes that hold something else, which the forces must not depend on.
+    let mut kept = NodalForcesSolid::<3>::zero(work.coordinates.len());
+    kept.iter_mut().for_each(|force| *force = [7.0; 3].into());
+    for current in [&first, &second, &first] {
+        let new = resident
+            .nodal_forces(&work.model, current)
+            .expect("the forces");
+        resident
+            .nodal_forces_into(&work.model, current, &mut kept)
+            .expect("the forces into nodes that are kept");
+        assert_eq!(bits(&flat(&kept)), bits(&flat(&new)));
+    }
+    // And the state of a run.
+    let masses = Lumped.masses(&work.model);
+    let imposed = Imposed {
+        fixed: work.fixed.clone(),
+        ..Imposed::default()
+    };
+    resident
+        .start_dynamics(
+            &masses,
+            &first,
+            &work.velocities(),
+            &imposed,
+            &Schedule::default(),
+        )
+        .expect("the start");
+    let nodes = work.coordinates.len();
+    let mut kept = (
+        NodalCoordinates::<3>::from(vec![[9.0; 3]; nodes]),
+        NodalVelocities::<3>::from(vec![[9.0; 3]; nodes]),
+        NodalAccelerations::<3>::from(vec![[9.0; 3]; nodes]),
+    );
+    for _ in 0..3 {
+        resident
+            .steps(DT, 2, &Schedule::default())
+            .expect("the steps");
+        let new = resident.dynamics_state().expect("the state");
+        resident
+            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+            .expect("the state into nodes that are kept");
+        assert_eq!(bits(&flat(&kept.0)), bits(&flat(&new.0)));
+        assert_eq!(bits(&flat(&kept.1)), bits(&flat(&new.1)));
+        assert_eq!(bits(&flat(&kept.2)), bits(&flat(&new.2)));
+    }
 }

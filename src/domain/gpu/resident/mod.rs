@@ -21,7 +21,7 @@ use crate::{
         element::Failure,
         solid::{NodalForcesSolid, elastic::ElasticElements},
     },
-    math::{Tensor, TensorRank1Vec},
+    math::Tensor,
 };
 use core::{
     cell::Cell,
@@ -205,7 +205,7 @@ impl Resident {
     {
         let device = Device::new(ordinal)?;
         let module = device.module_from_ptx(&kernels::ptx(fused)?)?;
-        let reference = flatten(&model.coordinates);
+        let reference = model.coordinates.components();
         let mut described = Vec::new();
         model.device_blocks(&mut described);
         let blocks = described
@@ -214,7 +214,7 @@ impl Resident {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             nodes: reference.len() / 3,
-            reference_coordinates: device.buffer_of(&reference)?,
+            reference_coordinates: device.buffer_of(reference)?,
             coordinates: device.buffer(reference.len())?,
             nodal_forces: device.buffer(reference.len())?,
             blocks,
@@ -239,13 +239,13 @@ impl Resident {
     }
     /// Gives the device the coordinates of the nodes.
     pub fn set_coordinates(&self, coordinates: &NodalCoordinates<3>) -> Result<(), GpuError> {
-        let coordinates = flatten(coordinates);
         assert_eq!(
             coordinates.len(),
-            3 * self.nodes,
+            self.nodes,
             "a model is run with the nodes that it has"
         );
-        self.coordinates.upload(&coordinates)
+        // From the memory of the nodes, which is not copied first.
+        self.coordinates.upload(coordinates.components())
     }
     /// Computes the nodal forces for the coordinates that the device has, and waits for them.
     pub fn run(&self) -> Result<(), GpuError> {
@@ -387,7 +387,7 @@ impl Resident {
             .collect::<Result<Vec<_>, _>>()?;
         self.set_coordinates(coordinates)?;
         self.dynamics = Some(Dynamics {
-            velocities: self.device.buffer_of(&flatten(velocities))?,
+            velocities: self.device.buffer_of(velocities.components())?,
             accelerations: self.device.buffer(dofs)?,
             masses: self
                 .device
@@ -587,6 +587,9 @@ impl Resident {
         }
     }
     /// The coordinates, velocities and accelerations of the run of dynamics.
+    ///
+    /// The nodes are made for them, which costs more than putting them into nodes that are kept,
+    /// as [`dynamics_state_into`](Self::dynamics_state_into) does.
     pub fn dynamics_state(
         &self,
     ) -> Result<
@@ -597,17 +600,38 @@ impl Resident {
         ),
         GpuError,
     > {
+        let mut state = (
+            NodalCoordinates::<3>::zero(self.nodes),
+            NodalVelocities::<3>::zero(self.nodes),
+            NodalAccelerations::<3>::zero(self.nodes),
+        );
+        self.dynamics_state_into(&mut state.0, &mut state.1, &mut state.2)?;
+        Ok(state)
+    }
+    /// The coordinates, velocities and accelerations of the run of dynamics, put into the nodes
+    /// that are given, which have the nodes of the model, and which what was in them does not
+    /// matter to.
+    ///
+    /// Memory that was not used before is slow to touch once a device is open, so a run that
+    /// takes its state many times is better to keep the nodes that it takes it into.
+    pub fn dynamics_state_into(
+        &self,
+        coordinates: &mut NodalCoordinates<3>,
+        velocities: &mut NodalVelocities<3>,
+        accelerations: &mut NodalAccelerations<3>,
+    ) -> Result<(), GpuError> {
         let dynamics = self.started()?;
-        let download = |buffer: &Buffer<f64>| -> Result<Vec<[f64; 3]>, GpuError> {
-            let mut nodes = vec![[0.0; 3]; self.nodes];
-            buffer.download(nodes.as_flattened_mut())?;
-            Ok(nodes)
-        };
-        Ok((
-            download(&self.coordinates)?.into(),
-            download(&dynamics.velocities)?.into(),
-            download(&dynamics.accelerations)?.into(),
-        ))
+        for nodes in [coordinates.len(), velocities.len(), accelerations.len()] {
+            assert_eq!(
+                nodes, self.nodes,
+                "a model is run with the nodes that it has"
+            );
+        }
+        self.coordinates.download(coordinates.components_mut())?;
+        dynamics.velocities.download(velocities.components_mut())?;
+        dynamics
+            .accelerations
+            .download(accelerations.components_mut())
     }
     /// What the kernels of each block need of a multiprocessor of the device, for the blocks of
     /// threads that they are launched in: the kernel of the forces of the elements, and then the
@@ -641,9 +665,19 @@ impl Resident {
     }
     /// The nodal forces that the last computation made.
     pub fn download(&self) -> Result<NodalForcesSolid<3>, GpuError> {
-        let mut forces = vec![[0.0; 3]; self.nodes];
-        self.nodal_forces.download(forces.as_flattened_mut())?;
-        Ok(forces.into())
+        let mut forces = NodalForcesSolid::<3>::zero(self.nodes);
+        self.download_into(&mut forces)?;
+        Ok(forces)
+    }
+    /// The nodal forces that the last computation made, put into the nodes that are given, which
+    /// have the nodes of the model, and which what was in them does not matter to.
+    pub fn download_into(&self, forces: &mut NodalForcesSolid<3>) -> Result<(), GpuError> {
+        assert_eq!(
+            forces.len(),
+            self.nodes,
+            "a model is run with the nodes that it has"
+        );
+        self.nodal_forces.download(forces.components_mut())
     }
     /// The nodal forces of the model for the coordinates, from the device.
     ///
@@ -658,6 +692,22 @@ impl Resident {
     where
         B: ElasticElements<3>,
     {
+        let mut forces = NodalForcesSolid::<3>::zero(self.nodes);
+        self.nodal_forces_into(model, coordinates, &mut forces)?;
+        Ok(forces)
+    }
+    /// The nodal forces of the model for the coordinates, put into the nodes that are given, as
+    /// [`nodal_forces`](Self::nodal_forces) does, without making nodes for them. A run that
+    /// takes the forces many times is better to keep the nodes that it takes them into.
+    pub fn nodal_forces_into<B>(
+        &self,
+        model: &Model<B, 3>,
+        coordinates: &NodalCoordinates<3>,
+        forces: &mut NodalForcesSolid<3>,
+    ) -> Result<(), DeviceError>
+    where
+        B: ElasticElements<3>,
+    {
         self.compute(coordinates)?;
         if let Some((block, failure)) = self.failure()? {
             return Err(match model.nodal_forces(coordinates) {
@@ -669,14 +719,6 @@ impl Resident {
                 }),
             });
         }
-        Ok(self.download()?)
+        Ok(self.download_into(forces)?)
     }
-}
-
-pub fn flatten<I, U>(components: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
-    components
-        .iter()
-        .map(|node| [node[0].value(), node[1].value(), node[2].value()])
-        .collect::<Vec<_>>()
-        .into_flattened()
 }
