@@ -425,7 +425,9 @@ where
     let (start, velocities) = (deformed(&work.coordinates), work.velocities());
     let forces = loads.device_forces().expect("loads that a device takes");
     let (imposed, components) = imposed_by(work, forces, moved, STEP);
-    let targets = |row| targets_at(work, &flat(&start), row, STEP);
+    // Flattened once: doing it for every row would time the flattening, not the device.
+    let started = flat(&start);
+    let targets = |row| targets_at(work, &started, row, STEP);
     let schedule = schedule_of(Some(&targets), &components);
     let masses = Lumped.masses(&work.model);
     let setup_start = Instant::now();
