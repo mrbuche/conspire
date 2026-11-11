@@ -5,6 +5,8 @@ pub mod volume {
     pub use crate::domain::volume::{NodalVolumeElements, NodalVolumes};
 }
 pub mod boundary {
+    #[cfg(feature = "gpu")]
+    pub use crate::domain::boundary::DeviceForce;
     pub use crate::domain::boundary::{
         BoundaryConditions, Component, Concentration, Condition, Conservative, ConservativeAt,
         Constrain, ConstrainAt, Coupled, Direct, Displacement, Enforcement, Field, Fixed, Layout,

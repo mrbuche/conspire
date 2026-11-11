@@ -398,6 +398,11 @@ impl<T: Copy> Buffer<T> {
     /// Copies `values` to the device, which must be as many as the buffer holds.
     pub fn upload(&self, values: &[T]) -> Result<()> {
         assert_eq!(values.len(), self.len, "a buffer is uploaded in full");
+        self.upload_front(values)
+    }
+    /// Copies `values` to the start of the buffer, which holds at least as many.
+    pub fn upload_front(&self, values: &[T]) -> Result<()> {
+        assert!(values.len() <= self.len, "a buffer holds what is put in it");
         if values.is_empty() {
             return Ok(());
         }

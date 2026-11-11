@@ -281,6 +281,79 @@ pub unsafe extern "ptx-kernel" fn accelerate(
     }
 }
 
+/// Sets the coordinates that are moved to what they are held at: the coordinate `dofs[i]` is set
+/// to `table[row * count + i]`, for each of the `count` of them.
+///
+/// # Safety
+///
+/// `dofs` must be `count` coordinates of `coordinates`, and `table` must have the row `row` of
+/// `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn set_targets(
+    count: u32,
+    dofs: *const u32,
+    table: *const f64,
+    row: u32,
+    coordinates: *mut f64,
+) {
+    let index = thread();
+    if index < count as usize {
+        // SAFETY: the index is one of the `count` degrees of freedom, and the row is in the table.
+        unsafe {
+            let dof = *dofs.add(index) as usize;
+            *coordinates.add(dof) = *table.add(row as usize * count as usize + index);
+        }
+    }
+}
+
+/// Subtracts a force on each of `count` degrees of freedom, which does not change, from the
+/// forces on them, as the host subtracts an external force from the forces of the elements.
+///
+/// # Safety
+///
+/// `loads` and `forces` must each be `count` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_constant(
+    count: u32,
+    loads: *const f64,
+    forces: *mut f64,
+) {
+    let dof = thread();
+    if dof < count as usize {
+        // SAFETY: the degree of freedom is one that the arrays have.
+        unsafe { *forces.add(dof) = *forces.add(dof) - *loads.add(dof) };
+    }
+}
+
+/// Subtracts a force on each of `nodes` nodes that is a weight of the node times three
+/// components that are a function of time, from the forces on them: the components are
+/// `table[row * 3 + c]`.
+///
+/// # Safety
+///
+/// `weights` must be `nodes` values, `forces` must be `3 * nodes` values, and `table` must have
+/// the row `row` of three values.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn subtract_weighted(
+    nodes: u32,
+    weights: *const f64,
+    table: *const f64,
+    row: u32,
+    forces: *mut f64,
+) {
+    let node = thread();
+    if node < nodes as usize {
+        // SAFETY: the node is one that the arrays have, and the row is in the table.
+        unsafe {
+            let weight = *weights.add(node);
+            for c in 0..3 {
+                let force = weight * *table.add(row as usize * 3 + c);
+                *forces.add(3 * node + c) = *forces.add(3 * node + c) - force;
+            }
+        }
+    }
+}
+
 const fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {

@@ -14,7 +14,7 @@ mod test;
 pub use block::{DeviceBlock, DeviceBlocks, DeviceLayout};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
 #[cfg(feature = "fem")]
-pub use resident::{DeviceError, Resident};
+pub use resident::{DeviceError, Imposed, ImposedLoad, Resident, Schedule};
 
 use core::{
     error::Error,
@@ -49,6 +49,8 @@ pub enum GpuError {
         /// The integration point of the element.
         point: usize,
     },
+    /// A run of dynamics was given what is not a run of dynamics of the model.
+    Invalid(String),
     /// The driver reported an error.
     Cuda(String),
 }
@@ -73,6 +75,7 @@ impl Display for GpuError {
                 f,
                 "Integration point {point} of element {item} of block {block} failed in the steps on the device."
             ),
+            Self::Invalid(message) => write!(f, "The run of dynamics is not valid: {message}"),
             Self::Cuda(message) => write!(f, "CUDA: {message}"),
         }
     }

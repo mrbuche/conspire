@@ -4,10 +4,33 @@ mod test;
 use crate::{domain::boundary::NodalState, math::Quantity, units::Time};
 use core::{marker::PhantomData, ops::Add};
 
+/// An external force that a device can subtract from the forces of a model, because it does not
+/// depend on the state of the body.
+#[cfg(feature = "gpu")]
+pub enum DeviceForce<'a> {
+    /// A force on each degree of freedom, as `3 * node + component`, which does not change.
+    Constant(Vec<f64>),
+    /// A force on each node that is its weight times three components, which are a function of
+    /// time.
+    Weighted {
+        /// The weight of each node.
+        weights: Vec<f64>,
+        /// The components at a time.
+        components: Box<dyn Fn(Quantity<Time>) -> [f64; 3] + 'a>,
+    },
+}
+
 /// External forces on the degrees of freedom of a state, which may be a function of time.
 pub trait LoadAt<X, R> {
     /// Subtracts the external forces at a time and a state from a residual.
     fn subtract_at(&self, time: Quantity<Time>, state: &X, residual: &mut R) -> Result<(), String>;
+    /// The external forces as a device takes them, in the order that they are subtracted in,
+    /// which is the same as it matters to the last bit; or nothing, if one of them depends on
+    /// the state of the body, such as a pressure that follows the surface it acts on.
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        None
+    }
 }
 
 /// External forces on the degrees of freedom of a state, which a residual of type `R` takes up.
@@ -79,6 +102,10 @@ impl<L, T> Loads<L, T> {
 impl<X, R> LoadAt<X, R> for () {
     fn subtract_at(&self, _: Quantity<Time>, _: &X, _: &mut R) -> Result<(), String> {
         Ok(())
+    }
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        Some(Vec::new())
     }
 }
 
@@ -216,6 +243,12 @@ where
         self.0.subtract_at(time, state, residual)?;
         self.1.subtract_at(time, state, residual)
     }
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        let mut forces = LoadAt::<X, R>::device_forces(&self.0)?;
+        forces.extend(LoadAt::<X, R>::device_forces(&self.1)?);
+        Some(forces)
+    }
 }
 
 impl<X, R, A, B> Load<X, R> for (A, B)
@@ -258,6 +291,10 @@ where
 {
     fn subtract_at(&self, time: Quantity<Time>, state: &X, residual: &mut R) -> Result<(), String> {
         self.0.subtract_at(time, state, residual)
+    }
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        LoadAt::<X, R>::device_forces(&self.0)
     }
 }
 

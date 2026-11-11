@@ -57,6 +57,9 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
     assert!(ptx.contains(".visible .entry gather("));
     assert!(ptx.contains(".visible .entry kick_drift("));
     assert!(ptx.contains(".visible .entry accelerate("));
+    assert!(ptx.contains(".visible .entry set_targets("));
+    assert!(ptx.contains(".visible .entry subtract_constant("));
+    assert!(ptx.contains(".visible .entry subtract_weighted("));
 }
 
 #[test]
@@ -192,6 +195,12 @@ fn a_failure_in_the_steps_says_where() {
     let message = error.to_string();
     assert!(message.contains("point 3") && message.contains("element 4"));
     assert!(message.contains("block 1") && message.contains("steps"));
+}
+
+#[test]
+fn a_run_that_is_not_valid_says_why() {
+    let error = GpuError::Invalid("the schedule has no targets".to_string());
+    assert!(error.to_string().contains("the schedule has no targets"));
 }
 
 #[test]
