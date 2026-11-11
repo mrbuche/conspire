@@ -1,6 +1,6 @@
 use crate::geometry::mesh::{Connectivity, Mesh};
 
-fn lattice(nel: [usize; 3], labels: impl Fn([usize; 3]) -> usize) -> Mesh<3> {
+pub(super) fn lattice(nel: [usize; 3], labels: impl Fn([usize; 3]) -> usize) -> Mesh<3> {
     let cells = (0..nel[2])
         .flat_map(|k| (0..nel[1]).flat_map(move |j| (0..nel[0]).map(move |i| [i, j, k])));
     Mesh::from_lattice_cells(
