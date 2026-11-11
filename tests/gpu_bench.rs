@@ -37,7 +37,8 @@ use common::{
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
+        NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, ConstrainAt, Displacement, LoadAt, Solid},
         element::linear::{Hexahedron, LinearElement},
@@ -435,9 +436,24 @@ fn time_of_step(row: usize) -> Quantity<Time> {
     common::time_of(row, STEP)
 }
 
-/// The cost of a step on a device, and of the setup of a run, and of the forces alone, in
-/// milliseconds; or nothing if there is no device. The state after the first steps is checked
-/// against `expected`, which the host made.
+/// What a run on a device costs, in milliseconds.
+struct Costs {
+    /// A step.
+    step: f64,
+    /// The setup of the run, once.
+    setup: f64,
+    /// The forces alone.
+    forces: f64,
+    /// Taking the state of the run into nodes that are kept, which is what a run that is observed
+    /// pays at each observation.
+    observing: f64,
+    /// Taking the state into nodes that are made for it.
+    observing_new: f64,
+}
+
+/// The cost of a step on a device, and of the setup of a run, and of the forces alone, and of
+/// taking the state, in milliseconds; or nothing if there is no device. The state after the
+/// first steps is checked against `expected`, which the host made.
 #[allow(clippy::too_many_arguments)]
 fn on_a_device<B, L>(
     work: &Work<B>,
@@ -445,7 +461,7 @@ fn on_a_device<B, L>(
     moved: bool,
     fused: bool,
     expected: Option<(&[Vec<f64>; 3], usize)>,
-) -> Option<(f64, f64, f64)>
+) -> Option<Costs>
 where
     B: DeviceBlocks + ElasticElements<3> + LumpedMassElements<3>,
     L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
@@ -489,9 +505,32 @@ where
         resident.steps(STEP, steps, &schedule).expect("the steps");
         step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
     }
+    // The state of the run as it is after those steps, into nodes that are kept and into nodes
+    // that are made.
+    let nodes = work.coordinates.len();
+    let mut kept = (
+        NodalCoordinates::<3>::from(vec![[0.0; 3]; nodes]),
+        NodalVelocities::<3>::from(vec![[0.0; 3]; nodes]),
+        NodalAccelerations::<3>::from(vec![[0.0; 3]; nodes]),
+    );
+    let observing = time_of(repetitions(), || {
+        resident
+            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+            .expect("the state");
+        black_box(&kept);
+    });
+    let observing_new = time_of(repetitions(), || {
+        black_box(resident.dynamics_state().expect("the state"));
+    });
     resident.set_coordinates(&start).expect("the coordinates");
     let forces = time_of(repetitions(), || resident.run().expect("the forces"));
-    Some((step, setup, forces))
+    Some(Costs {
+        step,
+        setup,
+        forces,
+        observing,
+        observing_new,
+    })
 }
 
 /// Times a variant of the run on a grid, and prints a row for each way of running it. A device
@@ -541,8 +580,13 @@ where
         row("threads", threaded, 0.0);
     }
     for fused in [false, true] {
-        let Some((step, setup, forces)) =
-            on_a_device(work, loads, moved, fused, Some((&expected, short)))
+        let Some(Costs {
+            step,
+            setup,
+            forces,
+            observing,
+            observing_new,
+        }) = on_a_device(work, loads, moved, fused, Some((&expected, short)))
         else {
             return false;
         };
@@ -554,6 +598,11 @@ where
         row(name, step, setup);
         if fused {
             row("  forces alone", forces, 0.0);
+            println!(
+                "{:>22} taking the state: {observing:.3} ms into nodes that are kept, which is {:.1} steps, and {observing_new:.3} ms into new nodes",
+                "",
+                observing / step,
+            );
         }
     }
     true
