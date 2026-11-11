@@ -2,12 +2,13 @@ use crate::{
     geometry::{
         Coordinate,
         mesh::{
-            Interfaces, Mesh, Tessellation, Verdict, Watertight,
+            Connectivities, Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
             test::{solid, sphere},
         },
+        ntree::Balancing,
         solid::Partition,
     },
-    math::Tensor,
+    math::{FxHashSet, Tensor},
 };
 use core::{array::from_fn, f64::consts::PI};
 
@@ -45,7 +46,7 @@ fn box_with_two_balls() -> Vec<Watertight> {
     ]
 }
 
-fn conformed(solids: fn() -> Vec<Watertight>, n: usize) -> Mesh<3> {
+fn conformed(solids: fn() -> Vec<Watertight>, n: usize) -> (Mesh<3>, Vec<usize>) {
     let mut mesh = Mesh::from_partition(
         &Partition::new(solids()),
         &Coordinate::from([-0.5; 3]),
@@ -53,8 +54,68 @@ fn conformed(solids: fn() -> Vec<Watertight>, n: usize) -> Mesh<3> {
         [n; 3],
     )
     .unwrap();
+    let originals = mesh.iter().map(Connectivity::number_of_elements).collect();
     mesh.conform(&Interfaces::new(&solids()).unwrap()).unwrap();
-    mesh
+    (mesh, originals)
+}
+
+fn dual_ball(scale: f64) -> Mesh<3> {
+    let (background, _) = sphere(24, 48, 0.25)
+        .dual_background(Balancing::Strong(1), scale, None)
+        .unwrap();
+    let coordinates = background.coordinates();
+    let mut blocks = [Vec::new(), Vec::new()];
+    background.iter().flatten().for_each(|element| {
+        let radius = (0..3)
+            .map(|axis| {
+                let middle = element
+                    .iter()
+                    .map(|&node| coordinates[node][axis].value())
+                    .sum::<f64>()
+                    / 8.0;
+                middle * middle
+            })
+            .sum::<f64>()
+            .sqrt();
+        blocks[usize::from(radius < 0.25)].push(from_fn(|node| element[node]))
+    });
+    let blocks: Vec<Connectivity> = blocks
+        .into_iter()
+        .map(|hexahedra: Vec<[usize; 8]>| Connectivity::Hexahedral(hexahedra.into()))
+        .collect();
+    (
+        Connectivities::from((blocks, vec![0, 1])),
+        coordinates.clone(),
+    )
+        .into()
+}
+
+fn conformed_dual(scale: f64) -> (Mesh<3>, Vec<usize>) {
+    let mut mesh = dual_ball(scale);
+    let originals = mesh.iter().map(Connectivity::number_of_elements).collect();
+    mesh.conform(&Interfaces::new(&box_with_one_ball()).unwrap())
+        .unwrap();
+    (mesh, originals)
+}
+
+fn sheet_quality(mesh: &Mesh<3>, originals: &[usize]) -> f64 {
+    let layers: FxHashSet<usize> = mesh
+        .iter()
+        .zip(originals)
+        .flat_map(|(block, &count)| block.iter().skip(count).flatten().copied())
+        .collect();
+    mesh.minimum_scaled_jacobians()
+        .iter()
+        .zip(mesh.iter())
+        .flat_map(|(qualities, block)| {
+            qualities
+                .iter()
+                .zip(block.iter())
+                .filter(|(_, element)| element.iter().any(|node| layers.contains(node)))
+                .map(|(&quality, _)| quality)
+                .collect::<Vec<_>>()
+        })
+        .fold(f64::INFINITY, f64::min)
 }
 
 fn least_quality(mesh: &Mesh<3>) -> f64 {
@@ -78,9 +139,10 @@ fn ball_volume(radius: f64) -> f64 {
 
 #[test]
 fn a_ball_in_a_box_is_conformed_without_losing_quality_or_volume() {
-    let mesh = conformed(box_with_one_ball, 12);
+    let (mesh, originals) = conformed(box_with_one_ball, 12);
     assert_eq!(mesh.block_labels(), Some(&[0, 1][..]));
     assert!(least_quality(&mesh) > 0.3);
+    assert!(sheet_quality(&mesh, &originals) > 0.35);
     let volumes = volumes(&mesh);
     assert!((volumes.iter().sum::<f64>() - 1.0).abs() < 1.0e-3);
     assert!((volumes[1] / ball_volume(0.25) - 1.0).abs() < 0.02);
@@ -88,12 +150,21 @@ fn a_ball_in_a_box_is_conformed_without_losing_quality_or_volume() {
 
 #[test]
 fn two_overlapping_balls_in_a_box_are_conformed_along_the_triple_line() {
-    let mesh = conformed(box_with_two_balls, 24);
+    let (mesh, _) = conformed(box_with_two_balls, 24);
     assert_eq!(mesh.block_labels(), Some(&[0, 1, 2][..]));
     assert!(least_quality(&mesh) > 0.05);
     let volumes = volumes(&mesh);
     assert!((volumes.iter().sum::<f64>() - 1.0).abs() < 1.0e-3);
     assert!((volumes[2] / ball_volume(RADII[1]) - 1.0).abs() < 0.02);
+}
+
+#[test]
+fn a_ball_on_a_graded_dual_mesh_is_conformed_as_well_as_on_a_uniform_one() {
+    let (mesh, originals) = conformed_dual(10.0);
+    assert_eq!(mesh.block_labels(), Some(&[0, 1][..]));
+    assert!(sheet_quality(&mesh, &originals) > 0.35);
+    assert!(least_quality(&mesh) > 0.25);
+    assert!((volumes(&mesh)[1] / ball_volume(0.25) - 1.0).abs() < 0.02);
 }
 
 #[test]
