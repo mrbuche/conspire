@@ -7,7 +7,7 @@ use crate::{
     domain::block::element::solid::hyperelastic::HyperelasticElement,
     fem::block::element::{
         Element, ElementNodalCoordinates, FiniteElementError, solid::elastic::ElasticFiniteElement,
-        surface::SurfaceElement,
+        stabilized::StabilizedElement, surface::SurfaceElement,
     },
     math::{Quantity, Tensor},
     units::Energy,
@@ -45,6 +45,25 @@ where
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> Result<Quantity<Energy>, FiniteElementError> {
         helmholtz_free_energy::<_, _, _, _, _, O, _>(self, constitutive_model, nodal_coordinates)
+    }
+}
+
+impl<C, const N: usize> HyperelasticElement<C> for StabilizedElement<N>
+where
+    C: Hyperelastic,
+    Self: ElasticFiniteElement<C, 1, 3, N, N>,
+{
+    fn helmholtz_free_energy(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<Quantity<Energy>, FiniteElementError> {
+        Ok(helmholtz_free_energy::<_, _, _, _, _, 1, _>(
+            self,
+            constitutive_model,
+            nodal_coordinates,
+        )? + self
+            .hourglass_helmholtz_free_energy(constitutive_model.shear_modulus(), nodal_coordinates))
     }
 }
 
