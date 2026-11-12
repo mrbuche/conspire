@@ -14,6 +14,7 @@ mod read;
 mod remesh;
 mod retain;
 mod sets;
+mod sheets;
 mod smooth;
 mod tessellation;
 mod write;

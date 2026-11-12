@@ -69,9 +69,36 @@ impl Interfaces {
     /// The closed surface around a material: its triangles as they are, and those of the
     /// materials around it turned over.
     pub fn boundary(&self, material: usize) -> Result<Tessellation, &'static str> {
+        self.pick(|inside, outside| {
+            if inside == material {
+                Some(false)
+            } else if outside == Some(material) {
+                Some(true)
+            } else {
+                None
+            }
+        })
+        .ok_or("the material has no surface")
+    }
+    /// The surface between two materials, oriented so that its normals point away from `first`
+    /// and toward `second`.
+    pub fn between(&self, first: usize, second: usize) -> Result<Tessellation, &'static str> {
+        self.pick(|inside, outside| {
+            if inside == first && outside == Some(second) {
+                Some(false)
+            } else if inside == second && outside == Some(first) {
+                Some(true)
+            } else {
+                None
+            }
+        })
+        .ok_or("the materials share no surface")
+    }
+    /// The triangles `keep` selects, each turned over where it says so, or `None` where there are
+    /// none.
+    fn pick(&self, keep: impl Fn(usize, Option<usize>) -> Option<bool>) -> Option<Tessellation> {
         let coordinates = self.surface.mesh().coordinates();
-        let mut faces = Vec::new();
-        for ((nodes, &inside), &outside) in self
+        let faces: Vec<[usize; 3]> = self
             .surface
             .mesh()
             .connectivities()
@@ -79,18 +106,18 @@ impl Interfaces {
             .flatten()
             .zip(&self.inside)
             .zip(&self.outside)
-        {
-            if inside == material {
-                faces.push([nodes[0], nodes[1], nodes[2]]);
-            } else if outside == Some(material) {
-                faces.push([nodes[0], nodes[2], nodes[1]]);
-            }
-        }
-        if faces.is_empty() {
-            return Err("the material has no surface");
-        }
+            .filter_map(|((nodes, &inside), &outside)| {
+                keep(inside, outside).map(|turn| {
+                    if turn {
+                        [nodes[0], nodes[2], nodes[1]]
+                    } else {
+                        [nodes[0], nodes[1], nodes[2]]
+                    }
+                })
+            })
+            .collect();
         let positions: Vec<&Coordinate<3>> = coordinates.iter().collect();
-        Ok(surface(faces, &positions))
+        (!faces.is_empty()).then(|| surface(faces, &positions))
     }
 }
 
@@ -363,15 +390,7 @@ fn build(solids: &[Watertight]) -> Result<Interfaces, &'static str> {
             while j > 0 {
                 match cut_order(p, q, &at(between[j - 1]), &at(between[j]))? {
                     o if o == forward => break,
-                    Ordering::Equal => {
-                        eprintln!(
-                            "SAMEPTS {edge:?} {:?} {:?} {:?}",
-                            features[between[j - 1]],
-                            features[between[j]],
-                            triangle
-                        );
-                        return Err("two triple points are the same point");
-                    }
+                    Ordering::Equal => return Err("two triple points are the same point"),
                     _ => between.swap(j - 1, j),
                 }
                 j -= 1;
