@@ -11,11 +11,10 @@ use crate::geometry::{
     },
 };
 use crate::math::FxHashMap;
+use alloc::collections::BTreeSet;
+use core::array::from_fn;
 use ilp::Instance;
-use std::{
-    array::from_fn,
-    collections::{BTreeSet, HashSet},
-};
+use std::collections::HashSet;
 
 impl<const D: usize, const L: usize, const M: usize, const N: usize, T, U, V>
     Orthotree<D, L, M, N, T, U, V>

@@ -11,7 +11,7 @@ use crate::{
     },
     math::Scalar,
 };
-use std::array::from_fn;
+use core::array::from_fn;
 
 /// Fills the wedge along a cluster edge where the cluster's four fine cells meet two coarse
 /// leaves across each adjoining facet and two more on the diagonal.

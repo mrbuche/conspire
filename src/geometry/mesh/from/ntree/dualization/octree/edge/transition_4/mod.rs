@@ -11,7 +11,7 @@ use crate::{
     },
     math::Scalar,
 };
-use std::array::from_fn;
+use core::array::from_fn;
 
 /// Fills the wedge along an edge shared by two coarse leaves stacked along it, whose neighbours
 /// across both adjoining facets are refined but whose diagonal neighbours are not - the

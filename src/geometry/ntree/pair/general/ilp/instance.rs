@@ -1,6 +1,7 @@
 use super::conflicts;
 use crate::math::{FxHashMap, FxHashSet};
-use std::{array::from_fn, collections::HashSet};
+use core::array::from_fn;
+use std::collections::HashSet;
 
 pub(crate) struct Instance<const D: usize> {
     cells: Vec<([i32; D], bool)>,

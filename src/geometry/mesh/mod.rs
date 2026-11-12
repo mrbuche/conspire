@@ -20,10 +20,10 @@ mod tessellation;
 mod write;
 
 pub use from::Dualization;
-pub use sets::{NodeSet, NodeSets, SideSet, SideSets};
 #[cfg(test)]
 pub(crate) use from::verify_dual;
 pub(crate) use from::{leaf_containing, leaf_containing_from};
+pub use sets::{NodeSet, NodeSets, SideSet, SideSets};
 
 pub use self::{
     connectivity::{
