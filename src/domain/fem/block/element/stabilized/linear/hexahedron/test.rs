@@ -140,7 +140,7 @@ mod elastic {
             solid::{ElementNodalForcesSolid, ElementNodalStiffnessesSolid},
         },
         math::{
-            Tensor,
+            Quantity, Tensor,
             assert::{Assert, AssertionError},
         },
     };
@@ -375,6 +375,44 @@ mod elastic {
                     .map(|a| (0..3).map(|i| forces[a][i] * change[a][i]).sum::<f64>())
                     .sum::<f64>(),
             )
+        }
+    }
+    mod mass {
+        use super::*;
+        use crate::{
+            fem::block::element::{
+                FiniteElement, mass::LumpedMassFiniteElement, time_scale::fastest_time_scale,
+            },
+            units::Density,
+        };
+        const DENSITY: Quantity<Density> = Density::kilograms_per_cubic_meter(7.8e3);
+        #[test]
+        fn lumped_masses_are_those_of_the_fully_integrated_element() -> Result<(), AssertionError> {
+            let densities = [DENSITY].into();
+            let full_densities = [DENSITY; 8].into();
+            Assert::default().eq_within_tols(
+                Hexahedron::from(reference_coordinates()).nodal_lumped_masses(&densities),
+                FullHexahedron::from(reference_coordinates()).nodal_lumped_masses(&full_densities),
+            )
+        }
+        #[test]
+        fn lumped_masses_add_up_to_the_mass() -> Result<(), AssertionError> {
+            let element = Hexahedron::from(reference_coordinates());
+            let masses = element.nodal_lumped_masses(&[DENSITY].into());
+            Assert::default().eq_within_tols(
+                masses.iter().map(|mass| mass.value()).sum::<f64>(),
+                DENSITY.value() * element.volume().value(),
+            )
+        }
+        #[test]
+        fn fastest_time_scale_is_finite() {
+            let element = Hexahedron::from(reference_coordinates());
+            let time_scale = fastest_time_scale(
+                &element.nodal_stiffnesses(&model(), &homogeneous()).unwrap(),
+                &element.nodal_lumped_masses(&[DENSITY].into()),
+            )
+            .value();
+            assert!(time_scale.is_finite() && time_scale > 0.0)
         }
     }
 }

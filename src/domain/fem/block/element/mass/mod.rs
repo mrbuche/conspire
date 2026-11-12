@@ -5,6 +5,7 @@ use crate::{
     fem::block::element::{
         Element, FiniteElement,
         linear::{LinearElement, LinearFiniteElement},
+        stabilized::StabilizedElement,
     },
     math::{Quantity, Scalar, Tensor, TensorList},
     units::{Density, Mass},
@@ -22,6 +23,8 @@ impl<const G: usize, const N: usize> RowSumLumping for LinearElement<G, N> where
     Self: LinearFiniteElement<G, N>
 {
 }
+
+impl<const N: usize> RowSumLumping for StabilizedElement<N> {}
 
 pub trait DiagonalScaling {}
 
@@ -108,6 +111,21 @@ where
                     .collect()
             })
             .sum()
+    }
+}
+
+impl<const N: usize> LumpedMassFiniteElement<1, 3, N, N> for StabilizedElement<N>
+where
+    Self: FiniteElement<1, 3, N, N>,
+{
+    fn nodal_lumped_masses(
+        &self,
+        densities: &IntegrationDensities<1>,
+    ) -> ElementNodalLumpedMasses<N> {
+        self.nodal_volumes()
+            .iter()
+            .map(|nodal_volume| densities[0] * nodal_volume)
+            .collect()
     }
 }
 
