@@ -185,36 +185,26 @@ where
                 if sides.iter().all(|&side| side == 0) {
                     return false;
                 }
-                let halves: [Vec<(i64, usize)>; 2] = from_fn(|half| {
-                    let mut cells = Vec::new();
+                // The paper's "refinement n against n - 2" (Fig. 9), which only weak balancing
+                // admits: the chamber that fills such an edge is anchored on one coarse leaf,
+                // so a cluster straddling two of them strands it, however uniform the levels
+                // are along the line.
+                let mut levels = Vec::new();
+                for half in 0..2 {
                     for shifts in 0..1usize << others.len() {
                         let mut point = center;
                         for (slot, &axis) in others.iter().enumerate() {
                             let shift = if (shifts >> slot) & 1 == 1 { 1 } else { -1 };
                             point[axis] += sides[slot] * length + shift;
                         }
-                        point[along] += -length + half as i64 * length + length / 2;
+                        point[along] += -length + half * length + length / 2;
                         if let Some(leaf) = leaf_at(point) {
-                            cells.push((self.nodes[leaf].length.cells() as i64, leaf))
+                            levels.push(self.nodes[leaf].length.cells() as i64)
                         }
                     }
-                    cells.sort_unstable_by_key(|&(level, _)| level);
-                    cells
-                });
-                // Only a configuration that changes partway along the line strands a wedge; one
-                // that spans two levels uniformly is still a single case some template owns.
-                let levels = |half: usize| -> Vec<i64> {
-                    halves[half].iter().map(|&(level, _)| level).collect()
-                };
-                if levels(0) == levels(1) {
-                    return false;
                 }
-                // The stranding case spans two refinement levels across the line - the paper's
-                // "refinement n against n - 2", which only weak balancing admits. Splitting the
-                // coarsest cell involved is what restores alignment.
-                let cells = halves.concat();
-                match cells.iter().map(|&(level, _)| level).min() {
-                    Some(least) => cells.iter().any(|&(level, _)| level >= 4 * least),
+                match levels.iter().min() {
+                    Some(&least) => levels.iter().any(|&level| level >= 4 * least),
                     None => false,
                 }
             })
