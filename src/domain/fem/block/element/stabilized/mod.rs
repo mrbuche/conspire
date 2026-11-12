@@ -2,11 +2,12 @@ pub mod linear;
 
 use crate::{
     fem::block::element::{
-        Element, ElementNodalReferenceCoordinates, FiniteElement, GradientVectors,
-        IntegrationWeights,
+        Element, ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
+        GradientVectors, IntegrationWeights,
+        solid::{ElementNodalForcesSolid, ElementNodalStiffnessesSolid},
     },
-    math::{Projection, Quantity, Tensor, TensorRank1, TensorRank1List},
-    units::{Length, Volume},
+    math::{IDENTITY, Projection, Quantity, Scalar, Tensor, TensorRank1, TensorRank1List},
+    units::{Length, Stress, Volume},
 };
 use core::{
     array::from_fn,
@@ -15,6 +16,8 @@ use core::{
 };
 
 const M: usize = 3;
+
+const HOURGLASS_PARAMETER: Scalar = 0.1;
 
 /// Hourglass base vectors, one row per hourglass mode.
 pub type HourglassBaseVectors<const K: usize, const N: usize> = TensorRank1List<N, Projection, K>;
@@ -43,6 +46,49 @@ impl<const N: usize> StabilizedElement<N> {
     }
     pub fn nodal_volumes(&self) -> &IntegrationWeights<N, Volume> {
         &self.nodal_volumes
+    }
+    /// The hourglass resistance, being the force resisting the hourglass
+    /// modes: the shear modulus times the parameter times the hourglass
+    /// matrix applied to the current coordinates.
+    ///
+    /// The matrix leaves constant and linear fields alone, so it vanishes for
+    /// any homogeneous deformation, rigid motions included.
+    pub(crate) fn hourglass_forces(
+        &self,
+        shear_modulus: Quantity<Stress>,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> ElementNodalForcesSolid<N> {
+        let modulus = shear_modulus * HOURGLASS_PARAMETER;
+        self.hourglass_matrix
+            .iter()
+            .map(|hourglass_matrix_a| {
+                hourglass_matrix_a
+                    .iter()
+                    .zip(nodal_coordinates.iter())
+                    .map(|(hourglass_matrix_ab, nodal_coordinate_b)| {
+                        nodal_coordinate_b * hourglass_matrix_ab
+                    })
+                    .sum::<TensorRank1<_, _, _>>()
+                    * modulus
+            })
+            .collect()
+    }
+    /// The derivative of the [hourglass forces](Self::hourglass_forces) with
+    /// respect to the nodal coordinates, which is constant.
+    pub(crate) fn hourglass_stiffnesses(
+        &self,
+        shear_modulus: Quantity<Stress>,
+    ) -> ElementNodalStiffnessesSolid<N> {
+        let modulus = shear_modulus * HOURGLASS_PARAMETER;
+        self.hourglass_matrix
+            .iter()
+            .map(|hourglass_matrix_a| {
+                hourglass_matrix_a
+                    .iter()
+                    .map(|hourglass_matrix_ab| &IDENTITY * (modulus * hourglass_matrix_ab))
+                    .collect()
+            })
+            .collect()
     }
 }
 

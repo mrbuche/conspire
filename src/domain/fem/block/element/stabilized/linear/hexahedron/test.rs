@@ -130,25 +130,27 @@ mod elastic {
     use super::{FullHexahedron, Hexahedron, N, coordinates, reference_coordinates};
     use crate::{
         constitutive::solid::{
+            Solid,
             elastic::test::{BULK_MODULUS, SHEAR_MODULUS},
             hyperelastic::NeoHookean,
         },
         domain::block::element::solid::elastic::ElasticElement,
-        fem::block::element::ElementNodalCoordinates,
+        fem::block::element::{
+            ElementNodalCoordinates,
+            solid::{ElementNodalForcesSolid, ElementNodalStiffnessesSolid},
+        },
         math::{
             Tensor,
             assert::{Assert, AssertionError},
         },
     };
     use core::array::from_fn;
-
     fn model() -> NeoHookean {
         NeoHookean {
             bulk_modulus: BULK_MODULUS,
             shear_modulus: SHEAR_MODULUS,
         }
     }
-
     fn homogeneous_array() -> [[f64; 3]; N] {
         let deformation_gradient = [[1.1, 0.1, 0.0], [0.0, 0.9, 0.2], [0.1, 0.0, 1.05]];
         let translation = [0.3, -0.2, 0.1];
@@ -162,19 +164,19 @@ mod elastic {
             })
         })
     }
-
     fn homogeneous() -> ElementNodalCoordinates<N> {
         homogeneous_array().into()
     }
-
-    fn inhomogeneous() -> ElementNodalCoordinates<N> {
+    fn inhomogeneous_array() -> [[f64; 3]; N] {
         let mut deformed = homogeneous_array();
         deformed[6][0] += 0.07;
         deformed[2][1] -= 0.05;
         deformed[5][2] += 0.06;
-        deformed.into()
+        deformed
     }
-
+    fn inhomogeneous() -> ElementNodalCoordinates<N> {
+        inhomogeneous_array().into()
+    }
     #[test]
     fn forces_are_zero_in_the_reference_configuration() -> Result<(), AssertionError> {
         let forces = Hexahedron::from(reference_coordinates())
@@ -184,7 +186,6 @@ mod elastic {
             (0..3).try_for_each(|i| Assert::default().eq_within_tols(force[i].value(), 0.0))
         })
     }
-
     #[test]
     fn forces_balance_for_any_state() -> Result<(), AssertionError> {
         let forces = Hexahedron::from(reference_coordinates())
@@ -197,7 +198,6 @@ mod elastic {
             )
         })
     }
-
     #[test]
     fn forces_match_full_integration_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
         Assert::default().eq_within_tols(
@@ -209,17 +209,110 @@ mod elastic {
                 .unwrap(),
         )
     }
-
+    fn forces_array(forces: &ElementNodalForcesSolid<N>) -> [[f64; 3]; N] {
+        from_fn(|a| from_fn(|i| forces[a][i].value()))
+    }
+    fn stiffnesses_times(
+        stiffnesses: &ElementNodalStiffnessesSolid<N>,
+        displacements: &[[f64; 3]; N],
+    ) -> [[f64; 3]; N] {
+        from_fn(|a| {
+            from_fn(|i| {
+                (0..N)
+                    .map(|b| {
+                        (0..3)
+                            .map(|j| stiffnesses[a][b][i][j].value() * displacements[b][j])
+                            .sum::<f64>()
+                    })
+                    .sum()
+            })
+        })
+    }
+    fn linear_displacements() -> [[f64; 3]; N] {
+        let gradient = [[0.02, -0.01, 0.0], [0.01, 0.03, 0.02], [0.0, -0.02, 0.01]];
+        let reference = coordinates();
+        from_fn(|a| from_fn(|i| (0..3).map(|j| gradient[i][j] * reference[a][j]).sum()))
+    }
     #[test]
-    fn stiffnesses_match_full_integration_for_a_homogeneous_deformation()
-    -> Result<(), AssertionError> {
-        Assert::default().eq_within_tols(
-            Hexahedron::from(reference_coordinates())
+    fn stiffnesses_match_full_integration_on_a_linear_displacement() -> Result<(), AssertionError> {
+        let stabilized = stiffnesses_times(
+            &Hexahedron::from(reference_coordinates())
                 .nodal_stiffnesses(&model(), &homogeneous())
                 .unwrap(),
+            &linear_displacements(),
+        );
+        let full = stiffnesses_times(
             &FullHexahedron::from(reference_coordinates())
                 .nodal_stiffnesses(&model(), &homogeneous())
                 .unwrap(),
-        )
+            &linear_displacements(),
+        );
+        (0..N).try_for_each(|a| {
+            (0..3).try_for_each(|i| Assert::default().eq_within_tols(stabilized[a][i], full[a][i]))
+        })
+    }
+    #[test]
+    fn hourglass_forces_vanish_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
+        let forces = forces_array(
+            &Hexahedron::from(reference_coordinates())
+                .hourglass_forces(model().shear_modulus(), &homogeneous()),
+        );
+        forces
+            .iter()
+            .flatten()
+            .try_for_each(|force| Assert::default().eq_within_tols(*force, 0.0))
+    }
+    #[test]
+    fn hourglass_forces_resist_an_hourglass_mode() {
+        let mode = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+        let mut deformed = coordinates();
+        deformed
+            .iter_mut()
+            .zip(mode)
+            .for_each(|(coordinate, mode_a)| coordinate[0] += 0.05 * mode_a);
+        let forces = forces_array(
+            &Hexahedron::from(reference_coordinates())
+                .hourglass_forces(model().shear_modulus(), &deformed.into()),
+        );
+        let work = (0..N).map(|a| forces[a][0] * 0.05 * mode[a]).sum::<f64>();
+        assert!(work > 0.0)
+    }
+    #[test]
+    fn hourglass_stiffnesses_are_the_derivative_of_the_hourglass_forces()
+    -> Result<(), AssertionError> {
+        let element = Hexahedron::from(reference_coordinates());
+        let shear_modulus = model().shear_modulus();
+        let change: [[f64; 3]; N] = from_fn(|a| from_fn(|i| 0.01 * ((3 * a + i) as f64).sin()));
+        let state = inhomogeneous_array();
+        let perturbed: [[f64; 3]; N] = from_fn(|a| from_fn(|i| state[a][i] + change[a][i]));
+        let before = forces_array(&element.hourglass_forces(shear_modulus, &state.into()));
+        let after = forces_array(&element.hourglass_forces(shear_modulus, &perturbed.into()));
+        let predicted = stiffnesses_times(&element.hourglass_stiffnesses(shear_modulus), &change);
+        (0..N).try_for_each(|a| {
+            (0..3).try_for_each(|i| {
+                Assert::default().eq_within_tols(after[a][i] - before[a][i], predicted[a][i])
+            })
+        })
+    }
+    #[test]
+    fn hourglass_forces_rotate_with_the_element() -> Result<(), AssertionError> {
+        let element = Hexahedron::from(reference_coordinates());
+        let shear_modulus = model().shear_modulus();
+        let (sin, cos) = 0.3_f64.sin_cos();
+        let rotation = [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]];
+        let state = inhomogeneous_array();
+        let rotated: [[f64; 3]; N] =
+            from_fn(|a| from_fn(|i| (0..3).map(|j| rotation[i][j] * state[a][j]).sum()));
+        let forces = forces_array(&element.hourglass_forces(shear_modulus, &state.into()));
+        let rotated_forces =
+            forces_array(&element.hourglass_forces(shear_modulus, &rotated.into()));
+        (0..N).try_for_each(|a| {
+            (0..3).try_for_each(|i| {
+                Assert::default().eq_within_tols(
+                    rotated_forces[a][i],
+                    (0..3).map(|j| rotation[i][j] * forces[a][j]).sum::<f64>(),
+                )
+            })
+        })
     }
 }
