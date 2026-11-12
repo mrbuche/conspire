@@ -125,3 +125,101 @@ fn debug_names_the_element() {
         "StabilizedHexahedron { integration points: 1, nodes: 8 }"
     )
 }
+
+mod elastic {
+    use super::{FullHexahedron, Hexahedron, N, coordinates, reference_coordinates};
+    use crate::{
+        constitutive::solid::{
+            elastic::test::{BULK_MODULUS, SHEAR_MODULUS},
+            hyperelastic::NeoHookean,
+        },
+        domain::block::element::solid::elastic::ElasticElement,
+        fem::block::element::ElementNodalCoordinates,
+        math::{
+            Tensor,
+            assert::{Assert, AssertionError},
+        },
+    };
+    use core::array::from_fn;
+
+    fn model() -> NeoHookean {
+        NeoHookean {
+            bulk_modulus: BULK_MODULUS,
+            shear_modulus: SHEAR_MODULUS,
+        }
+    }
+
+    fn homogeneous_array() -> [[f64; 3]; N] {
+        let deformation_gradient = [[1.1, 0.1, 0.0], [0.0, 0.9, 0.2], [0.1, 0.0, 1.05]];
+        let translation = [0.3, -0.2, 0.1];
+        let reference = coordinates();
+        from_fn(|a| {
+            from_fn(|i| {
+                (0..3)
+                    .map(|j| deformation_gradient[i][j] * reference[a][j])
+                    .sum::<f64>()
+                    + translation[i]
+            })
+        })
+    }
+
+    fn homogeneous() -> ElementNodalCoordinates<N> {
+        homogeneous_array().into()
+    }
+
+    fn inhomogeneous() -> ElementNodalCoordinates<N> {
+        let mut deformed = homogeneous_array();
+        deformed[6][0] += 0.07;
+        deformed[2][1] -= 0.05;
+        deformed[5][2] += 0.06;
+        deformed.into()
+    }
+
+    #[test]
+    fn forces_are_zero_in_the_reference_configuration() -> Result<(), AssertionError> {
+        let forces = Hexahedron::from(reference_coordinates())
+            .nodal_forces(&model(), &coordinates().into())
+            .unwrap();
+        forces.iter().try_for_each(|force| {
+            (0..3).try_for_each(|i| Assert::default().eq_within_tols(force[i].value(), 0.0))
+        })
+    }
+
+    #[test]
+    fn forces_balance_for_any_state() -> Result<(), AssertionError> {
+        let forces = Hexahedron::from(reference_coordinates())
+            .nodal_forces(&model(), &inhomogeneous())
+            .unwrap();
+        (0..3).try_for_each(|i| {
+            Assert::default().eq_within_tols(
+                forces.iter().map(|force| force[i].value()).sum::<f64>(),
+                0.0,
+            )
+        })
+    }
+
+    #[test]
+    fn forces_match_full_integration_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
+        Assert::default().eq_within_tols(
+            Hexahedron::from(reference_coordinates())
+                .nodal_forces(&model(), &homogeneous())
+                .unwrap(),
+            &FullHexahedron::from(reference_coordinates())
+                .nodal_forces(&model(), &homogeneous())
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn stiffnesses_match_full_integration_for_a_homogeneous_deformation()
+    -> Result<(), AssertionError> {
+        Assert::default().eq_within_tols(
+            Hexahedron::from(reference_coordinates())
+                .nodal_stiffnesses(&model(), &homogeneous())
+                .unwrap(),
+            &FullHexahedron::from(reference_coordinates())
+                .nodal_stiffnesses(&model(), &homogeneous())
+                .unwrap(),
+        )
+    }
+}
