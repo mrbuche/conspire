@@ -110,3 +110,51 @@ fn refused_vertices_are_never_assigned() {
         );
     }
 }
+
+fn fuzz_cells<const D: usize>(seed: u64, extent: [i32; D]) -> Vec<([i32; D], bool)> {
+    let mut state = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    let mut rand = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize
+    };
+    let count: i32 = extent.iter().product();
+    (0..count)
+        .map(|code| {
+            let mut rest = code;
+            let cell = core::array::from_fn(|axis| {
+                let coordinate = rest % extent[axis];
+                rest /= extent[axis];
+                coordinate
+            });
+            (cell, rand() % 2 == 0)
+        })
+        .collect()
+}
+
+fn matches_bruteforce<const D: usize>(extent: [i32; D], seeds: u64) {
+    for seed in 0..seeds {
+        let cells = fuzz_cells(seed, extent);
+        if !cells.iter().any(|(_, required)| *required) {
+            continue;
+        }
+        let instance = Instance::new(cells, Default::default());
+        let (assignment, cost) = instance.solve();
+        let (_, bruteforce_cost) = instance.solve_bruteforce();
+        assert!(instance.feasible(&assignment), "seed {seed}");
+        assert_eq!(cost, bruteforce_cost, "seed {seed}");
+    }
+}
+
+#[test]
+fn solve_matches_bruteforce_on_larger_grids() {
+    matches_bruteforce([4, 3], 100);
+}
+
+#[test]
+fn solve_matches_bruteforce_in_three_dimensions() {
+    matches_bruteforce([2, 2, 1], 100);
+}
