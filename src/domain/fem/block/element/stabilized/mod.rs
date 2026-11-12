@@ -135,6 +135,7 @@ fn stabilized_from<const G: usize, const N: usize, const O: usize, const K: usiz
     full: &Element<3, G, N, O>,
     reference_nodal_coordinates: &ElementNodalReferenceCoordinates<N>,
     base_vectors: &HourglassBaseVectors<K, N>,
+    calibration: Scalar,
 ) -> StabilizedElement<N>
 where
     Element<3, G, N, O>: FiniteElement<G, 3, N, N>,
@@ -162,10 +163,11 @@ where
             from_fn(|a| (base_vector[a] - &projection * &mean_gradients[a]) / 8.0)
         })
         .collect::<Vec<[_; N]>>();
-    let scale = mean_gradients
-        .iter()
-        .map(|mean_gradient| &(mean_gradient * volume) * mean_gradient)
-        .sum::<Quantity<_>>();
+    let scale = calibration
+        * mean_gradients
+            .iter()
+            .map(|mean_gradient| &(mean_gradient * volume) * mean_gradient)
+            .sum::<Quantity<Length>>();
     let hourglass_matrix = from_fn(|a| {
         from_fn(|b| {
             scale
