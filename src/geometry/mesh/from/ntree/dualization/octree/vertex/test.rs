@@ -339,9 +339,6 @@ fn fuzz_strong_duals() {
     fuzz_duals(Balancing::Strong(1), Pairing::Regular)
 }
 
-// Every template reads its configuration off the paired clusters rather than off tree nodes,
-// each handles a cluster the domain cuts through, and the pairing keeps clusters aligned where
-// three refinement levels meet. Both balancings close under both pairings.
 #[test]
 fn fuzz_weak_duals_generalized() {
     fuzz_duals(Balancing::Weak(1), Pairing::Generalized)
@@ -390,9 +387,6 @@ fn weak_generalized_dual(length: u16, regions: &[([u16; 3], u16)]) {
     verify_dual(&octree.dualize()).unwrap();
 }
 
-// A cluster that straddles two coarse leaves, with the finer cells it pairs meeting a leaf two
-// levels coarser along an edge, is the paper's "refinement n against n - 2" even though the
-// levels read the same on both halves of the edge. Pairing must not choose it.
 #[test]
 fn weak_generalized_straddling_cluster_on_a_uniform_edge() {
     weak_generalized_dual(
@@ -427,9 +421,6 @@ fn weak_generalized_straddling_cluster_in_the_interior() {
     );
 }
 
-// The cap template fills the junction of a coarse pair with columns one and two levels finer on
-// either side. It has to find the pair's axis from the leaves rather than from the octree
-// lattice, which generalized clusters need not sit on.
 #[test]
 fn weak_generalized_cap_off_the_octree_lattice() {
     weak_generalized_dual(
@@ -451,13 +442,6 @@ fn weak_generalized_fuzz_seed_1426() {
     verify_dual(&octree.dualize()).unwrap();
 }
 
-// The face template takes a quarter of a cluster facet - one coarse leaf and the 2x2 fine cells
-// behind it - only when the quarter is whole, and treats a facet as truncated only when every
-// absent quarter is provably outside the domain. A quarter absent for any other reason (the
-// outside cell refined, the inside cells refined deeper) means the transition belongs to a
-// different cluster, and guessing a template there would double-cover it. This asserts that
-// mixed facets - some quarters present, some absent while still inside the domain - never
-// arise, so the classification the template relies on is total.
 #[test]
 fn every_cluster_facet_is_classifiable() {
     use crate::geometry::mesh::leaf_containing;
@@ -510,7 +494,6 @@ fn every_cluster_facet_is_classifiable() {
                         c[tangents[1]] = center[tangents[1]] - coarse + v;
                         c
                     };
-                    // a "quarter" is one coarse leaf plus the 2x2 fine cells behind it
                     let quarter = |qu: i64, qv: i64| {
                         cell_at(at(outside, qu * coarse, qv * coarse), coarse).is_some()
                             && (0..4).all(|k| {

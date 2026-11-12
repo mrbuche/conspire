@@ -80,8 +80,6 @@ fn cap<T, U>(
         return;
     }
     let axis = (big_lo ^ big_hi).trailing_zeros() as usize;
-    // The two coarse leaves must be paired across this vertex. A coarse leaf belongs to no
-    // cluster itself, so read it off the three refined columns around the edge instead.
     let column = |o: usize| -> [i64; D] {
         from_fn(|a| {
             let at = vertex[a] as i64;
