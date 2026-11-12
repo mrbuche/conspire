@@ -14,7 +14,8 @@ pub mod viscoplastic;
 
 use crate::{
     fem::block::element::{
-        Element, ElementNodalCoordinates, ElementNodalVelocities, FiniteElement,
+        Element, ElementNodalCoordinates, ElementNodalVelocities, FiniteElement, GradientVectors,
+        stabilized::StabilizedElement,
         surface::{SurfaceElement, SurfaceFiniteElement},
     },
     math::Tensor,
@@ -64,36 +65,70 @@ impl<const G: usize, const N: usize, const O: usize> SolidElement for Element<3,
         &self,
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> DeformationGradientList<G> {
-        self.gradient_vectors()
-            .iter()
-            .map(|gradient_vectors| {
-                nodal_coordinates
-                    .iter()
-                    .zip(gradient_vectors)
-                    .map(|(nodal_coordinate, gradient_vector)| {
-                        DeformationGradient::from((nodal_coordinate, gradient_vector))
-                    })
-                    .sum()
-            })
-            .collect()
+        deformation_gradients(self.gradient_vectors(), nodal_coordinates)
     }
     fn deformation_gradient_rates(
         &self,
         _: &ElementNodalCoordinates<N>,
         nodal_velocities: &ElementNodalVelocities<N>,
     ) -> DeformationGradientRateList<G> {
-        self.gradient_vectors()
-            .iter()
-            .map(|gradient_vectors| {
-                nodal_velocities
-                    .iter()
-                    .zip(gradient_vectors)
-                    .map(|(nodal_velocity, gradient_vector)| {
-                        DeformationGradientRate::from((nodal_velocity, gradient_vector))
-                    })
-                    .sum()
-            })
-            .collect()
+        deformation_gradient_rates(self.gradient_vectors(), nodal_velocities)
+    }
+}
+
+fn deformation_gradients<const G: usize, const N: usize>(
+    gradient_vectors: &GradientVectors<3, G, N>,
+    nodal_coordinates: &ElementNodalCoordinates<N>,
+) -> DeformationGradientList<G> {
+    gradient_vectors
+        .iter()
+        .map(|gradient_vectors| {
+            nodal_coordinates
+                .iter()
+                .zip(gradient_vectors)
+                .map(|(nodal_coordinate, gradient_vector)| {
+                    DeformationGradient::from((nodal_coordinate, gradient_vector))
+                })
+                .sum()
+        })
+        .collect()
+}
+
+fn deformation_gradient_rates<const G: usize, const N: usize>(
+    gradient_vectors: &GradientVectors<3, G, N>,
+    nodal_velocities: &ElementNodalVelocities<N>,
+) -> DeformationGradientRateList<G> {
+    gradient_vectors
+        .iter()
+        .map(|gradient_vectors| {
+            nodal_velocities
+                .iter()
+                .zip(gradient_vectors)
+                .map(|(nodal_velocity, gradient_vector)| {
+                    DeformationGradientRate::from((nodal_velocity, gradient_vector))
+                })
+                .sum()
+        })
+        .collect()
+}
+
+impl<const N: usize> SolidElement for StabilizedElement<N> {
+    type Coordinates = ElementNodalCoordinates<N>;
+    type Velocities = ElementNodalVelocities<N>;
+    type DeformationGradients = DeformationGradientList<1>;
+    type DeformationGradientRates = DeformationGradientRateList<1>;
+    fn deformation_gradients(
+        &self,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> DeformationGradientList<1> {
+        deformation_gradients(self.gradient_vectors(), nodal_coordinates)
+    }
+    fn deformation_gradient_rates(
+        &self,
+        _: &ElementNodalCoordinates<N>,
+        nodal_velocities: &ElementNodalVelocities<N>,
+    ) -> DeformationGradientRateList<1> {
+        deformation_gradient_rates(self.gradient_vectors(), nodal_velocities)
     }
 }
 
