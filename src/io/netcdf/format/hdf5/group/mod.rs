@@ -1,5 +1,8 @@
 use super::{FHDB, FHIB, FRHP, Sizes, header::object_header, u16, uint, undefined};
 
+#[cfg(test)]
+mod test;
+
 pub(super) fn links(b: &[u8], sizes: &Sizes, group: usize) -> Vec<(String, usize)> {
     let mut out = Vec::new();
     let mut dense_heap = None;

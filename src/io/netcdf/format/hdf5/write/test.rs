@@ -287,3 +287,11 @@ fn hyperslab_out_of_bounds_panics() {
     let nc = NetCDF::open(path).unwrap();
     nc.get_variable_slice::<i32>("v", &[2], &[5]).unwrap();
 }
+
+#[test]
+fn zero_width_rows_plan_a_single_chunk() {
+    use super::chunk::plan;
+    let p = plan(&[3, 0], &[], 8, 1);
+    assert_eq!(p.chunk_dims, [3, 0]);
+    assert_eq!(p.blobs.len(), 1);
+}
