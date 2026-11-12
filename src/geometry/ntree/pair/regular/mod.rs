@@ -1,6 +1,6 @@
 use crate::geometry::ntree::node::slot::Slot;
 use crate::geometry::ntree::{Orthotree, node::cell::Cell};
-use std::array::from_fn;
+use core::array::from_fn;
 
 impl<const D: usize, const L: usize, const M: usize, const N: usize, T, U, V>
     Orthotree<D, L, M, N, T, U, V>

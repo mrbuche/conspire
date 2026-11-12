@@ -11,7 +11,7 @@ use crate::{
     },
     math::Scalar,
 };
-use std::array::from_fn;
+use core::array::from_fn;
 
 /// Four cells along the edge, absent where the domain cuts them off.
 type Lane = [Option<usize>; 4];

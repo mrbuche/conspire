@@ -106,7 +106,7 @@ pub(crate) fn verify_dual(mesh: &Mesh<D>) -> Result<(), String> {
             vertices.len()
         ));
     }
-    let used: HashSet<usize> = mesh.iter().flatten().flatten().copied().collect();
+    let used: FxHashSet<usize> = mesh.iter().flatten().flatten().copied().collect();
     let faces = mesh.iter().flatten().count();
     let euler = used.len() as isize - edges.len() as isize + faces as isize;
     if euler != 1 {
@@ -225,13 +225,13 @@ fn every_cluster_facet_is_classifiable() {
         for seed in 0..100u64 {
             let tree = fuzz_tree(seed, Balancing::Weak(1), pairing);
             let root = &tree.nodes[0];
-            let low: [i64; D] = std::array::from_fn(|a| root.corner[a] as i64);
-            let high: [i64; D] = std::array::from_fn(|a| low[a] + root.length as i64);
+            let low: [i64; D] = core::array::from_fn(|a| root.corner[a] as i64);
+            let high: [i64; D] = core::array::from_fn(|a| low[a] + root.length as i64);
             let cell_at = |corner: [i64; D], length: i64| -> Option<usize> {
                 if (0..D).any(|a| corner[a] < low[a] || corner[a] + length > high[a]) {
                     return None;
                 }
-                let point = std::array::from_fn(|a| corner[a] as usize);
+                let point = core::array::from_fn(|a| corner[a] as usize);
                 let index = leaf_containing(&tree, &point);
                 let node = &tree.nodes[index];
                 (length as usize == node.length as usize
@@ -239,7 +239,7 @@ fn every_cluster_facet_is_classifiable() {
                 .then_some(index)
             };
             for &(cluster, length) in tree.pairing_vertices.iter() {
-                let center: [i64; D] = std::array::from_fn(|a| cluster[a] as i64);
+                let center: [i64; D] = core::array::from_fn(|a| cluster[a] as i64);
                 let (coarse, fine) = (length as i64, length as i64 / 2);
                 for facet in 0..4 {
                     let (axis, side) = (facet >> 1, facet & 1);
