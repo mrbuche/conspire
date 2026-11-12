@@ -8,7 +8,7 @@ use crate::{
         linear::Hexahedron as FullHexahedron,
         stabilized::{HourglassBaseVectors, M, StabilizedElement, stabilized_from},
     },
-    math::{ScalarList, TensorRank1},
+    math::{Scalar, ScalarList, TensorRank1},
     units::Volume,
 };
 
@@ -16,6 +16,8 @@ const G: usize = 1;
 const N: usize = 8;
 const P: usize = N;
 const K: usize = 4;
+
+const HOURGLASS_CALIBRATION: Scalar = 16.0 / 9.0;
 
 const BASE_VECTORS: HourglassBaseVectors<K, N> = HourglassBaseVectors::const_from([
     TensorRank1::const_from([1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]),
@@ -52,9 +54,10 @@ impl FiniteElement<G, M, N, P> for Hexahedron {
 impl From<ElementNodalReferenceCoordinates<N>> for Hexahedron {
     fn from(reference_nodal_coordinates: ElementNodalReferenceCoordinates<N>) -> Self {
         stabilized_from(
-            &FullHexahedron::from(reference_nodal_coordinates.clone()),
+            &reference_nodal_coordinates.clone().into(),
             &reference_nodal_coordinates,
             &BASE_VECTORS,
+            HOURGLASS_CALIBRATION,
         )
     }
 }

@@ -295,6 +295,43 @@ mod elastic {
         })
     }
     #[test]
+    fn hourglass_stiffness_is_the_fraction_of_the_cubes_in_a_volume_preserving_mode()
+    -> Result<(), AssertionError> {
+        use crate::fem::block::element::{
+            ElementNodalReferenceCoordinates, stabilized::HOURGLASS_PARAMETER,
+        };
+        let cube: [[f64; 3]; N] = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ];
+        let mode = [1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0];
+        let displacements: [[f64; 3]; N] = from_fn(|a| [mode[a], 0.0, 0.0]);
+        let energy = |stiffnesses: &ElementNodalStiffnessesSolid<N>| {
+            let forces = stiffnesses_times(stiffnesses, &displacements);
+            (0..N)
+                .map(|a| {
+                    (0..3)
+                        .map(|i| displacements[a][i] * forces[a][i])
+                        .sum::<f64>()
+                })
+                .sum::<f64>()
+        };
+        let reference: ElementNodalReferenceCoordinates<N> = cube.into();
+        let current: ElementNodalCoordinates<N> = cube.into();
+        let full = FullHexahedron::from(reference.clone())
+            .nodal_stiffnesses(&model(), &current)
+            .unwrap();
+        let hourglass = Hexahedron::from(reference).hourglass_stiffnesses(model().shear_modulus());
+        Assert::default().eq_within_tols(energy(&hourglass) / HOURGLASS_PARAMETER, energy(&full))
+    }
+
+    #[test]
     fn hourglass_forces_rotate_with_the_element() -> Result<(), AssertionError> {
         let element = Hexahedron::from(reference_coordinates());
         let shear_modulus = model().shear_modulus();
