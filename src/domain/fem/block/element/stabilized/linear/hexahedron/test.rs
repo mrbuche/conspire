@@ -416,3 +416,107 @@ mod elastic {
         }
     }
 }
+
+mod block {
+    use super::{FullHexahedron, Hexahedron};
+    use crate::{
+        constitutive::solid::{
+            elastic::test::{BULK_MODULUS, SHEAR_MODULUS},
+            hyperelastic::NeoHookean,
+        },
+        fem::{
+            NodalCoordinates, NodalReferenceCoordinates, block::Block,
+            solid::elastic::ElasticElements,
+        },
+        math::assert::{Assert, AssertionError},
+    };
+    use core::array::from_fn;
+
+    type Stabilized = Block<NeoHookean, Hexahedron, 1, 3, 8, 8>;
+    type Full = Block<NeoHookean, FullHexahedron, 8, 3, 8, 8>;
+    const NODES: usize = 27;
+    const INTERIOR_NODE: usize = 13;
+    fn model() -> NeoHookean {
+        NeoHookean {
+            bulk_modulus: BULK_MODULUS,
+            shear_modulus: SHEAR_MODULUS,
+        }
+    }
+    fn connectivity() -> Vec<[usize; 8]> {
+        (0..8)
+            .map(|element| {
+                let (i, j, k) = (element % 2, (element / 2) % 2, element / 4);
+                let node = |di: usize, dj: usize, dk: usize| (i + di) + 3 * (j + dj) + 9 * (k + dk);
+                [
+                    node(0, 0, 0),
+                    node(1, 0, 0),
+                    node(1, 1, 0),
+                    node(0, 1, 0),
+                    node(0, 0, 1),
+                    node(1, 0, 1),
+                    node(1, 1, 1),
+                    node(0, 1, 1),
+                ]
+            })
+            .collect()
+    }
+    fn reference_array() -> [[f64; 3]; NODES] {
+        from_fn(|node| {
+            let grid = [node % 3, (node / 3) % 3, node / 9];
+            from_fn(|i| 0.5 * grid[i] as f64 - 0.5 + 0.04 * ((7 * node + 3 * i) as f64).sin())
+        })
+    }
+    fn reference_coordinates() -> NodalReferenceCoordinates<3> {
+        reference_array().into()
+    }
+    fn deformed(deformation_gradient: [[f64; 3]; 3], translation: [f64; 3]) -> NodalCoordinates<3> {
+        let reference = reference_array();
+        let deformed: [[f64; 3]; NODES] = from_fn(|node| {
+            from_fn(|i| {
+                (0..3)
+                    .map(|j| deformation_gradient[i][j] * reference[node][j])
+                    .sum::<f64>()
+                    + translation[i]
+            })
+        });
+        deformed.into()
+    }
+    fn homogeneous() -> NodalCoordinates<3> {
+        deformed(
+            [[1.1, 0.1, 0.0], [0.0, 0.9, 0.2], [0.1, 0.0, 1.05]],
+            [0.3, -0.2, 0.1],
+        )
+    }
+    #[test]
+    fn forces_match_full_integration_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
+        let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
+        let full = Full::from((model(), connectivity(), &reference_coordinates()));
+        Assert::default().eq_within_tols(
+            stabilized.nodal_forces(&homogeneous()).unwrap(),
+            full.nodal_forces(&homogeneous()).unwrap(),
+        )
+    }
+    #[test]
+    fn interior_node_is_in_equilibrium_for_a_homogeneous_deformation() -> Result<(), AssertionError>
+    {
+        let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
+        let forces = stabilized.nodal_forces(&homogeneous()).unwrap();
+        (0..3).try_for_each(|i| {
+            Assert::default().eq_within_tols(forces[INTERIOR_NODE][i].value(), 0.0)
+        })
+    }
+    #[test]
+    fn forces_vanish_for_a_rigid_motion() -> Result<(), AssertionError> {
+        let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
+        let (sin, cos) = 0.3_f64.sin_cos();
+        let forces = stabilized
+            .nodal_forces(&deformed(
+                [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
+                [0.5, -0.4, 0.2],
+            ))
+            .unwrap();
+        (0..NODES).try_for_each(|node| {
+            (0..3).try_for_each(|i| Assert::default().eq_within_tols(forces[node][i].value(), 0.0))
+        })
+    }
+}
