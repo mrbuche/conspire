@@ -352,6 +352,105 @@ fn fuzz_strong_duals_generalized() {
     fuzz_duals(Balancing::Strong(1), Pairing::Generalized)
 }
 
+fn weak_generalized_dual(length: u16, regions: &[([u16; 3], u16)]) {
+    use super::super::test::verify_dual;
+    use crate::geometry::mesh::Dualization;
+    use crate::geometry::ntree::{Balance, node::Node, rescale::Rescaling};
+    let mut octree = Octree::<u16, usize> {
+        balanced: Balancing::None,
+        nodes: vec![Node {
+            corner: [0, 0, 0],
+            length,
+            facets: [None; 6],
+            kind: Kind::Leaf,
+            value: None,
+        }],
+        paired: Pairing::None,
+        pairing_vertices: Default::default(),
+        pairing_stable_len: Default::default(),
+        rescale: Rescaling {
+            center: Coordinate::const_from([length as f64 / 2.0; 3]),
+            cell: Quantity::new(1.0),
+            half: length as f64 / 2.0,
+        },
+    };
+    octree.subdivide(0).unwrap();
+    for &(corner, length) in regions {
+        let index = (0..octree.nodes.len())
+            .find(|&i| {
+                let node = &octree.nodes[i];
+                node.is_leaf() && node.corner == corner && node.length == length
+            })
+            .unwrap();
+        octree.subdivide(index).unwrap();
+    }
+    octree
+        .equilibrate(Balancing::Weak(1), Pairing::Generalized)
+        .unwrap();
+    verify_dual(&octree.dualize()).unwrap();
+}
+
+// A cluster that straddles two coarse leaves, with the finer cells it pairs meeting a leaf two
+// levels coarser along an edge, is the paper's "refinement n against n - 2" even though the
+// levels read the same on both halves of the edge. Pairing must not choose it.
+#[test]
+fn weak_generalized_straddling_cluster_on_a_uniform_edge() {
+    weak_generalized_dual(
+        8,
+        &[
+            ([4, 4, 4], 4),
+            ([4, 4, 0], 4),
+            ([4, 4, 4], 2),
+            ([4, 4, 2], 2),
+        ],
+    );
+}
+
+#[test]
+fn weak_generalized_straddling_cluster_in_the_interior() {
+    weak_generalized_dual(
+        16,
+        &[
+            ([8, 0, 8], 8),
+            ([8, 0, 0], 8),
+            ([8, 4, 8], 4),
+            ([12, 4, 4], 4),
+            ([8, 4, 4], 4),
+            ([10, 6, 6], 2),
+            ([10, 6, 8], 2),
+            ([12, 4, 0], 4),
+            ([8, 4, 12], 4),
+            ([12, 4, 2], 2),
+            ([10, 4, 14], 2),
+            ([14, 6, 0], 2),
+        ],
+    );
+}
+
+// The cap template fills the junction of a coarse pair with columns one and two levels finer on
+// either side. It has to find the pair's axis from the leaves rather than from the octree
+// lattice, which generalized clusters need not sit on.
+#[test]
+fn weak_generalized_cap_off_the_octree_lattice() {
+    weak_generalized_dual(
+        8,
+        &[
+            ([4, 4, 4], 4),
+            ([4, 4, 4], 2),
+            ([0, 0, 4], 4),
+            ([0, 4, 0], 4),
+        ],
+    );
+}
+
+#[test]
+fn weak_generalized_fuzz_seed_1426() {
+    use super::super::test::verify_dual;
+    use crate::geometry::mesh::Dualization;
+    let octree = fuzz_tree(1426, Balancing::Weak(1), Pairing::Generalized);
+    verify_dual(&octree.dualize()).unwrap();
+}
+
 // The face template takes a quarter of a cluster facet - one coarse leaf and the 2x2 fine cells
 // behind it - only when the quarter is whole, and treats a facet as truncated only when every
 // absent quarter is provably outside the domain. A quarter absent for any other reason (the
