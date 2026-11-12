@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use super::conflicts;
 use crate::math::{FxHashMap, FxHashSet};
 use core::array::from_fn;
@@ -8,8 +11,8 @@ pub(crate) struct Instance<const D: usize> {
     /// The same cells by position, so that the neighbourhood of a vertex can be asked for
     /// rather than found by scanning every cell.
     positions: FxHashSet<[i32; D]>,
-    /// Vertices the alignment rule has refused. Honoured only while pairing stays feasible
-    /// without them, since pairing itself is not negotiable.
+    /// Vertices the alignment rule has refused. They must each have an even coordinate, so that
+    /// every required cell keeps its all-odd corner as a candidate.
     forbidden: HashSet<[i32; D]>,
 }
 
@@ -157,20 +160,12 @@ impl<const D: usize> Instance<D> {
                 cover
             })
             .collect();
-        // Honour as much of the alignment rule as pairing allows: a refusal is withdrawn only
-        // where it would leave a cell with nothing to cover it, and only for that cell, restoring
-        // the lowest-valence candidate.
-        let mut excluded: Vec<bool> = candidates
+        // Refusals only ever name vertices with an even coordinate, and every required cell has an
+        // all-odd corner, so a refusal never leaves a cell without a candidate.
+        let excluded: Vec<bool> = candidates
             .iter()
             .map(|vertex| self.forbidden.contains(vertex))
             .collect();
-        while let Some(cover) = covers
-            .iter()
-            .find(|cover| !cover.is_empty() && cover.iter().all(|&i| excluded[i]))
-        {
-            let cheapest = cover.iter().copied().min_by_key(|&i| valences[i]).unwrap();
-            excluded[cheapest] = false;
-        }
         // Every cover of the same required cell's candidates always conflicts pairwise (any two
         // vertices of one cell are within the doubled-grid spacing of each other), so in
         // principle covers could split into independent components with no candidate in common.
