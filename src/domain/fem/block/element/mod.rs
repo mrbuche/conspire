@@ -13,6 +13,7 @@ pub mod planar;
 pub mod quadratic;
 pub mod serendipity;
 pub mod solid;
+pub mod stabilized;
 pub mod surface;
 pub mod thermal;
 pub mod time_scale;
