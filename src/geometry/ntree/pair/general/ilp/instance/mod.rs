@@ -187,6 +187,12 @@ impl<const D: usize> Instance<D> {
             .iter()
             .map(|cover| cover.iter().filter(|&&i| !excluded[i]).count() as u32)
             .collect();
+        let mut buckets = vec![Vec::new(); covers.iter().map(Vec::len).max().unwrap_or(0) + 1];
+        let mut slot = vec![0; covers.len()];
+        for (c, &v) in viable.iter().enumerate() {
+            slot[c] = buckets[v as usize].len();
+            buckets[v as usize].push(c);
+        }
         let mut solver = Solver {
             valences: &valences,
             conflicts_of: &conflicts_of,
@@ -196,9 +202,11 @@ impl<const D: usize> Instance<D> {
             excluded_count: excluded.iter().map(|&b| b as u32).collect(),
             covered,
             viable,
+            buckets,
+            slot,
             best: None,
         };
-        solver.branch(0);
+        solver.search();
         let (cost, selected) = solver.best.expect("no feasible assignment found");
         let assignment = selected
             .into_iter()
@@ -230,20 +238,46 @@ struct Solver<'a> {
     covered: Vec<u32>,
     /// Per cover: how many of its candidates are not excluded right now.
     viable: Vec<u32>,
+    /// The uncovered covers, bucketed by `viable`, so the most constrained one is the first of
+    /// the lowest non-empty bucket rather than the minimum of a scan over every cover - which is
+    /// linear per search node and made the whole search quadratic on surface-like inputs.
+    buckets: Vec<Vec<usize>>,
+    /// Where each uncovered cover sits in its bucket, for removing it in constant time.
+    slot: Vec<usize>,
     best: Option<(usize, Vec<bool>)>,
 }
 
 impl Solver<'_> {
+    fn insert(&mut self, c: usize) {
+        let bucket = &mut self.buckets[self.viable[c] as usize];
+        self.slot[c] = bucket.len();
+        bucket.push(c);
+    }
+    fn remove(&mut self, c: usize) {
+        let bucket = &mut self.buckets[self.viable[c] as usize];
+        let moved = *bucket.last().unwrap();
+        bucket.swap_remove(self.slot[c]);
+        self.slot[moved] = self.slot[c];
+    }
     fn select(&mut self, i: usize) {
         self.selected[i] = true;
         for &c in &self.cover_of[i] {
             self.covered[c] += 1;
+            if self.covered[c] == 1 {
+                self.remove(c);
+            }
         }
         for &j in &self.conflicts_of[i] {
             self.excluded_count[j] += 1;
             if self.excluded_count[j] == 1 {
                 for &c in &self.cover_of[j] {
-                    self.viable[c] -= 1;
+                    if self.covered[c] == 0 {
+                        self.remove(c);
+                        self.viable[c] -= 1;
+                        self.insert(c);
+                    } else {
+                        self.viable[c] -= 1;
+                    }
                 }
             }
         }
@@ -252,36 +286,75 @@ impl Solver<'_> {
         for &j in &self.conflicts_of[i] {
             if self.excluded_count[j] == 1 {
                 for &c in &self.cover_of[j] {
-                    self.viable[c] += 1;
+                    if self.covered[c] == 0 {
+                        self.remove(c);
+                        self.viable[c] += 1;
+                        self.insert(c);
+                    } else {
+                        self.viable[c] += 1;
+                    }
                 }
             }
             self.excluded_count[j] -= 1;
         }
         for &c in &self.cover_of[i] {
             self.covered[c] -= 1;
+            if self.covered[c] == 0 {
+                self.insert(c);
+            }
         }
         self.selected[i] = false;
     }
-    fn branch(&mut self, cost: usize) {
-        if let Some((best_cost, _)) = &self.best
-            && cost >= *best_cost
-        {
-            return;
+    /// Depth-first search with its own stack: the depth is one frame per chosen cluster, which
+    /// grows with the domain and would overflow the call stack on a large one.
+    fn search(&mut self) {
+        struct Frame {
+            cover: usize,
+            next: usize,
+            chosen: Option<usize>,
+            cost: usize,
         }
-        let uncovered = (0..self.covers.len())
-            .filter(|&c| self.covered[c] == 0)
-            .min_by_key(|&c| self.viable[c]);
-        let Some(c) = uncovered else {
-            self.best = Some((cost, self.selected.clone()));
-            return;
-        };
-        for &i in &self.covers[c] {
-            if self.excluded_count[i] > 0 {
-                continue;
+        let covers = self.covers;
+        let mut stack: Vec<Frame> = Vec::new();
+        let mut entering = Some(0);
+        loop {
+            if let Some(cost) = entering.take()
+                && self.best.as_ref().is_none_or(|(best, _)| cost < *best)
+            {
+                match self
+                    .buckets
+                    .iter()
+                    .find_map(|bucket| bucket.first().copied())
+                {
+                    Some(cover) => stack.push(Frame {
+                        cover,
+                        next: 0,
+                        chosen: None,
+                        cost,
+                    }),
+                    None => self.best = Some((cost, self.selected.clone())),
+                }
             }
-            self.select(i);
-            self.branch(cost + self.valences[i]);
-            self.deselect(i);
+            let Some(frame) = stack.last_mut() else {
+                break;
+            };
+            if let Some(i) = frame.chosen.take() {
+                self.deselect(i);
+            }
+            let cover = &covers[frame.cover];
+            while frame.next < cover.len() {
+                let i = cover[frame.next];
+                frame.next += 1;
+                if self.excluded_count[i] == 0 {
+                    self.select(i);
+                    frame.chosen = Some(i);
+                    entering = Some(frame.cost + self.valences[i]);
+                    break;
+                }
+            }
+            if entering.is_none() {
+                stack.pop();
+            }
         }
     }
 }
