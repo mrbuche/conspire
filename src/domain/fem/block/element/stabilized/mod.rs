@@ -7,7 +7,7 @@ use crate::{
         solid::{ElementNodalForcesSolid, ElementNodalStiffnessesSolid},
     },
     math::{IDENTITY, Projection, Quantity, Scalar, Tensor, TensorRank1, TensorRank1List},
-    units::{Length, Stress, Volume},
+    units::{Energy, Length, Stress, Volume},
 };
 use core::{
     array::from_fn,
@@ -73,6 +73,30 @@ impl<const N: usize> StabilizedElement<N> {
             })
             .collect()
     }
+    /// The energy of the [hourglass forces](Self::hourglass_forces), being
+    /// half the modulus times the hourglass matrix as a quadratic form in the
+    /// current coordinates.
+    pub(crate) fn hourglass_helmholtz_free_energy(
+        &self,
+        shear_modulus: Quantity<Stress>,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Quantity<Energy> {
+        shear_modulus * HOURGLASS_PARAMETER / 2.0
+            * self
+                .hourglass_matrix
+                .iter()
+                .zip(nodal_coordinates.iter())
+                .map(|(hourglass_matrix_a, nodal_coordinate_a)| {
+                    hourglass_matrix_a
+                        .iter()
+                        .zip(nodal_coordinates.iter())
+                        .map(|(hourglass_matrix_ab, nodal_coordinate_b)| {
+                            (nodal_coordinate_a * nodal_coordinate_b) * hourglass_matrix_ab
+                        })
+                        .sum::<Quantity<_>>()
+                })
+                .sum::<Quantity<_>>()
+    }
     /// The derivative of the [hourglass forces](Self::hourglass_forces) with
     /// respect to the nodal coordinates, which is constant.
     pub(crate) fn hourglass_stiffnesses(
@@ -85,7 +109,7 @@ impl<const N: usize> StabilizedElement<N> {
             .map(|hourglass_matrix_a| {
                 hourglass_matrix_a
                     .iter()
-                    .map(|hourglass_matrix_ab| &IDENTITY * (modulus * hourglass_matrix_ab))
+                    .map(|hourglass_matrix_ab| IDENTITY * (modulus * hourglass_matrix_ab))
                     .collect()
             })
             .collect()

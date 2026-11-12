@@ -315,4 +315,66 @@ mod elastic {
             })
         })
     }
+    mod hyperelastic {
+        use super::*;
+        use crate::domain::block::element::solid::hyperelastic::HyperelasticElement;
+        #[test]
+        fn energy_matches_full_integration_for_a_homogeneous_deformation()
+        -> Result<(), AssertionError> {
+            Assert::default().eq_within_tols(
+                Hexahedron::from(reference_coordinates())
+                    .helmholtz_free_energy(&model(), &homogeneous())
+                    .unwrap()
+                    .value(),
+                FullHexahedron::from(reference_coordinates())
+                    .helmholtz_free_energy(&model(), &homogeneous())
+                    .unwrap()
+                    .value(),
+            )
+        }
+        #[test]
+        fn hourglass_energy_vanishes_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
+            Assert::default().eq_within_tols(
+                Hexahedron::from(reference_coordinates())
+                    .hourglass_helmholtz_free_energy(model().shear_modulus(), &homogeneous())
+                    .value(),
+                0.0,
+            )
+        }
+        #[test]
+        fn hourglass_energy_rises_on_an_hourglass_mode() {
+            let mode = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+            let mut deformed = coordinates();
+            deformed
+                .iter_mut()
+                .zip(mode)
+                .for_each(|(coordinate, mode_a)| coordinate[0] += 0.05 * mode_a);
+            let energy = Hexahedron::from(reference_coordinates())
+                .hourglass_helmholtz_free_energy(model().shear_modulus(), &deformed.into())
+                .value();
+            assert!(energy > 0.0)
+        }
+        #[test]
+        fn hourglass_forces_are_the_gradient_of_the_hourglass_energy() -> Result<(), AssertionError>
+        {
+            let element = Hexahedron::from(reference_coordinates());
+            let shear_modulus = model().shear_modulus();
+            let change: [[f64; 3]; N] = from_fn(|a| from_fn(|i| 0.01 * ((3 * a + i) as f64).sin()));
+            let state = inhomogeneous_array();
+            let plus: [[f64; 3]; N] = from_fn(|a| from_fn(|i| state[a][i] + change[a][i]));
+            let minus: [[f64; 3]; N] = from_fn(|a| from_fn(|i| state[a][i] - change[a][i]));
+            let forces = forces_array(&element.hourglass_forces(shear_modulus, &state.into()));
+            Assert::default().eq_within_tols(
+                element
+                    .hourglass_helmholtz_free_energy(shear_modulus, &plus.into())
+                    .value()
+                    - element
+                        .hourglass_helmholtz_free_energy(shear_modulus, &minus.into())
+                        .value(),
+                2.0 * (0..N)
+                    .map(|a| (0..3).map(|i| forces[a][i] * change[a][i]).sum::<f64>())
+                    .sum::<f64>(),
+            )
+        }
+    }
 }
