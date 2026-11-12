@@ -91,24 +91,24 @@ where
         constitutive_model: &C,
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError> {
-        nodal_forces::<_, _, _, _, _, 1, _>(
+        Ok(nodal_forces::<_, _, _, _, _, 1, _>(
             self,
             constitutive_model,
             self.gradient_vectors(),
             nodal_coordinates,
-        )
+        )? + self.hourglass_forces(constitutive_model.shear_modulus(), nodal_coordinates))
     }
     fn nodal_stiffnesses(
         &self,
         constitutive_model: &C,
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError> {
-        nodal_stiffnesses::<_, _, _, _, _, 1, _>(
+        Ok(nodal_stiffnesses::<_, _, _, _, _, 1, _>(
             self,
             constitutive_model,
             self.gradient_vectors(),
             nodal_coordinates,
-        )
+        )? + self.hourglass_stiffnesses(constitutive_model.shear_modulus()))
     }
 }
 
