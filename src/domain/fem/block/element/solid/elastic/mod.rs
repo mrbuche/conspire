@@ -9,6 +9,7 @@ use crate::{
         solid::{
             ElementNodalForcesSolid, ElementNodalStiffnessesSolid, SolidElement, SolidFiniteElement,
         },
+        stabilized::StabilizedElement,
         surface::{SurfaceElement, SurfaceFiniteElement},
     },
     math::{ContractSecondFourthWithFirst, Current, IDENTITY, Quantity, Tensor, TensorRank2},
@@ -74,6 +75,40 @@ where
             self.gradient_vectors(),
             nodal_coordinates,
         )
+    }
+}
+
+impl<C, const N: usize> ElasticElement<C> for StabilizedElement<N>
+where
+    C: Elastic,
+    Self: SolidFiniteElement<1, 3, N, N>,
+{
+    type Forces = ElementNodalForcesSolid<N>;
+    type Stiffnesses = ElementNodalStiffnessesSolid<N>;
+    type Error = FiniteElementError;
+    fn nodal_forces(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError> {
+        Ok(nodal_forces::<_, _, _, _, _, 1, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )? + self.hourglass_forces(constitutive_model.shear_modulus(), nodal_coordinates))
+    }
+    fn nodal_stiffnesses(
+        &self,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalStiffnessesSolid<N>, FiniteElementError> {
+        Ok(nodal_stiffnesses::<_, _, _, _, _, 1, _>(
+            self,
+            constitutive_model,
+            self.gradient_vectors(),
+            nodal_coordinates,
+        )? + self.hourglass_stiffnesses(constitutive_model.shear_modulus()))
     }
 }
 
