@@ -317,7 +317,7 @@ fn expm_non_symmetric_matches_a_high_order_taylor_reference() -> Result<(), Asse
         rel_tol: 1e-10,
         ..Default::default()
     }
-    .eq_within_tols(a.expm().unwrap(), &reference)
+    .eq_within_tols(a.expm()?, &reference)
 }
 
 fn rate() -> TensorRank2<3, Current, Current> {

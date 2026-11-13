@@ -652,8 +652,7 @@ impl<const D: usize, I, J, U> Rank2 for TensorRank2<D, I, J, U> {
     }
     fn transpose(&self) -> Self::Transpose {
         (0..D)
-            .map(|i| (0..D).map(|j| self[j][i]).collect())
-            // .map(|i| self.iter().map(|self_j| self_j[i]).collect())
+            .map(|i| self.iter().map(|self_j| self_j[i]).collect())
             .collect()
     }
 }
@@ -1435,8 +1434,9 @@ where
 {
     type Output = TensorRank2<3, K, L, <U as UnitDiv<V>>::Output>;
     fn div(self, tensor_rank_4: TensorRank4<3, I, J, K, L, V>) -> Self::Output {
-        let tensor_rank_2: TensorRank2<9, Factor, Flattened, Dimensionless> =
-            tensor_rank_4.with_unit::<Dimensionless>().into();
+        let tensor_rank_2 = TensorRank2::<9, Factor, Flattened, Dimensionless>::from(
+            tensor_rank_4.with_unit::<Dimensionless>(),
+        );
         let output_tensor_rank_1 = tensor_rank_2.inverse() * self.canonical().as_tensor_rank_1();
         let mut output = TensorRank2::<3, Reference, Reference, Dimensionless>::zero();
         output.iter_mut().enumerate().for_each(|(i, output_i)| {

@@ -429,17 +429,6 @@ impl<const D: usize, I, U> From<TensorRank1<D, I, U>> for [TensorRank0; D] {
     }
 }
 
-impl<const D: usize, I, U> From<Vec<TensorRank0>> for TensorRank1<D, I, U> {
-    fn from(vec: Vec<TensorRank0>) -> Self {
-        Self(
-            TryInto::<[TensorRank0; D]>::try_into(vec)
-                .unwrap()
-                .map(Quantity::new),
-            PhantomData,
-        )
-    }
-}
-
 impl<const D: usize, I, U> From<TensorRank1<D, I, U>> for Vec<TensorRank0> {
     fn from(tensor_rank_1: TensorRank1<D, I, U>) -> Self {
         tensor_rank_1.0.iter().map(|entry| entry.value()).collect()

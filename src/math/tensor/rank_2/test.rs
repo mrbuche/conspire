@@ -1288,13 +1288,13 @@ fn retain_from_filters_entries() {
 }
 
 #[test]
-fn a_vector_takes_the_layout_that_filling_one_gives() {
+fn a_vector_takes_the_layout_that_filling_one_gives() -> Result<(), AssertionError> {
     use super::super::{Jacobian, Vector};
     let tensor = TensorRank2::<3, Current, Current>::from(get_array_dim_3());
     let mut flat = Vector::zero(9);
     Jacobian::fill_into(&tensor, &mut flat);
     let rebuilt = TensorRank2::<3, Current, Current>::from(flat);
-    Assert::default().eq_within_tols(&rebuilt, &tensor).unwrap()
+    Assert::default().eq_within_tols(&rebuilt, &tensor)
 }
 
 #[test]
@@ -1338,14 +1338,12 @@ fn decrement_from_retained_skips_fixed_entries() {
 }
 
 #[test]
-fn quadratic_form_matches_dense() {
+fn quadratic_form_matches_dense() -> Result<(), AssertionError> {
     use super::super::{Hessian, SquareMatrix, Vector};
     let tensor = TensorRank2::<3, Current, Current>::from(get_array_dim_3());
     let vector = Vector::from([1.0, -2.0, 3.0]);
     let form = tensor.quadratic_form(&vector);
     let mut dense = SquareMatrix::zero(3);
     tensor.fill_into(&mut dense);
-    Assert::default()
-        .eq_within_tols(form, &(&vector * (dense * &vector)))
-        .unwrap()
+    Assert::default().eq_within_tols(form, &(&vector * (dense * &vector)))
 }

@@ -68,14 +68,6 @@ impl<const D: usize, I, U> From<TensorRank1Vec<D, I, U>> for Vec<[TensorRank0; D
     }
 }
 
-impl<const D: usize, I, U> From<Vec<Vec<TensorRank0>>> for TensorRank1Vec<D, I, U> {
-    fn from(vec: Vec<Vec<TensorRank0>>) -> Self {
-        vec.into_iter()
-            .map(|tensor_rank_1| tensor_rank_1.into())
-            .collect()
-    }
-}
-
 impl<const D: usize, I, U> From<TensorRank1Vec<D, I, U>> for Vec<Vec<TensorRank0>> {
     fn from(tensor_rank_1_vec: TensorRank1Vec<D, I, U>) -> Self {
         tensor_rank_1_vec

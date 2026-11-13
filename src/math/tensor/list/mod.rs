@@ -4,11 +4,11 @@ use crate::math::{
     ContractWith, Differentiable, Erase, Quantity, Tensor, TensorArray, TensorRank0,
 };
 use core::{
-    array::{self, from_fn},
+    array::{IntoIter, from_fn},
     fmt::{Display, Formatter, Result},
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
-    slice,
+    slice::Iter,
 };
 
 /// A fixed-size collection of tensors.
@@ -147,7 +147,7 @@ where
     T: Tensor,
 {
     type Item = T;
-    type IntoIter = array::IntoIter<Self::Item, N>;
+    type IntoIter = IntoIter<Self::Item, N>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -158,7 +158,7 @@ where
     T: Tensor,
 {
     type Item = &'a T;
-    type IntoIter = slice::Iter<'a, T>;
+    type IntoIter = Iter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }

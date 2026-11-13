@@ -9,7 +9,7 @@ use crate::units::{Dimensionless, UnitDiv, UnitMul};
 use crate::math::assert::FiniteDifference;
 
 use core::{
-    array::from_fn,
+    array::{IntoIter, from_fn},
     fmt::{self, Debug, Display, Formatter},
     iter::Sum,
     marker::PhantomData,
@@ -579,7 +579,7 @@ impl<const D: usize, I, J, K, L, U> Tensor for TensorRank4<D, I, J, K, L, U> {
 
 impl<const D: usize, I, J, K, L, U> IntoIterator for TensorRank4<D, I, J, K, L, U> {
     type Item = TensorRank3<D, J, K, L, U>;
-    type IntoIter = core::array::IntoIter<Self::Item, D>;
+    type IntoIter = IntoIter<Self::Item, D>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
