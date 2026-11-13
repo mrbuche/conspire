@@ -20,7 +20,6 @@ fn brackets_the_eigenvalues_of_a_diagonal_pair() {
 fn accounts_for_the_masses() {
     let stiffness = diagonal(&[1.0, 4.0, 9.0]);
     let masses = [1.0, 2.0, 9.0];
-    // the eigenvalues of M⁻¹K are 1, 2, and 1
     assert!(eigenvalues_below(3, &stiffness, &masses, 2.01));
     assert!(!eigenvalues_below(3, &stiffness, &masses, 1.99));
 }
@@ -28,7 +27,6 @@ fn accounts_for_the_masses() {
 #[test]
 fn brackets_a_coupled_pair() {
     let stiffness = |row: usize, column: usize| if row == column { 2.0 } else { -1.0 };
-    // the largest eigenvalue of M⁻¹K is (3 + √3) / 2
     let masses = [1.0, 2.0];
     let largest = (3.0 + 3.0_f64.sqrt()) / 2.0;
     assert!(eigenvalues_below(2, stiffness, &masses, largest * 1.001));
@@ -68,7 +66,6 @@ fn agrees_with_the_power_iteration() {
 fn compares_a_time_scale() {
     let stiffness = diagonal(&[1.0, 4.0, 9.0]);
     let masses = [1.0; 3];
-    // the fastest time scale is 1 / 3
     assert!(time_scale_exceeds(
         3,
         &stiffness,

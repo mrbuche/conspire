@@ -38,7 +38,8 @@ macro_rules! test_dielectric_block {
                         MODEL,
                         get_connectivity(),
                         &get_reference_coordinates_block(),
-                    ).into()
+                    )
+                        .into()
                 }
                 #[test]
                 fn potential() -> Result<(), AssertionError> {

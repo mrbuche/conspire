@@ -1,7 +1,10 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{Block, Densities, ElementDensities, element::{FiniteElement, linear::Tetrahedron}},
+        block::{
+            Block, Densities, ElementDensities,
+            element::{FiniteElement, linear::Tetrahedron},
+        },
     },
     math::{
         Quantity,
@@ -18,7 +21,8 @@ fn coordinates() -> NodalReferenceCoordinates<3> {
         [0.2, 0.9, 0.1],
         [0.3, 0.4, 1.2],
         [1.5, 1.4, 1.3],
-    ].into()
+    ]
+    .into()
 }
 
 const CONNECTIVITY: [[usize; 4]; 2] = [[0, 1, 2, 3], [1, 2, 3, 4]];
