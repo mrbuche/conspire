@@ -4,6 +4,7 @@ pub mod test;
 mod base;
 mod buffer;
 mod connectivity;
+mod decomposition;
 pub(crate) mod differential;
 mod fit;
 mod from;
@@ -26,6 +27,7 @@ pub use self::{
         Connectivities, Connectivity, polytopal::PolytopalConnectivity,
         primitive::PrimitiveConnectivity,
     },
+    decomposition::{Bisection, Decomposition, DecompositionQuality},
     differential::laplace::Weighting,
     fit::{Fitting, Freedom},
     quality::metrics::Verdict,
