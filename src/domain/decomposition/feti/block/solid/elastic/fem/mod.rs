@@ -1,6 +1,6 @@
 use crate::{
     constitutive::solid::elastic::Elastic,
-    domain::feti::block::element::{
+    domain::decomposition::feti::block::element::{
         DecomposableElements, ElementSystem, ElementSystems, positions,
     },
     fem::{

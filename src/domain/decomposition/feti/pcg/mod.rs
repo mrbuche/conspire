@@ -1,5 +1,5 @@
 use crate::{
-    domain::feti::{
+    domain::decomposition::feti::{
         THREADS,
         dual::{
             dual_action, dual_operator, dual_precondition, dual_precondition_dirichlet,

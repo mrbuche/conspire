@@ -19,7 +19,7 @@ use super::super::{
 use crate::math::FxHashSet;
 use crate::{
     domain::ElementModelError,
-    geometry::mesh::Decomposition,
+    domain::decomposition::Decomposition,
     math::{
         Quantity, Scalar, SquareMatrix, Style, StyledError, Vector,
         optimize::{KrylovError, KrylovMethod},

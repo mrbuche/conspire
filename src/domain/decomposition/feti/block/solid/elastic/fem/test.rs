@@ -3,12 +3,12 @@ use crate::{
         elastic::test::{BULK_MODULUS, SHEAR_MODULUS},
         hyperelastic::NeoHookean,
     },
-    domain::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
+    domain::decomposition::Decomposition,
+    domain::decomposition::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
     fem::{
         NodalCoordinates, NodalReferenceCoordinates,
         block::{Block, element::linear::Tetrahedron},
     },
-    geometry::mesh::Decomposition,
     math::{Tensor, Vector},
 };
 
@@ -119,7 +119,7 @@ fn a_boundary_condition_on_a_corner_node_solves_correctly() {
 
 #[test]
 fn element_systems_are_stress_free_and_symmetric_at_zero_deformation() {
-    use crate::domain::feti::DecomposableElements;
+    use crate::domain::decomposition::feti::DecomposableElements;
     let block = block();
     let systems = block
         .element_systems(&NodalCoordinates::from(coordinates()))

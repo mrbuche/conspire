@@ -1,8 +1,9 @@
+use super::super::{Decomposition, test::blocks};
 use crate::math::FxHashMap;
 use crate::{
     geometry::{
         Coordinate, Coordinates,
-        mesh::{Connectivity, Decomposition, Mesh, decomposition::test::blocks},
+        mesh::{Connectivity, Mesh},
     },
     math::CrossProduct,
 };

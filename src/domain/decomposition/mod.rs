@@ -1,9 +1,14 @@
+//! Domain decomposition methods.
+
 #[cfg(test)]
 mod test;
 
 mod agglomerate;
 mod part;
 mod rcb;
+
+#[cfg(feature = "fem")]
+pub mod feti;
 
 pub use self::rcb::Bisection;
 

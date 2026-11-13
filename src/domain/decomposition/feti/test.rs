@@ -1,6 +1,7 @@
 use super::THREADS;
 use crate::{
-    domain::feti::{
+    domain::decomposition::Decomposition,
+    domain::decomposition::feti::{
         GMRES,
         dual::{
             Scaling, coupling, coupling_transpose, dual_action, dual_operator, dual_precondition,
@@ -15,7 +16,6 @@ use crate::{
         pcg::{Preconditioner, primal_recovery, projected_pcg, projected_pcg_with},
         subdomain::{DirichletLocal, Subdomain},
     },
-    geometry::mesh::Decomposition,
     math::{FxHashSet, Quantity, SquareMatrix, Tensor, Vector},
 };
 use core::time::Duration;

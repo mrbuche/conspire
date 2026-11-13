@@ -26,7 +26,7 @@ pub use pcg::Preconditioner;
 use crate::domain::{NodalCoordinates, solid::NodalForcesSolid};
 #[cfg(feature = "fem")]
 use crate::{
-    geometry::mesh::Decomposition,
+    domain::decomposition::Decomposition,
     math::{
         Quantity, Vector,
         optimize::{Krylov, KrylovMethod, LinearSolver},

@@ -1,5 +1,6 @@
 use super::{DirichletLocal, Subdomain};
-use crate::domain::feti::{
+use crate::domain::decomposition::Decomposition;
+use crate::domain::decomposition::feti::{
     dual_primal::{
         CornerSelection,
         condense::Condensed,
@@ -7,7 +8,6 @@ use crate::domain::feti::{
     },
     interface::build_interfaces,
 };
-use crate::geometry::mesh::Decomposition;
 use crate::math::{Matrix, SquareMatrix, Vector};
 
 #[test]

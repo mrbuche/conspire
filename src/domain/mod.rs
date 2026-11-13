@@ -10,6 +10,7 @@ pub(crate) mod boundary;
 pub mod cbm;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod chemical;
+pub mod decomposition;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod density;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
@@ -20,9 +21,6 @@ pub(crate) mod electrical;
 pub(crate) mod factor;
 #[cfg(feature = "fem")]
 pub mod fem;
-#[cfg(feature = "fem")]
-#[path = "decomposition/feti/mod.rs"]
-pub mod feti;
 pub(crate) mod from;
 pub(crate) mod lumping;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]

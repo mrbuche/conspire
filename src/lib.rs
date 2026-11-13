@@ -28,10 +28,6 @@ pub mod domain;
 #[doc(hidden)]
 pub use domain::fem;
 
-#[cfg(feature = "fem")]
-#[doc(hidden)]
-pub use domain::feti;
-
 #[cfg(feature = "geometry")]
 pub mod geometry;
 

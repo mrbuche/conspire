@@ -3,7 +3,7 @@ mod test;
 
 use super::dual_primal::CornerSelection;
 use crate::{
-    geometry::mesh::Decomposition,
+    domain::decomposition::Decomposition,
     math::{FxHashMap, Scalar, Vector},
 };
 

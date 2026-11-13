@@ -2,7 +2,7 @@
 mod test;
 
 use super::BoundaryConditions;
-use crate::geometry::mesh::Decomposition;
+use crate::domain::decomposition::Decomposition;
 use crate::math::FxHashMap;
 
 /// Which nodes are corners.

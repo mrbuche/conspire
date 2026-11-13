@@ -2,7 +2,7 @@
 mod test;
 
 use crate::{
-    domain::feti::subdomain::Subdomain,
+    domain::decomposition::feti::subdomain::Subdomain,
     math::{LuDecomposition, Scalar, SquareMatrix, Tensor, Vector},
 };
 

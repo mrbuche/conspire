@@ -1,7 +1,7 @@
 use super::super::super::{Formulation, dual_primal::BoundaryConditions, pcg::Preconditioner};
 use super::{SolveError, solve_local_systems};
 use crate::{
-    geometry::mesh::Decomposition,
+    domain::decomposition::Decomposition,
     math::{Quantity, SquareMatrix, Tensor, Vector, optimize::KrylovMethod},
 };
 

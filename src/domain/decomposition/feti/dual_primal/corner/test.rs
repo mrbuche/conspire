@@ -1,5 +1,5 @@
 use super::CornerSelection;
-use crate::geometry::mesh::Decomposition;
+use crate::domain::decomposition::Decomposition;
 
 #[test]
 fn three_subdomains_share_one_corner() {
