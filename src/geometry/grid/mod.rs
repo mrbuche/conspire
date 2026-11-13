@@ -19,9 +19,12 @@ use core::{
     ops::{Index, IndexMut, Range},
 };
 
+/// 2D grid.
 pub type Pixels<T> = Grid<2, T>;
+/// 3D grid.
 pub type Voxels<T> = Grid<3, T>;
 
+/// Regular grid of values in `D` dimensions.
 pub struct Grid<const D: usize, T> {
     data: Vec<T>,
     nel: [usize; D],
@@ -45,6 +48,7 @@ fn row_major_strides<const D: usize>(nel: [usize; D]) -> [usize; D] {
 }
 
 impl<const D: usize, T> Grid<D, T> {
+    /// Column-major grid from data and element counts.
     pub fn new(data: Vec<T>, nel: [usize; D]) -> Self {
         assert_eq!(
             data.len(),
@@ -57,6 +61,7 @@ impl<const D: usize, T> Grid<D, T> {
             strides: col_major_strides(nel),
         }
     }
+    /// Row-major grid from data and element counts.
     pub fn new_row_major(data: Vec<T>, nel: [usize; D]) -> Self {
         assert_eq!(
             data.len(),
@@ -69,9 +74,11 @@ impl<const D: usize, T> Grid<D, T> {
             strides: row_major_strides(nel),
         }
     }
+    /// Underlying data in storage order.
     pub fn data(&self) -> &[T] {
         &self.data
     }
+    /// Flat index of a multi-index.
     pub fn flat(&self, index: [usize; D]) -> usize {
         index
             .iter()
@@ -84,6 +91,7 @@ impl<const D: usize, T> Grid<D, T> {
         order.sort_by_key(|&axis| self.strides[axis]);
         order
     }
+    /// Iterates over multi-indices and values.
     pub fn logical_iter<'a>(&'a self) -> impl Iterator<Item = ([usize; D], &'a T)> + 'a {
         let nel = self.nel;
         let order = self.axes_by_stride();
@@ -105,21 +113,26 @@ impl<const D: usize, T> Grid<D, T> {
             Some(item)
         })
     }
+    /// Element counts per axis.
     pub fn nel(&self) -> &[usize; D] {
         &self.nel
     }
+    /// Whether storage is column-major.
     pub fn is_col_major(&self) -> bool {
         self.strides == col_major_strides(self.nel)
     }
+    /// Number of values.
     pub fn len(&self) -> usize {
         self.data.len()
     }
+    /// Whether the grid has no values.
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 }
 
 impl<const D: usize, T: Copy> Grid<D, T> {
+    /// Data in column-major order, borrowed when already stored that way.
     pub fn data_col_major(&self) -> Cow<'_, [T]> {
         if self.strides == col_major_strides(self.nel) {
             Cow::Borrowed(&self.data)
@@ -130,6 +143,7 @@ impl<const D: usize, T: Copy> Grid<D, T> {
 }
 
 impl<const D: usize, T: Copy> Grid<D, T> {
+    /// Sub-grid over the given index ranges.
     pub fn extract(&self, ranges: [Range<usize>; D]) -> Self {
         let nel: [usize; D] = array::from_fn(|axis| ranges[axis].len());
         let total: usize = nel.iter().product();
@@ -148,6 +162,7 @@ impl<const D: usize, T: Copy> Grid<D, T> {
 }
 
 impl<const D: usize, T: PartialEq> Grid<D, T> {
+    /// Elementwise difference mask, one where values differ. Panics on shape mismatch.
     pub fn diff(&self, other: &Self) -> Grid<D, u8> {
         assert_eq!(
             self.nel(),

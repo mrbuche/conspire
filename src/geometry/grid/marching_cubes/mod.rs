@@ -59,26 +59,40 @@ const EDGES_Z: [[usize; 2]; 12] = [
     [0, 1],
 ];
 
+/// Marching cubes lookup method.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Method {
+    /// Lewiner et al. tables.
     Lewiner,
+    /// Original Lorensen tables.
     Lorensen,
+    /// Separated-face variant.
     Separated,
 }
 
+/// Direction of the field across the isosurface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gradient {
+    /// Inside is at or above the level.
     Descent,
+    /// Inside is at or below the level.
     Ascent,
 }
 
+/// Marching cubes isosurface extraction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarchingCubes {
+    /// Surface level, default midrange of the data.
     pub level: Option<f64>,
+    /// Voxel spacing.
     pub spacing: Coordinate<3>,
+    /// Field direction across the surface.
     pub gradient: Gradient,
+    /// Sampling stride, at least one.
     pub step: usize,
+    /// Keep degenerate faces.
     pub degenerate: bool,
+    /// Lookup method.
     pub method: Method,
 }
 
@@ -95,11 +109,16 @@ impl Default for MarchingCubes {
     }
 }
 
+/// Triangle mesh of an isosurface.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Isosurface {
+    /// Vertex positions.
     pub vertices: Coordinates<3>,
+    /// Triangles as vertex index triples.
     pub faces: Vec<[usize; 3]>,
+    /// Vertex normals.
     pub normals: Directions<3>,
+    /// Field value at each vertex.
     pub values: Vec<f64>,
 }
 
@@ -119,6 +138,7 @@ impl MarchingCubes {
             }
         }
     }
+    /// Extracts the isosurface of `volume`, optionally restricted to `mask`.
     pub fn extract(
         &self,
         volume: &Voxels<f64>,
