@@ -4,7 +4,7 @@ use crate::geometry::{
     Coordinate,
     mesh::Mesh,
     ntree::{
-        Balancing, Octree,
+        Balancing, Octree, Pairing,
         node::{Kind, cell::Cell},
     },
 };
@@ -171,6 +171,7 @@ fn survey_weak_vertex_configs() {
     survey(&WEAK_CONFIGS, Balancing::Weak(1));
 }
 
+#[cfg(feature = "io")]
 fn weak_vertex_depths(fine: usize) -> [usize; 8] {
     let mut depths = [2; 8];
     depths[fine] = 3;
@@ -179,6 +180,7 @@ fn weak_vertex_depths(fine: usize) -> [usize; 8] {
 }
 
 #[test]
+#[cfg(feature = "io")]
 fn write_weak_vertex_dual() {
     use super::super::test::verify_dual;
     use crate::{
@@ -253,8 +255,8 @@ where
     }
 }
 
-fn fuzz_tree(seed: u64, balancing: Balancing) -> Octree<u16, usize> {
-    use crate::geometry::ntree::{Balance, Pairing, node::Node, rescale::Rescaling};
+pub(crate) fn fuzz_tree(seed: u64, balancing: Balancing, pairing: Pairing) -> Octree<u16, usize> {
+    use crate::geometry::ntree::{Balance, node::Node, rescale::Rescaling};
     let mut state = seed
         .wrapping_mul(6364136223846793005)
         .wrapping_add(1442695040888963407);
@@ -274,6 +276,8 @@ fn fuzz_tree(seed: u64, balancing: Balancing) -> Octree<u16, usize> {
             value: None,
         }],
         paired: Pairing::None,
+        pairing_vertices: Default::default(),
+        pairing_stable_len: Default::default(),
         rescale: Rescaling {
             center: Coordinate::const_from([16.0; 3]),
             cell: Quantity::new(1.0),
@@ -295,16 +299,16 @@ fn fuzz_tree(seed: u64, balancing: Balancing) -> Octree<u16, usize> {
         let pick = leaves[rand() % leaves.len()];
         octree.subdivide(pick).unwrap();
     }
-    octree.equilibrate(balancing, Pairing::Regular).unwrap();
+    octree.equilibrate(balancing, pairing).unwrap();
     octree
 }
 
-fn fuzz_duals(balancing: Balancing) {
+fn fuzz_duals(balancing: Balancing, pairing: Pairing) {
     use super::super::test::verify_dual;
     use crate::geometry::mesh::Dualization;
     let mut failures = Vec::new();
     for seed in 0..200u64 {
-        let octree = fuzz_tree(seed, balancing);
+        let octree = fuzz_tree(seed, balancing, pairing);
         let mesh = octree.dualize();
         if let Err(error) = verify_dual(&mesh) {
             failures.push(format!("seed {seed}: {error}"));
@@ -327,10 +331,204 @@ fn fuzz_duals(balancing: Balancing) {
 
 #[test]
 fn fuzz_weak_duals() {
-    fuzz_duals(Balancing::Weak(1))
+    fuzz_duals(Balancing::Weak(1), Pairing::Regular)
 }
 
 #[test]
 fn fuzz_strong_duals() {
-    fuzz_duals(Balancing::Strong(1))
+    fuzz_duals(Balancing::Strong(1), Pairing::Regular)
+}
+
+#[test]
+fn fuzz_weak_duals_generalized() {
+    fuzz_duals(Balancing::Weak(1), Pairing::Generalized)
+}
+
+#[test]
+fn fuzz_strong_duals_generalized() {
+    fuzz_duals(Balancing::Strong(1), Pairing::Generalized)
+}
+
+fn weak_generalized_dual(length: u16, regions: &[([u16; 3], u16)]) {
+    use super::super::test::verify_dual;
+    use crate::geometry::mesh::Dualization;
+    use crate::geometry::ntree::{Balance, node::Node, rescale::Rescaling};
+    let mut octree = Octree::<u16, usize> {
+        balanced: Balancing::None,
+        nodes: vec![Node {
+            corner: [0, 0, 0],
+            length,
+            facets: [None; 6],
+            kind: Kind::Leaf,
+            value: None,
+        }],
+        paired: Pairing::None,
+        pairing_vertices: Default::default(),
+        pairing_stable_len: Default::default(),
+        rescale: Rescaling {
+            center: Coordinate::const_from([length as f64 / 2.0; 3]),
+            cell: Quantity::new(1.0),
+            half: length as f64 / 2.0,
+        },
+    };
+    octree.subdivide(0).unwrap();
+    for &(corner, length) in regions {
+        let index = (0..octree.nodes.len())
+            .find(|&i| {
+                let node = &octree.nodes[i];
+                node.is_leaf() && node.corner == corner && node.length == length
+            })
+            .unwrap();
+        octree.subdivide(index).unwrap();
+    }
+    octree
+        .equilibrate(Balancing::Weak(1), Pairing::Generalized)
+        .unwrap();
+    verify_dual(&octree.dualize()).unwrap();
+}
+
+#[test]
+fn weak_generalized_straddling_cluster_on_a_uniform_edge() {
+    weak_generalized_dual(
+        8,
+        &[
+            ([4, 4, 4], 4),
+            ([4, 4, 0], 4),
+            ([4, 4, 4], 2),
+            ([4, 4, 2], 2),
+        ],
+    );
+}
+
+#[test]
+fn weak_generalized_straddling_cluster_in_the_interior() {
+    weak_generalized_dual(
+        16,
+        &[
+            ([8, 0, 8], 8),
+            ([8, 0, 0], 8),
+            ([8, 4, 8], 4),
+            ([12, 4, 4], 4),
+            ([8, 4, 4], 4),
+            ([10, 6, 6], 2),
+            ([10, 6, 8], 2),
+            ([12, 4, 0], 4),
+            ([8, 4, 12], 4),
+            ([12, 4, 2], 2),
+            ([10, 4, 14], 2),
+            ([14, 6, 0], 2),
+        ],
+    );
+}
+
+#[test]
+fn weak_generalized_cap_off_the_octree_lattice() {
+    weak_generalized_dual(
+        8,
+        &[
+            ([4, 4, 4], 4),
+            ([4, 4, 4], 2),
+            ([0, 0, 4], 4),
+            ([0, 4, 0], 4),
+        ],
+    );
+}
+
+#[test]
+fn weak_generalized_fuzz_seed_1426() {
+    use super::super::test::verify_dual;
+    use crate::geometry::mesh::Dualization;
+    let octree = fuzz_tree(1426, Balancing::Weak(1), Pairing::Generalized);
+    verify_dual(&octree.dualize()).unwrap();
+}
+
+#[test]
+fn every_cluster_facet_is_classifiable() {
+    use crate::geometry::mesh::leaf_containing;
+    for (label, pairing) in [
+        ("regular", Pairing::Regular),
+        ("generalized", Pairing::Generalized),
+    ] {
+        let mut mixed = Vec::new();
+        for seed in 0..40u64 {
+            let tree = fuzz_tree(seed, Balancing::Weak(1), pairing);
+            let root = &tree.nodes[0];
+            let low: [i64; 3] = from_fn(|a| root.corner[a] as i64);
+            let high: [i64; 3] = from_fn(|a| low[a] + root.length as i64);
+            let cell_at = |corner: [i64; 3], length: i64| -> Option<usize> {
+                if (0..3).any(|a| corner[a] < low[a] || corner[a] + length > high[a]) {
+                    return None;
+                }
+                let point = from_fn(|a| corner[a] as usize);
+                let index = leaf_containing(&tree, &point);
+                let node = &tree.nodes[index];
+                (length as usize == node.length as usize
+                    && (0..3).all(|a| point[a] == node.corner[a] as usize))
+                .then_some(index)
+            };
+            for &(cluster, length) in tree.pairing_vertices.iter() {
+                let center: [i64; 3] = from_fn(|a| cluster[a] as i64);
+                let (coarse, fine) = (length as i64, length as i64 / 2);
+                for facet in 0..6 {
+                    let (axis, side) = (facet >> 1, facet & 1);
+                    let tangents: [usize; 2] = {
+                        let mut o = (0..3).filter(|&x| x != axis);
+                        [o.next().unwrap(), o.next().unwrap()]
+                    };
+                    let interface = center[axis] + if side == 1 { coarse } else { -coarse };
+
+                    let outside = if side == 1 {
+                        interface
+                    } else {
+                        interface - coarse
+                    };
+                    let inside = if side == 1 {
+                        interface - fine
+                    } else {
+                        interface
+                    };
+                    let at = |along: i64, u: i64, v: i64| {
+                        let mut c = [0; 3];
+                        c[axis] = along;
+                        c[tangents[0]] = center[tangents[0]] - coarse + u;
+                        c[tangents[1]] = center[tangents[1]] - coarse + v;
+                        c
+                    };
+                    let quarter = |qu: i64, qv: i64| {
+                        cell_at(at(outside, qu * coarse, qv * coarse), coarse).is_some()
+                            && (0..4).all(|k| {
+                                let (du, dv) = ((k & 1) as i64, (k >> 1) as i64);
+                                cell_at(
+                                    at(inside, (2 * qu + du) * fine, (2 * qv + dv) * fine),
+                                    fine,
+                                )
+                                .is_some()
+                            })
+                    };
+                    let off = |qu: i64, qv: i64| {
+                        let u = center[tangents[0]] - coarse + qu * coarse;
+                        let v = center[tangents[1]] - coarse + qv * coarse;
+                        u < low[tangents[0]]
+                            || u + coarse > high[tangents[0]]
+                            || v < low[tangents[1]]
+                            || v + coarse > high[tangents[1]]
+                    };
+                    let quarters = (0..4).map(|q| ((q & 1) as i64, (q >> 1) as i64));
+                    let any = quarters.clone().any(|(qu, qv)| quarter(qu, qv));
+                    let stray = quarters
+                        .filter(|&(qu, qv)| !quarter(qu, qv))
+                        .any(|(qu, qv)| !off(qu, qv));
+                    if any && stray {
+                        mixed.push(format!("seed {seed} cluster {cluster:?} facet {facet}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            mixed.is_empty(),
+            "{label}: {} facets mix present quarters with absent in-domain ones:\n{}",
+            mixed.len(),
+            mixed.join("\n")
+        );
+    }
 }

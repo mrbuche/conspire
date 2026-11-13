@@ -148,6 +148,8 @@ fn tree_refine_macros(fine_macros: &[usize]) -> Octree<u16, usize> {
             value: None,
         }],
         paired: Pairing::None,
+        pairing_vertices: Default::default(),
+        pairing_stable_len: Default::default(),
         rescale: Rescaling {
             center: Coordinate::const_from([4.0, 4.0, 4.0]),
             cell: Quantity::new(1.0),
@@ -172,10 +174,13 @@ fn tree_refine_macros(fine_macros: &[usize]) -> Octree<u16, usize> {
 
 fn edge_counts(octree: &Octree<u16, usize>) -> [usize; 4] {
     use super::{edge::test::edge_transition_counts, face::face_transition};
+    use crate::geometry::mesh::from::ntree::dualization::build_leaf_index;
     let (center_nodes, mut coordinates, mut node_index, mut connectivity) = octree.initialize();
     let mut nodes_map = FxHashMap::default();
+    let leaf_index = build_leaf_index(octree);
     face_transition(
         octree,
+        &leaf_index,
         &center_nodes,
         &mut coordinates,
         &mut connectivity,
@@ -184,6 +189,7 @@ fn edge_counts(octree: &Octree<u16, usize>) -> [usize; 4] {
     );
     edge_transition_counts(
         octree,
+        &leaf_index,
         &center_nodes,
         &mut coordinates,
         &mut connectivity,
@@ -226,6 +232,8 @@ fn star_fires_on_synthetic_checkerboard() {
             value: None,
         }],
         paired: Pairing::None,
+        pairing_vertices: Default::default(),
+        pairing_stable_len: Default::default(),
         rescale: Rescaling {
             center: Coordinate::const_from([4.0, 4.0, 4.0]),
             cell: Quantity::new(1.0),
@@ -243,6 +251,7 @@ fn star_fires_on_synthetic_checkerboard() {
         }
     }
     octree.balanced = Balancing::Strong(1);
+    assert!(octree.pair(Pairing::Regular).unwrap());
     octree.paired = Pairing::Regular;
 
     let (center_nodes, coordinates, ..) = octree.initialize();

@@ -41,8 +41,7 @@ pub(super) fn template<T, U>(
             let shortest = *lengths.iter().min().unwrap();
             let longest = *lengths.iter().max().unwrap();
             let coordinate: [usize; D] = from_fn(|a| vertex[a].cells());
-            if longest == 4 * shortest && !(0..D).all(|a| coordinate[a].is_multiple_of(2 * longest))
-            {
+            if longest == 4 * shortest {
                 cap(
                     tree,
                     center_nodes,
@@ -73,17 +72,28 @@ fn cap<T, U>(
     U: Slot,
 {
     let longest = 4 * shortest;
-    let odd: Vec<usize> = (0..D)
-        .filter(|&a| !vertex[a].is_multiple_of(2 * longest))
-        .collect();
-    let [axis] = odd[..] else {
-        return;
-    };
     let paired: Vec<usize> = (0..N).filter(|&o| lengths[o] == longest).collect();
     let [big_lo, big_hi] = paired[..] else {
         return;
     };
-    if big_lo ^ big_hi != 1 << axis {
+    if !(big_lo ^ big_hi).is_power_of_two() {
+        return;
+    }
+    let axis = (big_lo ^ big_hi).trailing_zeros() as usize;
+    let column = |o: usize| -> [i64; D] {
+        from_fn(|a| {
+            let at = vertex[a] as i64;
+            if a == axis || (o >> a) & 1 == 0 {
+                at - longest as i64
+            } else {
+                at
+            }
+        })
+    };
+    if (0..N)
+        .filter(|&o| (o >> axis) & 1 == 0 && o != big_lo)
+        .any(|o| !tree.shares_cluster(&column(o), longest as i64, axis))
+    {
         return;
     }
     let smalls: Vec<usize> = (0..N).filter(|&o| lengths[o] == shortest).collect();
