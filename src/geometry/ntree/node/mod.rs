@@ -16,6 +16,7 @@ pub struct Node<const D: usize, const M: usize, const N: usize, T, U, V = ()> {
     pub(crate) value: Option<V>,
 }
 
+/// Nodes of an orthotree.
 pub type Nodes<const D: usize, const M: usize, const N: usize, T, U, V = ()> =
     Vec<Node<D, M, N, T, U, V>>;
 
