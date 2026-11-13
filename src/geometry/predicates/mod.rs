@@ -1,5 +1,3 @@
-//! Exact geometric predicates, which never return the wrong sign from rounding.
-
 #[cfg(test)]
 mod test;
 

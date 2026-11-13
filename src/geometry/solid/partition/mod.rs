@@ -8,7 +8,7 @@ use crate::{
     units::Length,
 };
 
-/// Volumes in priority order: a point belongs to the last volume containing it.
+/// Volumes in priority order, where a point belongs to the last volume containing it.
 pub struct Partition<O> {
     volumes: Vec<O>,
 }

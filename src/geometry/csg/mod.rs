@@ -1,6 +1,3 @@
-//! Solids known through their signed distance: analytic primitives and their boolean
-//! combinations.
-
 mod axis;
 mod cone;
 #[cfg(test)]

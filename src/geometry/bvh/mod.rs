@@ -1,4 +1,3 @@
-use crate::units::Length;
 mod base;
 mod from;
 mod node;
@@ -8,7 +7,7 @@ mod ray;
 #[cfg(test)]
 pub(crate) use base::closest_point_on_triangle;
 
-use crate::{geometry::bvh::node::Nodes, math::Quantity};
+use crate::{geometry::bvh::node::Nodes, math::Quantity, units::Length};
 
 pub struct BoundingVolumeHierarchy<const D: usize> {
     items: Vec<usize>,

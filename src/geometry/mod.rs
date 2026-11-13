@@ -18,7 +18,7 @@ pub mod ntree;
 /// Exact geometric predicates.
 pub mod predicates;
 
-/// Solids known through signed distance, and their boolean combinations.
+/// Solids through booleans and signed distances.
 pub mod solid;
 
 /// Regular grids of values.
