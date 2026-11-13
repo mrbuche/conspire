@@ -30,7 +30,7 @@ macro_rules! test_thermal_block {
                 #[test]
                 fn potential() -> Result<(), AssertionError> {
                     let constitutive_model = MODEL;
-                    let block = Block::<Fourier, $element, G, M, N, P>::from((
+                    let block = Block::<_, $element, G, M, N, P>::from((
                         constitutive_model,
                         get_connectivity(),
                         &get_reference_coordinates_block(),
@@ -54,7 +54,7 @@ macro_rules! test_thermal_block {
                 #[test]
                 fn nodal_forces() -> Result<(), AssertionError> {
                     let constitutive_model = MODEL;
-                    let block = Block::<Fourier, $element, G, M, N, P>::from((
+                    let block = Block::<_, $element, G, M, N, P>::from((
                         constitutive_model,
                         get_connectivity(),
                         &get_reference_coordinates_block(),

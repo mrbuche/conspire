@@ -60,7 +60,7 @@ fn slab() -> (Model<B, 3>, NodalReferenceCoordinates<3>) {
     let coordinates = coordinates(&[0.0, GAP]);
     (
         (
-            B::from((diffusivity(2.5), connectivity(0), &coordinates)),
+            (diffusivity(2.5), connectivity(0), &coordinates).into(),
             coordinates.clone(),
         )
             .into(),
@@ -73,8 +73,8 @@ fn layers() -> (Model<Blocks<B, B>, 3>, NodalReferenceCoordinates<3>, f64) {
     (
         (
             Blocks(
-                B::from((diffusivity(2.5), connectivity(0), &coordinates)),
-                B::from((diffusivity(10.0), connectivity(4), &coordinates)),
+                (diffusivity(2.5), connectivity(0), &coordinates).into(),
+                (diffusivity(10.0), connectivity(4), &coordinates).into(),
             ),
             coordinates.clone(),
         )

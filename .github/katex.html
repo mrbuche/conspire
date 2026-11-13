@@ -8,8 +8,6 @@
           var el = maths[i];
           katex.render(el.innerText, el, {displayMode: true});
       }
-
-      // Snapshot the list, since rendering can change the live collection.
       var codes = Array.prototype.slice.call(document.getElementsByTagName("code"));
       codes.forEach(function (el) {
           if (el.classList.contains("language-math")) return;
@@ -17,11 +15,7 @@
               katex.render(el.textContent, el);
               return;
           }
-
           if (el.parentNode.nodeName.toLowerCase() === "pre") return;
-
-          // Inline math is written as $<code>...</code>$: the dollar signs
-          // are the adjacent text nodes, so strip them and render in place.
           var before = el.previousSibling;
           var after = el.nextSibling;
           if (isText(before) && isText(after) &&
@@ -33,7 +27,6 @@
           }
       });
   });
-
   function isText(node) {
       return node !== null && node.nodeType === Node.TEXT_NODE;
   }

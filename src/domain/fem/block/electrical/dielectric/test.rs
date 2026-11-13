@@ -34,11 +34,11 @@ macro_rules! test_dielectric_block {
                         .collect()
                 }
                 fn block() -> Block<Linear, $element, G, M, N, P> {
-                    Block::<Linear, $element, G, M, N, P>::from((
+                    (
                         MODEL,
                         get_connectivity(),
                         &get_reference_coordinates_block(),
-                    ))
+                    ).into()
                 }
                 #[test]
                 fn potential() -> Result<(), AssertionError> {

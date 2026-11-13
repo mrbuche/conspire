@@ -35,7 +35,6 @@ impl<const G: usize> HeatCapacities<G> for Quantity<VolumetricHeatCapacity> {
     }
 }
 
-/// The absence of heat capacities.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoHeatCapacity;
 

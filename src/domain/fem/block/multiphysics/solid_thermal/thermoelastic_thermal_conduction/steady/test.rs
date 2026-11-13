@@ -68,14 +68,14 @@ macro_rules! test_thermoelastic_thermal_conduction_block {
             #[test]
             fn thermal_rows_are_the_conduction_forces() -> Result<(), AssertionError> {
                 let temperatures = nonuniform_temperatures();
-                let thermal_block = Block::<Fourier, $element, G, M, N, P>::from((
+                let thermal_block = Block::<_, $element, G, M, N, P>::from((
                     Fourier {
                         thermal_conductivity: THERMAL_CONDUCTIVITY,
                     },
                     get_connectivity(),
                     &get_reference_coordinates_block(),
                 ));
-                let thermal_forces = DiffusionElements::<Power>::nodal_forces(&thermal_block, &temperatures)?;
+                let thermal_forces = DiffusionElements::nodal_forces(&thermal_block, &temperatures)?;
                 let forces = ThermoelasticThermalConductionElements::nodal_forces(
                     &coupled_block(),
                     &get_coordinates_block(),
@@ -92,7 +92,7 @@ macro_rules! test_thermoelastic_thermal_conduction_block {
             #[test]
             fn solid_rows_are_the_elastic_forces_at_the_reference_temperature()
             -> Result<(), AssertionError> {
-                let elastic_block = Block::<AlmansiHamelEulerian, $element, G, M, N, P>::from((
+                let elastic_block = Block::<_, $element, G, M, N, P>::from((
                     AlmansiHamelEulerian {
                         bulk_modulus: BULK_MODULUS,
                         shear_modulus: SHEAR_MODULUS,
@@ -100,7 +100,7 @@ macro_rules! test_thermoelastic_thermal_conduction_block {
                     get_connectivity(),
                     &get_reference_coordinates_block(),
                 ));
-                let elastic_forces = ElasticElements::<3>::nodal_forces(&elastic_block, &get_coordinates_block())?;
+                let elastic_forces = ElasticElements::nodal_forces(&elastic_block, &get_coordinates_block())?;
                 let forces = ThermoelasticThermalConductionElements::nodal_forces(
                     &coupled_block(),
                     &get_coordinates_block(),
