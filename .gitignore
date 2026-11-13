@@ -1,12 +1,13 @@
 target/
+
 .claude/
 .venv/
 .vscode/
+
 **.exo
 **.stl
+**.svg
 **.swp
+**.vtk
 **.vtm
 **.vtu
-**.vtm
-**.svg
-**__pycache__/
