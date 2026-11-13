@@ -8183,7 +8183,6 @@ mod cbm_kinematics_smoke {
 #[cfg(feature = "cbm")]
 mod cbm_forces_smoke {
     use conspire::{
-        EPSILON,
         cbm::{ElasticElements, NodalReferenceCoordinates, NodalStiffnessesSolid, block::Block},
         constitutive::solid::elastic::AlmansiHamelEulerian,
         geometry::{Coordinate, Coordinates, mesh::PrimitiveConnectivity},
@@ -8194,6 +8193,7 @@ mod cbm_forces_smoke {
         mechanics::{DeformationGradient, Displacement},
         units::{Length, Stress},
     };
+    const EPSILON: f64 = 1e-6;
 
     fn two_tetrahedra_reference() -> (PrimitiveConnectivity<3, 4>, NodalReferenceCoordinates<3>) {
         let connectivity = PrimitiveConnectivity::from(vec![[0, 1, 2, 3], [1, 4, 2, 3]]);

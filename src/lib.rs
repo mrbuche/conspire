@@ -49,11 +49,6 @@ pub mod units;
 #[doc(hidden)]
 pub use domain::vem;
 
-/// Absolute tolerance.
-pub const ABS_TOL: f64 = 1e-12;
-
-/// Relative tolerance.
-pub const REL_TOL: f64 = 1e-12;
-
-/// A perturbation.
-pub const EPSILON: f64 = 1e-6;
+const ABS_TOL: f64 = 1e-12;
+const REL_TOL: f64 = 1e-12;
+const EPSILON: f64 = 1e-6;
