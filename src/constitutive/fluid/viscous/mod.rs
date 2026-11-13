@@ -1,8 +1,5 @@
 //! Viscous fluid constitutive models.
 
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
-
 #[cfg(test)]
 pub(crate) mod test;
 

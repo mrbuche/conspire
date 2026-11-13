@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![cfg_attr(feature = "autodiff", feature(autodiff))]
 #![cfg_attr(feature = "nightly", feature(portable_simd))]
 #![warn(
     clippy::alloc_instead_of_core,

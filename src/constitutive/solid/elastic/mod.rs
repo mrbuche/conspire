@@ -13,9 +13,6 @@
 #[cfg(test)]
 pub mod test;
 
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
-
 pub mod internal_variables;
 
 mod almansi_hamel_eulerian;

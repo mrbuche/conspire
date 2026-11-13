@@ -1,5 +1,3 @@
-#[cfg(feature = "autodiff")]
-pub(crate) mod autodiff;
 pub mod elastic;
 pub mod elastic_hyperviscous;
 pub mod elastic_plastic;
