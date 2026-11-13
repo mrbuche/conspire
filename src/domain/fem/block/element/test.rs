@@ -284,7 +284,8 @@ macro_rules! test_surface_finite_element {
             };
         }
         crate::fem::block::element::test::test_finite_element_inner!($element);
-        use crate::{EPSILON, math::assert::AssertionError};
+        use crate::math::EPSILON;
+        use crate::math::assert::AssertionError;
         mod bases {
             use super::*;
             #[test]
@@ -702,15 +703,13 @@ macro_rules! test_finite_element_inner {
     ($element: ident $(, $plastic: item)*) => {
         mod element {
             use super::*;
-            use crate::{
-                EPSILON,
-                fem::block::element::test::{
+            use crate::{fem::block::element::test::{
                     test_finite_element_with_elastic_constitutive_model,
                     test_finite_element_with_elastic_hyperviscous_constitutive_model,
                     test_finite_element_with_hyperelastic_constitutive_model,
                     test_finite_element_with_hyperviscoelastic_constitutive_model,
-                },
-            };
+                }};
+            use crate::math::{EPSILON};
             #[allow(unused_imports)]
             use crate::fem::block::element::test::test_finite_element_with_elastic_viscoplastic_constitutive_model;
             #[allow(unused_imports)]
@@ -724,7 +723,7 @@ macro_rules! test_finite_element_inner {
             };
             mod shape_functions {
                 use super::*;
-                use crate::EPSILON;
+                use crate::math::EPSILON;
                 #[test]
                 fn finite_difference() -> Result<(), AssertionError> {
                     if core::any::type_name::<$element>()

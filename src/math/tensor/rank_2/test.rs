@@ -3,8 +3,9 @@ use super::{
     TensorRank2List2D, TensorRank4,
 };
 use crate::math::assert::Assert;
+use crate::math::assert::AssertionError;
+use crate::math::{ABS_TOL, REL_TOL};
 use crate::math::{Auxiliary, Current, Intermediate, Reference};
-use crate::{ABS_TOL, REL_TOL, math::assert::AssertionError};
 
 fn get_array_dim_2() -> [[TensorRank0; 2]; 2] {
     [[1.0, 2.0], [3.0, 4.0]]

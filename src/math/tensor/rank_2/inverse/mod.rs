@@ -4,7 +4,7 @@ use crate::math::{Factor, Reference};
 use crate::units::{Dimensionless, UnitInv};
 
 use super::{Quantity, Rank2, Tensor, TensorArray, TensorRank0, TensorRank2, relabel};
-use crate::ABS_TOL;
+use crate::math::ABS_TOL;
 
 /// The factors of an LU decomposition, with the permutation applied to the rows.
 type LuFactors<const D: usize, I, J, U> = (

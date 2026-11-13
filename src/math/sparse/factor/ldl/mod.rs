@@ -3,10 +3,8 @@ mod test;
 
 use super::super::{SparseError, matrix::CscMatrix};
 use super::gemm::{CHUNK, NONE, etree, gemm_wide, max_below, reach_sorted, supernodes};
-use crate::{
-    ABS_TOL, REL_TOL,
-    math::{Scalar, Vector, simd},
-};
+use crate::math::{ABS_TOL, REL_TOL};
+use crate::math::{Scalar, Vector, simd};
 
 /// A sparse LDLᵀ factorization for symmetric matrices with a structurally full diagonal.
 ///

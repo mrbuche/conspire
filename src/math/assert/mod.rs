@@ -11,10 +11,8 @@ pub use self::{
 };
 
 use self::eq::{non_negative_impl, non_positive_impl, zero_impl, zero_within_tols_impl};
-use crate::{
-    ABS_TOL, EPSILON, REL_TOL,
-    math::{Scalar, Tensor},
-};
+use crate::math::{ABS_TOL, EPSILON, REL_TOL};
+use crate::math::{Scalar, Tensor};
 use core::fmt::Display;
 
 /// Specifies tolerances used by [`AssertEq`] functionalities.

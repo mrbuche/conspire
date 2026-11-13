@@ -1,7 +1,7 @@
 use super::{energy, scatter};
+use crate::math::EPSILON;
 use crate::math::assert::perturbation;
 use crate::{
-    EPSILON,
     geometry::{
         Coordinates,
         mesh::quality::metrics::{hexahedron, tetrahedron},

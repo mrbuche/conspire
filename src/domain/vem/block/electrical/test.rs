@@ -1,8 +1,8 @@
 use super::super::thermal::test::{
     INTERIOR, MODEL, NODES, block, block_with, coordinates, pseudorandom, temperatures,
 };
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     constitutive::electrical::dielectric::Linear,
     domain::{diffusion::DiffusionElements, electrical::NodalPotentials},
     math::{Hessian, Quantity, Scalar, Tensor},

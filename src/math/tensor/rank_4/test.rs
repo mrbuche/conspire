@@ -6,7 +6,7 @@ use super::{
     TensorRank3, TensorRank4,
 };
 use crate::math::Current;
-use crate::{ABS_TOL, REL_TOL};
+use crate::math::{ABS_TOL, REL_TOL};
 
 fn get_array() -> [[[[TensorRank0; 3]; 3]; 3]; 3] {
     [
@@ -1288,7 +1288,7 @@ fn quadratic_form_matches_dense() {
     let form = tensor.quadratic_form(&vector);
     let mut dense = SquareMatrix::zero(9);
     tensor.fill_into(&mut dense);
-    assert!((form - &vector * (dense * &vector)).abs() < crate::ABS_TOL)
+    assert!((form - &vector * (dense * &vector)).abs() < crate::math::ABS_TOL)
 }
 
 #[test]

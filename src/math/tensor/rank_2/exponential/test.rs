@@ -375,11 +375,11 @@ fn dexpinv_tangent_matches_finite_difference() -> Result<(), AssertionError> {
         [0.1, -0.15, 0.0],
     ]);
     let (d_sigma, d_rate) = (sigma_direction(), rate_direction());
-    let step = crate::EPSILON * 0.5;
+    let step = crate::math::EPSILON * 0.5;
     let plus = (&sigma + (&d_sigma * step)).dexpinv(&(&rate() + (&d_rate * step)));
     let minus = (&sigma - (&d_sigma * step)).dexpinv(&(&rate() - (&d_rate * step)));
     Assert::default().eq_within_fd_tol(
         sigma.dexpinv_tangent(&rate(), &d_sigma, &d_rate),
-        &((plus - minus) / crate::EPSILON),
+        &((plus - minus) / crate::math::EPSILON),
     )
 }

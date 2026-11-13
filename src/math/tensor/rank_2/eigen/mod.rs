@@ -10,7 +10,8 @@ use super::{
     },
     TensorRank2,
 };
-use crate::{ABS_TOL, math::assert::Assert};
+use crate::math::ABS_TOL;
+use crate::math::assert::Assert;
 
 impl<I> TensorRank2<3, I, I, Dimensionless> {
     /// Returns the invariants of the 3x3 symmetric tensor.

@@ -1,5 +1,5 @@
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     constitutive::{
         canonical::Canonical,
         fluid::plastic::{Linear, PlasticFlow, VonMises, YieldSurface},

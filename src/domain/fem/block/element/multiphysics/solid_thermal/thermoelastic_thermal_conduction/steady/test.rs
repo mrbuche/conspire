@@ -2,9 +2,7 @@ macro_rules! test_thermoelastic_thermal_conduction_element {
     ($element: ident) => {
         mod thermoelastic_thermal_conduction_element {
             use super::{N, coordinates, element};
-            use crate::{
-                EPSILON,
-                constitutive::{
+            use crate::{constitutive::{
                     multiphysics::Canonical,
                     solid::thermoelastic::{
                         AlmansiHamel,
@@ -14,18 +12,15 @@ macro_rules! test_thermoelastic_thermal_conduction_element {
                         },
                     },
                     thermal::conduction::{Fourier, test::THERMAL_CONDUCTIVITY},
-                },
-                fem::block::element::{
+                }, fem::block::element::{
                     ElementNodalCoordinates, FiniteElementError,
                     multiphysics::solid_thermal::{
                         ElementNodalStiffnessesSolidThermal, ElementNodalForcesSolidThermal,
                         thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionFiniteElement,
                     },
                     thermal::ElementNodalTemperatures,
-                },
-                math::assert::{Assert, AssertionError, perturbation},
-                units::{Length, Temperature},
-            };
+                }, math::assert::{Assert, AssertionError, perturbation}, units::{Length, Temperature}};
+            use crate::math::{EPSILON};
             fn model() -> Canonical<AlmansiHamel, Fourier> {
                 (
                     AlmansiHamel {

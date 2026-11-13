@@ -5,10 +5,7 @@ macro_rules! test_thermoelastic_thermal_conduction_block {
                 D, G, M, N, P, get_connectivity, get_coordinates_block,
                 get_reference_coordinates_block, $element,
             };
-            use crate::{
-                EPSILON,
-                domain::diffusion::DiffusionElements,
-                constitutive::{
+            use crate::{domain::diffusion::DiffusionElements, constitutive::{
                     multiphysics::Canonical,
                     solid::{
                         elastic::AlmansiHamelEulerian,
@@ -21,18 +18,15 @@ macro_rules! test_thermoelastic_thermal_conduction_block {
                         },
                     },
                     thermal::conduction::{Fourier, test::THERMAL_CONDUCTIVITY},
-                },
-                fem::{
+                }, fem::{
                     block::{Block, thermal::NodalTemperatures},
                     multiphysics::solid_thermal::thermoelastic_thermal_conduction::steady::ThermoelasticThermalConductionElements,
                     solid::elastic::ElasticElements,
-                },
-                math::{
+                }, math::{
                     Hessian, Quantity, Tensor,
                     assert::{Assert, AssertionError, perturbation},
-                },
-                units::{Length, Power, Temperature},
-            };
+                }, units::{Length, Power, Temperature}};
+            use crate::math::{EPSILON};
             fn coupled_block() -> Block<
                 Canonical<AlmansiHamel, Fourier>,
                 $element,

@@ -62,16 +62,16 @@ fn finite_difference_molar_flux() -> Result<(), AssertionError> {
     let mut fd = MolarFlux::zero();
     for i in 0..3 {
         let mut concentration_gradient_plus = concentration_gradient.clone();
-        concentration_gradient_plus[i] += perturbation(0.5 * crate::EPSILON);
+        concentration_gradient_plus[i] += perturbation(0.5 * crate::math::EPSILON);
         let mut concentration_gradient_minus = concentration_gradient.clone();
-        concentration_gradient_minus[i] -= perturbation(0.5 * crate::EPSILON);
+        concentration_gradient_minus[i] -= perturbation(0.5 * crate::math::EPSILON);
         fd[i] = Quantity::new(
             -(model().potential(&concentration_gradient_plus)?.value()
                 - model().potential(&concentration_gradient_minus)?.value())
-                / crate::EPSILON,
+                / crate::math::EPSILON,
         );
     }
-    if flux.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if flux.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&flux, &fd)
     } else {
         Ok(())
@@ -85,17 +85,17 @@ fn finite_difference_tangent() -> Result<(), AssertionError> {
     let mut fd = MolarFluxTangent::zero();
     for j in 0..3 {
         let mut concentration_gradient_plus = concentration_gradient.clone();
-        concentration_gradient_plus[j] += perturbation(0.5 * crate::EPSILON);
+        concentration_gradient_plus[j] += perturbation(0.5 * crate::math::EPSILON);
         let flux_plus = model().molar_flux(&concentration_gradient_plus)?;
         let mut concentration_gradient_minus = concentration_gradient.clone();
-        concentration_gradient_minus[j] -= perturbation(0.5 * crate::EPSILON);
+        concentration_gradient_minus[j] -= perturbation(0.5 * crate::math::EPSILON);
         let flux_minus = model().molar_flux(&concentration_gradient_minus)?;
         for i in 0..3 {
             fd[i][j] = (flux_plus[i] - flux_minus[i])
-                / perturbation::<crate::units::ConcentrationPerLength>(crate::EPSILON);
+                / perturbation::<crate::units::ConcentrationPerLength>(crate::math::EPSILON);
         }
     }
-    if tangent.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&tangent, &fd)
     } else {
         Ok(())

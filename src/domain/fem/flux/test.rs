@@ -1,5 +1,5 @@
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     constitutive::{
         thermal::conduction::{Fourier, test::THERMAL_CONDUCTIVITY},
         thermal::convection::Newton,

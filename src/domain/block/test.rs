@@ -7,8 +7,8 @@ macro_rules! test_block_elastic_and_hyperelastic {
     ($element: ident) => {
         mod block {
             use super::*;
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 math::{Rank2, TensorArray, TensorRank2, assert::AssertionError},
                 mechanics::test::{
                     get_rotation_current_configuration, get_rotation_reference_configuration,

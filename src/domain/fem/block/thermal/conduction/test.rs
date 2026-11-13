@@ -4,8 +4,8 @@ macro_rules! test_thermal_block {
             use super::{
                 D, G, M, N, P, get_connectivity, get_reference_coordinates_block, $element,
             };
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::thermal::conduction::Fourier,
                 domain::diffusion::DiffusionElements,
                 fem::{

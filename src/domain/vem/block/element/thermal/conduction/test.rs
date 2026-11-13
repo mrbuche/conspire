@@ -1,5 +1,5 @@
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     constitutive::thermal::conduction::Fourier,
     math::{Quantity, Scalar, Tensor},
     mechanics::ReferenceCoordinate,

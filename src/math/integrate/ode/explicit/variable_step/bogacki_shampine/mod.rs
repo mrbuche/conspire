@@ -2,6 +2,7 @@
 mod test;
 
 use crate::math::Norm;
+use crate::math::{ABS_TOL, REL_TOL};
 use crate::math::{
     Derivative, Differentiable, Quantity, Scalar, Tensor, TensorVec,
     integrate::{
@@ -11,7 +12,6 @@ use crate::math::{
     },
     interpolate::InterpolateSolution,
 };
-use crate::{ABS_TOL, REL_TOL};
 use core::ops::{Div, Mul, Sub};
 
 /// The Bogacki–Shampine 3(2) tableau.

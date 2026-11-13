@@ -1,6 +1,6 @@
 use super::super::test::{B, INTERIOR, NODES, block, coordinates, pseudorandom, temperatures};
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     domain::{Model, diffusion::DiffusionElements},
     math::{Hessian, Scalar, Tensor},
     vem::NodalReferenceCoordinates,

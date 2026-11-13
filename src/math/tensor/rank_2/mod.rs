@@ -41,7 +41,7 @@ use super::{
     },
     rank_4::TensorRank4,
 };
-use crate::ABS_TOL;
+use crate::math::ABS_TOL;
 use list_2d::TensorRank2List2D;
 use vec_2d::TensorRank2Vec2D;
 

@@ -2,6 +2,7 @@
 mod test;
 
 use crate::math::Norm;
+use crate::math::{ABS_TOL, REL_TOL};
 use crate::math::{
     Derivative, Differentiable, Quantity, Scalar, Tensor, TensorVec,
     integrate::{
@@ -10,7 +11,6 @@ use crate::math::{
     },
     interpolate::InterpolateSolution,
 };
-use crate::{ABS_TOL, REL_TOL};
 use core::ops::{Mul, Sub};
 
 pub(crate) const P_1_0: Scalar = 1.0;

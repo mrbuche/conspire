@@ -18,9 +18,9 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use crate::math::ABS_TOL;
 use crate::units::{UnitDiv, UnitMul};
 use crate::{
-    ABS_TOL,
     math::{
         matrix::vector::Vector,
         tensor::{

@@ -1,6 +1,6 @@
 use super::{Block, node::Weighting};
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     cbm::SolidElements,
     constitutive::solid::elastic::{
         AlmansiHamelEulerian,
@@ -289,8 +289,8 @@ mod uniform {
 
     mod block_viscous {
         use super::*;
+        use crate::math::EPSILON;
         use crate::{
-            EPSILON,
             domain::block::test::{
                 test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
                 test_finite_element_block_with_hyperviscoelastic_constitutive_model,
@@ -530,8 +530,8 @@ mod solid_angle {
 
     mod block_viscous {
         use super::*;
+        use crate::math::EPSILON;
         use crate::{
-            EPSILON,
             domain::block::test::{
                 test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
                 test_finite_element_block_with_hyperviscoelastic_constitutive_model,

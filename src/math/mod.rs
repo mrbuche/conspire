@@ -1,5 +1,9 @@
 //! Mathematical methods.
 
+pub(crate) const ABS_TOL: f64 = 1e-12;
+pub(crate) const REL_TOL: f64 = 1e-12;
+pub(crate) const EPSILON: f64 = 1e-6;
+
 /// Assertion helpers for comparing values.
 pub mod assert;
 

@@ -1,8 +1,6 @@
 use super::{Assert, AssertionError};
-use crate::{
-    EPSILON,
-    math::{Current, TensorRank1, TensorRank1List},
-};
+use crate::math::EPSILON;
+use crate::math::{Current, TensorRank1, TensorRank1List};
 
 #[test]
 #[should_panic(expected = "Assertion `left == right` failed.")]

@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test;
 
+use crate::math::ABS_TOL;
 use crate::{
-    ABS_TOL,
     geometry::{Coordinates, bvh::BoundingVolumeHierarchy, mesh::Mesh},
     math::{CrossProduct, Quantity, Tensor},
     units::{Length, Volume},

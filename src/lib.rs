@@ -48,7 +48,3 @@ pub mod units;
 #[cfg(feature = "vem")]
 #[doc(hidden)]
 pub use domain::vem;
-
-const ABS_TOL: f64 = 1e-12;
-const REL_TOL: f64 = 1e-12;
-const EPSILON: f64 = 1e-6;

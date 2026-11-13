@@ -85,8 +85,8 @@ macro_rules! test_surface {
     ($name: ident, $model: expr, $fields: expr, $smooth: expr) => {
         mod $name {
             use super::*;
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::diffusion::surface::{SurfaceFlux, SurfacePotential},
                 math::{
                     Quantity,
