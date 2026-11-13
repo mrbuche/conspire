@@ -8,15 +8,19 @@ use crate::{
 use core::array::from_fn;
 
 impl<const D: usize> BoundingBox<D> {
+    /// Lower corner.
     pub fn minimum(&self) -> &Coordinate<D> {
         &self.minimum
     }
+    /// Upper corner.
     pub fn maximum(&self) -> &Coordinate<D> {
         &self.maximum
     }
+    /// Whether the boxes overlap, touching included.
     pub fn overlaps(&self, other: &Self) -> bool {
         (0..D).all(|d| self.minimum[d] <= other.maximum[d] && other.minimum[d] <= self.maximum[d])
     }
+    /// Index of the longest axis.
     pub fn longest_axis(&self) -> usize {
         self.maximum
             .iter()
@@ -27,6 +31,7 @@ impl<const D: usize> BoundingBox<D> {
             .unwrap()
             .0
     }
+    /// Index of the shortest axis.
     pub fn shortest_axis(&self) -> usize {
         self.maximum
             .iter()
@@ -40,6 +45,7 @@ impl<const D: usize> BoundingBox<D> {
 }
 
 impl BoundingBox<3> {
+    /// Whether the box overlaps triangle `abc`, touching included.
     pub fn overlaps_triangle(
         &self,
         a: &Coordinate<3>,
