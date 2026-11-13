@@ -4,9 +4,6 @@
 //!
 #![doc = include_str!("doc.md")]
 
-#[cfg(feature = "doc")]
-pub mod doc;
-
 mod canonical;
 
 use crate::{

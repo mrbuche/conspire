@@ -4,7 +4,6 @@ categories = ["mathematics", "science"]
 description = "c o n s p i r e"
 documentation = "https://docs.rs/crate/conspire"
 edition = "2024"
-exclude = ["/book/", "/book.toml"]
 homepage = "https://mrbuche.github.io/conspire"
 keywords = ["conspire", "mrbuche"]
 license = "GPL-3.0"
@@ -17,7 +16,6 @@ all = ['cbm', 'vem']
 autodiff = []
 cbm = ['constitutive', 'geometry']
 constitutive = ['mechanics']
-doc = []
 fem = ['constitutive', 'geometry']
 geometry = ['io', 'math']
 io = []
@@ -36,7 +34,3 @@ codegen-units = 1
 lto = true
 panic = "abort"
 strip = "symbols"
-
-[[example]]
-name = "book"
-required-features = ["constitutive", "doc"]
