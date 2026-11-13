@@ -13,7 +13,21 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Lagrangian Almansi-Hamel elastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Lagrangian Almansi-Hamel strain measure is given by $`\mathbf{E}=\tfrac{1}{2}(\mathbf{1}-\mathbf{C}^{-1})`$.
+/// - This is the Lagrangian counterpart of the [Eulerian Almansi-Hamel model](super::AlmansiHamelEulerian).
 #[derive(Clone, Debug)]
 pub struct AlmansiHamelLagrangian {
     /// The bulk modulus $`\kappa`$.
@@ -32,7 +46,9 @@ impl Solid for AlmansiHamelLagrangian {
 }
 
 impl Elastic for AlmansiHamelLagrangian {
-    #[doc = include_str!("second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F}) = 2\mu\mathbf{E}' + \kappa\,\mathrm{tr}(\mathbf{E})\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -46,7 +62,9 @@ impl Elastic for AlmansiHamelLagrangian {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus())
             + IDENTITY_00 * (self.bulk_modulus() * strain_trace))
     }
-    #[doc = include_str!("second_piola_kirchhoff_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{G}_{IJkL}(\mathbf{F}) = \mu\left[F_{Ik}^{-1}C_{LJ}^{-1} + C_{IL}^{-1}F_{Jk}^{-1}\right] + \lambda\,\delta_{IJ}F_{Mk}^{-1}C_{ML}^{-1}
+    /// ```
     fn second_piola_kirchhoff_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -11,7 +11,22 @@ use crate::{
     units::{EnergyDensity, Stress},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Hencky hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Hencky strain measure is given by $`\mathbf{h}=\tfrac{1}{2}\ln(\mathbf{B})`$.
+///
+/// [^1]: H. Hencky, Zeitschrift für technische Physik **9**, 215 (1928).
 #[derive(Clone, Debug)]
 pub struct Hencky {
     /// The bulk modulus $`\kappa`$.
@@ -30,7 +45,9 @@ impl Solid for Hencky {
 }
 
 impl Elastic for Hencky {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{2\mu}{J}\,\mathbf{h}' + \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{h})\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -46,7 +63,9 @@ impl Elastic for Hencky {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
             + IDENTITY * (self.bulk_modulus() * strain_trace / jacobian))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) = \frac{\mu}{J}\left[\frac{\partial\ln B_{ij}}{\partial F_{kL}} - 2h_{ij}'F_{kL}^{-T}\right] + \frac{1}{J}\big[\lambda - \kappa\,\mathrm{tr}(\mathbf{h})\big]\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -77,7 +96,9 @@ impl Elastic for Hencky {
 }
 
 impl Hyperelastic for Hencky {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \mu\,\mathrm{tr}(\mathbf{h}^2) + \frac{\lambda}{2}\,\mathrm{tr}(\mathbf{h})^2
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -14,7 +14,20 @@ use crate::{
     units::{EnergyDensity, Stress},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Saint Venant-Kirchhoff hyperelastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Green-Saint Venant strain measure is given by $`\mathbf{E}=\tfrac{1}{2}(\mathbf{C}-\mathbf{1})`$.
 #[derive(Clone, Debug)]
 pub struct SaintVenantKirchhoff {
     /// The bulk modulus $`\kappa`$.
@@ -33,7 +46,9 @@ impl Solid for SaintVenantKirchhoff {
 }
 
 impl Elastic for SaintVenantKirchhoff {
-    #[doc = include_str!("second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F}) = 2\mu\mathbf{E}' + \kappa\,\mathrm{tr}(\mathbf{E})\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -45,7 +60,9 @@ impl Elastic for SaintVenantKirchhoff {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus())
             + IDENTITY_00 * (self.bulk_modulus() * strain_trace))
     }
-    #[doc = include_str!("second_piola_kirchhoff_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{G}_{IJkL}(\mathbf{F}) = \mu\,\delta_{JL}F_{kI} + \mu\,\delta_{IL}F_{kJ} + \lambda\,\delta_{IJ}F_{kL}
+    /// ```
     fn second_piola_kirchhoff_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -65,7 +82,9 @@ impl Elastic for SaintVenantKirchhoff {
 }
 
 impl Hyperelastic for SaintVenantKirchhoff {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \mu\,\mathrm{tr}(\mathbf{E}^2) + \frac{\lambda}{2}\,\mathrm{tr}(\mathbf{E})^2
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -23,7 +23,9 @@ where
     UV: TensorVec<Item = Derivative<X, T>>,
     UA: TensorVec<Item = Derivative<Derivative<X, T>, T>>,
 {
-    #[doc = include_str!("doc.md")]
+    /// Solves an initial value problem for dynamics, given the acceleration as a function of time, position, and velocity.
+    ///
+    /// The solution contains the positions, velocities, and accelerations at each time. The time step is that of the integrator when `time` holds only the initial and final times, and otherwise `time` is the sequence of steps.
     fn integrate(
         &self,
         function: impl FnMut(
@@ -35,7 +37,9 @@ where
         initial_position: X,
         initial_velocity: Derivative<X, T>,
     ) -> Result<(Times<T>, UX, UV, UA), IntegrationError>;
-    #[doc = include_str!("bounded.md")]
+    /// Solves an initial value problem like [`integrate`](Self::integrate), subject to a stability bound.
+    ///
+    /// At each step, `bound` reports the fastest time scale of the system at the current state, the reciprocal of its highest angular frequency. The stability limit is that time scale times the extent of the method's stability region. The time step may use at most the fraction `safety` of that limit, where `safety` is in $`(0, 1]`$. A time step above it is an error.
     fn integrate_bounded(
         &self,
         function: impl FnMut(

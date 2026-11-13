@@ -11,7 +11,28 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Eulerian Seth-Hill elastic solid constitutive model.[^1]<sup>,</sup>[^2]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The exponent $`m`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Eulerian Seth-Hill strain measure is given by $`\mathbf{e}^{(m)} = \tfrac{1}{m}(\mathbf{V}^m - \mathbf{1})`$.
+/// - The model reduces to the hyperelastic [Hencky model](super::super::hyperelastic::Hencky) when $`m=0`$.
+/// - The model reduces to the elastic [Saint Venant-Kirchhoff model](super::SaintVenantKirchhoff) when $`m=2`$.
+/// - The model reduces to the [Eulerian Almansi-Hamel model](super::AlmansiHamelEulerian) when $`m=-2`$.
+/// - This is the Eulerian counterpart of the [Lagrangian Seth-Hill model](super::SethHillLagrangian).
+///
+/// [^1]: B.R. Seth, *Generalized Strain Measure with Applications to Physical Problems*, AD0266913 (1961).
+/// [^2]: R. Hill, [J. Mech. Phys. Solids **16**, 229 (1968)](https://doi.org/10.1016/0022-5096(68)90031-8).
 #[derive(Clone, Debug)]
 pub struct SethHillEulerian {
     /// The bulk modulus $`\kappa`$.
@@ -39,7 +60,9 @@ impl Solid for SethHillEulerian {
 }
 
 impl Elastic for SethHillEulerian {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{2\mu}{J}\,\mathbf{e}^{(m)}{}' + \frac{\kappa}{J}\,\mathrm{tr}\big(\mathbf{e}^{(m)}\big)\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -63,7 +86,9 @@ impl Elastic for SethHillEulerian {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
             + IDENTITY * (self.bulk_modulus() * strain_trace / jacobian))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) = \frac{\mu}{J}\,\frac{\partial B_{ij}^{m/2}}{\partial F_{kL}} + \frac{\lambda}{J}\,\delta_{ij}B_{kM}^{m/2-1}F_{ML} - \sigma_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -21,12 +21,22 @@ type Coupled<X, Y, T> = TensorTuple<Stack<X, T>, Y>;
 type Coupleds<X, Y, T> = TensorVector<Coupled<X, Y, T>>;
 type CoupledSlopes<X, Y, T> = TensorVector<Derivative<Coupled<X, Y, T>, T>>;
 
-#[doc = include_str!("doc.md")]
+/// Marks an explicit integrator for ordinary differential equations as usable for dynamics, by integrating the position and velocity together as a single state.
+///
+/// ```math
+/// \frac{d}{dt}\begin{bmatrix} x \\ v \end{bmatrix} = \begin{bmatrix} v \\ a(t, x, v) \end{bmatrix}
+/// ```
+///
+/// Every integrator that is [`Stacked`] is also an [`ExplicitDynamics`](crate::math::integrate::ExplicitDynamics) integrator. It is implemented only for methods whose stability region reaches the imaginary axis, which excludes the first- and second-order methods, since those are unstable for undamped oscillation.
+///
+/// These methods are not symplectic, and evaluate the acceleration once per stage rather than once per step.
 pub trait Stacked<T = Time>
 where
     Self: Debug,
 {
-    #[doc = include_str!("../doc.md")]
+    /// Solves an initial value problem for dynamics, given the acceleration as a function of time, position, and velocity.
+    ///
+    /// The solution contains the positions, velocities, and accelerations at each time. The time step is that of the integrator when `time` holds only the initial and final times, and otherwise `time` is the sequence of steps.
     fn integrate_stacked<X, UX, UV, UA>(
         &self,
         mut function: impl FnMut(
@@ -56,7 +66,9 @@ where
         )?;
         Ok(unstack(times, &stacks, &slopes))
     }
-    #[doc = include_str!("bounded.md")]
+    /// Solves an initial value problem like [`integrate_stacked`](Self::integrate_stacked), subject to a stability bound.
+    ///
+    /// At each step, `bound` reports the fastest time scale of the system at the current state, the reciprocal of its highest angular frequency. The stability limit is that time scale times the extent of the method's stability region. The time step may use at most the fraction `safety` of that limit, where `safety` is in $`(0, 1]`$. A time step above it is an error.
     fn integrate_stacked_bounded<X, UX, UV, UA>(
         &self,
         mut function: impl FnMut(

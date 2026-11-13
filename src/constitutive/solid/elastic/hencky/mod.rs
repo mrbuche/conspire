@@ -14,7 +14,22 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Hencky elastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Hencky strain measure is given by $`\mathbf{H}=\tfrac{1}{2}\ln(\mathbf{C})`$.
+///
+/// [^1]: H. Hencky, Zeitschrift für technische Physik **9**, 215 (1928).
 #[derive(Clone, Debug)]
 pub struct Hencky {
     /// The bulk modulus $`\kappa`$.
@@ -33,7 +48,9 @@ impl Solid for Hencky {
 }
 
 impl Elastic for Hencky {
-    #[doc = include_str!("second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F}) = 2\mu\mathbf{H}' + \kappa\,\mathrm{tr}(\mathbf{H})\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -48,7 +65,9 @@ impl Elastic for Hencky {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus())
             + IDENTITY_00 * (self.bulk_modulus() * strain_trace))
     }
-    #[doc = include_str!("second_piola_kirchhoff_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{G}_{IJkL}(\mathbf{F}) = \mu\,\frac{\partial\ln C_{IJ}}{\partial F_{kL}} + \lambda\,\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn second_piola_kirchhoff_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -139,7 +139,22 @@ impl EmbeddedTableau for Tableau {
         &[D_1, 0.0, 0.0, 0.0, 0.0, D_6, D_7, D_8, D_9, D_10, D_11, D_12, D_13];
 }
 
-#[doc = include_str!("doc.md")]
+/// Explicit, thirteen-stage, eighth-order, variable-step, Runge-Kutta method.[^1]
+///
+/// ```math
+/// \frac{dy}{dt} = f(t, y)
+/// ```
+/// ```math
+/// t_{n+1} = t_n + h
+/// ```
+/// ```math
+/// k_1 = f(t_n, y_n)
+/// ```
+/// ```math
+/// \cdots
+/// ```
+///
+/// [^1]: J.H. Verner, [Numer. Algor. **53**, 383 (2010)](https://doi.org/10.1007/s11075-009-9290-3).
 #[derive(Debug)]
 pub struct Verner8 {
     /// Absolute error tolerance.

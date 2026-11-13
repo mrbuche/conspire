@@ -13,7 +13,24 @@ use crate::{
 
 const FOUR_THIRDS: Scalar = 4.0 / 3.0;
 
-#[doc = include_str!("doc.md")]
+/// The Carroll hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The linear modulus $`\mu_1`$.
+/// - The quartic modulus $`\mu_2`$.
+/// - The second-invariant modulus $`\mu_3`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The shear modulus is given by $`\mu = 2\mu_1 + 216\mu_2 + \mu_3/\sqrt{3}`$.
+///
+/// [^1]: M.M. Carroll, [J. Elast. **103**, 173 (2011)](https://doi.org/10.1007/s10659-010-9279-0).
 #[derive(Clone, Debug)]
 pub struct Carroll {
     /// The bulk modulus $`\kappa`$.
@@ -49,7 +66,9 @@ impl Solid for Carroll {
 }
 
 impl Elastic for Carroll {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{1}{J}\left\{2\left[\mu_1 + 4\mu_2\,\mathrm{tr}(\mathbf{B}^*)^3\right]{\mathbf{B}^* }' - \frac{\mu_3}{\sqrt{I_2(\mathbf{B}^*)}}\left(\mathbf{B}^{* -1}\right)' + \frac{\kappa}{2}\left(J^2-1\right)\mathbf{1}\right\}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -71,7 +90,19 @@ impl Elastic for Carroll {
                 / jacobian,
         )
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \begin{aligned}
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) =
+    /// \,& \frac{2\left[\mu_1+4\mu_2\,\mathrm{tr}(\mathbf{B}^*)^3\right]}{J^{5/3}}\left(\delta_{ik}F_{jL} + \delta_{jk}F_{iL} - \frac{2}{3}\,\delta_{ij}F_{kL}- \frac{5}{3} \, B_{ij}'F_{kL}^{-T} \right)
+    /// + \frac{\kappa}{2} \left(J + \frac{1}{J}\right)\delta_{ij}F_{kL}^{-T}
+    /// \\
+    /// &- \frac{\mu_3}{J\sqrt{I_2(\mathbf{B}^*)}}\left[ \frac{2}{3}\,B_{ij}^{* -1}F_{kL}^{-T} - B_{ik}^{* -1}F_{jL}^{-T} - B_{ik}^{* -1}F_{iL}^{-T} + \frac{2}{3}\,\delta_{ij}\left(B_{km}^{* -1}\right)'F_{mL}^{-T} - \left(B_{ij}^{* -1}\right)'F_{kL}^{-T} \right]
+    /// \\
+    /// &+ \frac{1}{J}\,{B_{ij}^*}'\left(\frac{48\mu_2\,\mathrm{tr}(\mathbf{B}^*)^2}{J^{2/3}}F_{kL} - 16\mu_2\,\mathrm{tr}(\mathbf{B}^*)^3F_{kL}^{-T}\right)
+    /// \\
+    /// &- \frac{1}{J}\left(B_{ij}^{*-1}\right)'\left[-\frac{\mu_3}{I_2(\mathbf{B}^*)^{3/2}J^{2/3}}\left(\mathrm{tr}(\mathbf{B}^*)\,\delta_{km} - B_{km}^*\right)F_{mL} + \frac{2\mu_3}{3\sqrt{I_2(\mathbf{B}^*)}}F_{kL}^{-T}\right]
+    /// \end{aligned}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -144,7 +175,9 @@ impl Elastic for Carroll {
 }
 
 impl Hyperelastic for Carroll {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \mu_1\left\{\mathrm{tr}(\mathbf{B}^* ) - 3\right\} + \mu_2\left\{\left[\mathrm{tr}(\mathbf{B}^* )\right]^4 - 81\right\} + \mu_3\left\{\sqrt{I_2(\mathbf{B}^*)} - \sqrt{3}\right\} + \frac{\kappa}{2}\left[\frac{1}{2}\left(J^2 - 1\right) - \ln J\right]
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

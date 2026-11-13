@@ -17,7 +17,21 @@ use crate::{
     units::{Dissipation, Viscosity},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Newtonian viscous fluid constitutive model.
+///
+/// **Parameters**
+/// - The bulk viscosity $`\zeta`$.
+/// - The shear viscosity $`\eta`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+/// - The deformation gradient rate $`\dot{\mathbf{F}}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The rate of deformation is given by $`\mathbf{D}=\tfrac{1}{2}(\mathbf{L}+\mathbf{L}^T)`$ with $`\mathbf{L}=\dot{\mathbf{F}}\cdot\mathbf{F}^{-1}`$.
 #[derive(Clone, Debug)]
 pub struct Newtonian {
     /// The bulk viscosity $`\zeta`$.
@@ -33,7 +47,9 @@ impl Viscous for Newtonian {
     fn shear_viscosity(&self) -> Quantity<Viscosity> {
         self.shear_viscosity
     }
-    #[doc = include_str!("viscous_cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F},\dot{\mathbf{F}}) = 2\eta\mathbf{D}' + \zeta\,\mathrm{tr}(\mathbf{D})\mathbf{1}
+    /// ```
     fn viscous_cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -48,7 +64,9 @@ impl Viscous for Newtonian {
                 + IDENTITY * (self.bulk_viscosity() * strain_rate_trace / jacobian),
         )
     }
-    #[doc = include_str!("viscous_cauchy_rate_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{V}_{ijkL}(\mathbf{F}) = \eta\,\delta_{ik}F_{jL}^{-T} + \eta\,\delta_{jk}F_{iL}^{-T} + \left(\zeta - \frac{2}{3}\,\eta\right)\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn viscous_cauchy_rate_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -100,7 +118,9 @@ impl Viscous for Newtonian {
 }
 
 impl Hyperviscous for Newtonian {
-    #[doc = include_str!("viscous_dissipation.md")]
+    /// ```math
+    /// \psi(\mathbf{F},\dot{\mathbf{F}}) = \eta\,\mathrm{tr}(\mathbf{D}^2) + \frac{1}{2}\left(\zeta - \frac{2}{3}\,\eta\right)\mathrm{tr}(\mathbf{D})^2
+    /// ```
     fn viscous_dissipation(
         &self,
         deformation_gradient: &DeformationGradient,
