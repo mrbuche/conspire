@@ -1,3 +1,5 @@
+//! Finite element tearing and interconnecting methods.
+
 #![allow(dead_code)]
 
 #[cfg(test)]
