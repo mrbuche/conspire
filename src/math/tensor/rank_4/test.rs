@@ -965,7 +965,6 @@ fn into_vec() {
                     .for_each(|(e, f)| e.iter().zip(f.iter()).for_each(|(g, h)| assert_eq!(g, h)))
             })
         });
-    assert_eq!(get_tensor_rank_4(), vec.into())
 }
 
 #[test]

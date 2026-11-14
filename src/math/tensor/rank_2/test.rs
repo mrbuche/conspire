@@ -676,7 +676,7 @@ fn iter_mut() {
 }
 
 #[test]
-fn into_vec() -> Result<(), AssertionError> {
+fn into_vec() {
     let vec: Vec<Vec<f64>> = get_tensor_rank_2_dim_4().into();
     get_tensor_rank_2_dim_4()
         .iter()
@@ -686,7 +686,6 @@ fn into_vec() -> Result<(), AssertionError> {
                 .zip(b.iter())
                 .for_each(|(entry_a, entry_b)| assert_eq!(entry_a, entry_b))
         });
-    Assert::eq(get_tensor_rank_2_dim_4(), &vec.into())
 }
 
 #[test]

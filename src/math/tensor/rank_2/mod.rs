@@ -352,16 +352,6 @@ where
     }
 }
 
-impl<const D: usize, I, J, U> From<Vec<Vec<TensorRank0>>> for TensorRank2<D, I, J, U> {
-    fn from(vec: Vec<Vec<TensorRank0>>) -> Self {
-        assert_eq!(vec.len(), D);
-        vec.iter().for_each(|entry| assert_eq!(entry.len(), D));
-        vec.into_iter()
-            .map(|entry| entry.into_iter().collect())
-            .collect()
-    }
-}
-
 impl<const D: usize, I, J, U> From<TensorRank2<D, I, J, U>> for Vec<Vec<TensorRank0>> {
     fn from(tensor: TensorRank2<D, I, J, U>) -> Self {
         tensor

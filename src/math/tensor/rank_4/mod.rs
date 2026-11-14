@@ -307,27 +307,6 @@ impl<K, U> From<TensorRank4<3, Reference, Reference, K, Reference, U>>
     }
 }
 
-impl<const D: usize, I, J, K, L, U> From<Vec<Vec<Vec<Vec<TensorRank0>>>>>
-    for TensorRank4<D, I, J, K, L, U>
-{
-    fn from(vec_rank_4: Vec<Vec<Vec<Vec<TensorRank0>>>>) -> Self {
-        vec_rank_4
-            .into_iter()
-            .map(|vec_rank_3| {
-                vec_rank_3
-                    .into_iter()
-                    .map(|vec_rank_2| {
-                        vec_rank_2
-                            .into_iter()
-                            .map(|vec_rank_1| vec_rank_1.into_iter().collect())
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect()
-    }
-}
-
 impl<const D: usize, I, J, K, L, U> From<TensorRank4<D, I, J, K, L, U>>
     for Vec<Vec<Vec<Vec<TensorRank0>>>>
 {
