@@ -7,7 +7,7 @@ use crate::{
     geometry::{
         Coordinate, Coordinates,
         mesh::{
-            Tessellation,
+            Watertight,
             differential::sizing::{Creases, Unresolved, sizing_field},
         },
         ntree::{node::cell::Cell, sizing::curvature::CurvatureSizing},
@@ -41,7 +41,7 @@ impl<'a> Sizing<'a> {
         self.levels
     }
     pub fn new(
-        tessellation: &'a Tessellation,
+        watertight: &'a Watertight,
         scale: Scalar,
         curvature: CurvatureSizing,
         padding: u16,
@@ -51,6 +51,7 @@ impl<'a> Sizing<'a> {
             gradation,
             floor_fraction,
         } = curvature;
+        let tessellation = watertight.tessellation();
         let sdf = tessellation.shape_diameter_function(FRAC_PI_4, 3, 10);
         let coordinates = tessellation.mesh().coordinates();
         if coordinates.is_empty() {

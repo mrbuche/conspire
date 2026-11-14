@@ -2,8 +2,9 @@ use crate::{
     geometry::{
         Coordinates,
         mesh::{
-            Connectivity, Mesh, Tessellation, Verdict, from::ntree::facets::leaves,
-            test::sphere as ball,
+            Connectivity, Mesh, Tessellation, Verdict, Watertight,
+            from::ntree::facets::leaves,
+            test::{sphere, watertight},
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing, node::slot::Slot},
     },
@@ -13,7 +14,11 @@ use core::num::NonZeroU32;
 
 type Tree = Octree<u16, NonZeroU32>;
 
-fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
+fn ball(stacks: usize, slices: usize, radius: f64) -> Watertight {
+    watertight(sphere(stacks, slices, radius))
+}
+
+fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Watertight {
     let [x0, y0, z0] = minimum;
     let [x1, y1, z1] = maximum;
     let coordinates = vec![
@@ -37,13 +42,13 @@ fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
     .iter()
     .flat_map(|&[a, b, c, d]| [[a, b, c], [a, c, d]])
     .collect();
-    Tessellation::from(Mesh::from((
+    watertight(Tessellation::from(Mesh::from((
         vec![Connectivity::Triangular(faces.into())],
         Coordinates::from(coordinates),
-    )))
+    ))))
 }
 
-fn tree(tessellation: &Tessellation, scale: Scalar) -> Tree {
+fn tree(tessellation: &Watertight, scale: Scalar) -> Tree {
     let mut octree =
         Tree::from_features(tessellation, scale, CurvatureSizing::default(), 2).unwrap();
     octree

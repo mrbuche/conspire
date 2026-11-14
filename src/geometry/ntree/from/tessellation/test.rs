@@ -1,7 +1,10 @@
 use crate::{
     geometry::{
         Coordinates,
-        mesh::{Connectivity, Dualization, Mesh, Tessellation, test::sphere},
+        mesh::{
+            Connectivity, Dualization, Mesh, Tessellation, Watertight,
+            test::{sphere, watertight},
+        },
         ntree::node::{Node, cell::Cell},
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing, Sizing},
     },
@@ -19,7 +22,7 @@ fn curvature(tolerance: Quantity<Length>) -> CurvatureSizing {
 
 #[test]
 fn tighter_curvature_tolerance_refines_more() {
-    let tessellation = sphere(12, 24, 2.0);
+    let tessellation = watertight(sphere(12, 24, 2.0));
     let scale = 4.0;
     let loose =
         Octree::<u16, usize>::from_features(&tessellation, scale, curvature(Quantity::new(1.0)), 0)
@@ -44,7 +47,7 @@ fn tighter_curvature_tolerance_refines_more() {
 
 #[test]
 fn default_curvature_sizing_disables_curvature_refinement() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     let scale = 4.0;
     let without = Octree::<u16, usize>::from_features(
         &tessellation,
@@ -126,7 +129,7 @@ fn pored_cube(radius: f64) -> Tessellation {
     tessellate(points, faces)
 }
 
-fn refinement(tessellation: &Tessellation, curvature: CurvatureSizing) -> (f64, Vec<[f64; 3]>) {
+fn refinement(tessellation: &Watertight, curvature: CurvatureSizing) -> (f64, Vec<[f64; 3]>) {
     let mut octree = Octree::<u16, usize>::from_features(tessellation, 5.0, curvature, 0).unwrap();
     octree
         .equilibrate(Balancing::Weak(1), Pairing::Regular)
@@ -171,7 +174,10 @@ fn refinement(tessellation: &Tessellation, curvature: CurvatureSizing) -> (f64, 
 #[test]
 fn a_pore_refines_without_dragging_the_cube_down() {
     let radius = 0.1;
-    let (finest, cells) = refinement(&pored_cube(radius), curvature(Quantity::new(1.0e-3)));
+    let (finest, cells) = refinement(
+        &watertight(pored_cube(radius)),
+        curvature(Quantity::new(1.0e-3)),
+    );
     assert!(finest < radius, "the pore is resolved at all");
     cells.iter().for_each(|center| {
         let distance = (0..3)
@@ -188,7 +194,7 @@ fn a_pore_refines_without_dragging_the_cube_down() {
 #[test]
 fn a_tolerance_does_not_refine_a_polyhedron() {
     let (points, faces) = cube(4);
-    let cube = tessellate(points, faces);
+    let cube = watertight(tessellate(points, faces));
     let (without, _) = refinement(&cube, CurvatureSizing::default());
     let (tight, _) = refinement(&cube, curvature(Quantity::new(1.0e-4)));
     assert_eq!(
@@ -199,7 +205,7 @@ fn a_tolerance_does_not_refine_a_polyhedron() {
 
 #[test]
 fn refuses_a_depth_no_cell_length_can_index() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     assert_eq!(
         Octree::<u16, usize>::from_features(&tessellation, 1.0e6, CurvatureSizing::default(), 0)
             .err(),
@@ -213,7 +219,7 @@ fn refuses_a_depth_no_cell_length_can_index() {
 
 #[test]
 fn a_wider_cell_carries_the_whole_pipeline() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     let narrow =
         Octree::<u16, usize>::from_features(&tessellation, 4.0, CurvatureSizing::default(), 0)
             .unwrap();
@@ -234,7 +240,7 @@ fn a_wider_cell_carries_the_whole_pipeline() {
 
 #[test]
 fn a_wider_cell_indexes_a_depth_a_narrower_one_refuses() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     assert_eq!(
         Octree::<u16, usize>::from_features(&tessellation, 1.0e6, CurvatureSizing::default(), 0)
             .err(),
@@ -245,7 +251,7 @@ fn a_wider_cell_indexes_a_depth_a_narrower_one_refuses() {
 
 #[test]
 fn a_leaner_index_builds_the_same_tree() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     let sizing = Sizing::new(&tessellation, 4.0, CurvatureSizing::default(), 0);
     let mut wide = Octree::<u16, usize>::refine(&sizing).unwrap();
     let mut lean = Octree::<u16, u32>::refine(&sizing).unwrap();
@@ -265,7 +271,7 @@ fn a_leaner_index_builds_the_same_tree() {
 #[test]
 fn a_niched_index_builds_the_same_tree() {
     use core::num::NonZeroU32;
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     let sizing = Sizing::new(&tessellation, 4.0, CurvatureSizing::default(), 0);
     let mut wide = Octree::<u16, usize>::refine(&sizing).unwrap();
     let mut lean = Octree::<u16, NonZeroU32>::refine(&sizing).unwrap();
@@ -285,7 +291,7 @@ fn a_niched_index_builds_the_same_tree() {
 
 #[test]
 fn the_cell_that_set_the_size_field_is_not_a_failure() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     (2..=40).for_each(|scale| {
         let scale = scale as Scalar / 2.0;
         assert!(

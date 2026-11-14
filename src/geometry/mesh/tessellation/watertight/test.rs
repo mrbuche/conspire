@@ -65,7 +65,7 @@ fn a_flipped_face_is_inconsistent_but_not_open() {
 fn a_cube_turned_inside_out_is_only_inward() {
     let faces = unit().into_iter().map(flipped).collect();
     let defects = cube(faces).defects();
-    assert!(defects.inward);
+    assert_eq!(defects.inward_shells, vec![0]);
     assert!(defects.boundary_edges.is_empty());
     assert!(defects.non_manifold_edges.is_empty());
     assert!(defects.non_manifold_vertices.is_empty());
@@ -119,7 +119,7 @@ fn overlapping_cubes_in_one_tessellation_intersect_themselves() {
     let defects = tessellation(faces, coordinates).defects();
     assert!(!defects.self_intersections.is_empty());
     assert!(defects.boundary_edges.is_empty());
-    assert!(!defects.inward);
+    assert!(defects.inward_shells.is_empty());
 }
 
 #[test]

@@ -3,7 +3,7 @@ use crate::{
         Coordinate,
         mesh::{
             Connectivities, Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
-            test::{solid, sphere},
+            test::{solid, sphere, watertight},
         },
         ntree::Balancing,
         solid::Partition,
@@ -60,7 +60,7 @@ fn conformed(solids: fn() -> Vec<Watertight>, n: usize) -> (Mesh<3>, Vec<usize>)
 }
 
 fn dual_ball(scale: f64) -> Mesh<3> {
-    let (background, _) = sphere(24, 48, 0.25)
+    let (background, _) = watertight(sphere(24, 48, 0.25))
         .dual_background(Balancing::Strong(1), scale, None)
         .unwrap();
     let coordinates = background.coordinates();

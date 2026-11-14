@@ -52,7 +52,9 @@ fn assert_materials(boxes: &[Box3], touching: bool) -> Result<(), AssertionError
                 let defects = boundary.defects();
                 if touching {
                     assert!(defects.boundary_edges.is_empty(), "{material}: {defects:?}");
-                    assert!(defects.self_intersections.is_empty() && !defects.inward);
+                    assert!(
+                        defects.self_intersections.is_empty() && defects.inward_shells.is_empty()
+                    );
                 } else {
                     assert!(defects.is_empty(), "{material}: {defects:?}");
                 }
@@ -262,7 +264,7 @@ fn assert_sampled(solids: &[Watertight], samples: usize) {
                 assert!(defects.boundary_edges.is_empty(), "{defects:?}");
                 assert!(defects.non_manifold_edges.is_empty(), "{defects:?}");
                 assert!(defects.inconsistent_edges.is_empty(), "{defects:?}");
-                assert!(defects.self_intersections.is_empty() && !defects.inward);
+                assert!(defects.self_intersections.is_empty() && defects.inward_shells.is_empty());
             })
         })
         .collect();

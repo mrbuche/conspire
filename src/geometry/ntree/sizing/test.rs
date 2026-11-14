@@ -1,11 +1,11 @@
 use crate::geometry::{
-    mesh::test::sphere,
+    mesh::test::{sphere, watertight},
     ntree::{CurvatureSizing, Octree, Sizing},
 };
 
 #[test]
 fn a_size_field_knows_the_depth_it_asks_for() {
-    let tessellation = sphere(4, 8, 2.0);
+    let tessellation = watertight(sphere(4, 8, 2.0));
     let ordinary = Sizing::new(&tessellation, 4.0, CurvatureSizing::default(), 0);
     assert!(ordinary.levels() <= 15);
     assert!(ordinary.fits::<u16>());
