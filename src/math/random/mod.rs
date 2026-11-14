@@ -95,32 +95,6 @@ pub fn random_normal(mean: f64, std: f64) -> f64 {
     mean + std * random_normal_standard()
 }
 
-// fn random_exp1() -> f64 {
-//     let mut u = random_uniform();
-//     while u <= 0.0 {
-//         u = random_uniform();
-//     }
-//     -u.ln()
-// }
-
-// fn random_gamma_k3_scale1() -> f64 {
-//     random_exp1() + random_exp1() + random_exp1()
-// }
-
-// pub fn random_x2_normal(mean: f64, std: f64) -> f64 {
-//     let m = mean / std;
-//     let z_star = if m >= -1.0 { m + 1.0 } else { 0.0 };
-//     let h_min = 0.5 * (z_star - m).powi(2) - z_star;
-//     loop {
-//         let z = random_gamma_k3_scale1();
-//         let h = 0.5 * (z - m).powi(2) - z;
-//         let acceptance_probability = (-(h - h_min)).exp();
-//         if random_uniform() < acceptance_probability {
-//             return std * z;
-//         }
-//     }
-// }
-
 use crate::math::special::erf;
 
 use core::f64::consts::{PI, SQRT_2};

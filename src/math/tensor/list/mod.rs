@@ -72,20 +72,6 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "Need to implement Display")
-        // write!(f, "\x1B[s")?;
-        // write!(f, "[[")?;
-        // self.iter().enumerate().try_for_each(|(i, tensor_rank_1)| {
-        //     tensor_rank_1
-        //         .iter()
-        //         .try_for_each(|entry| write_tensor_rank_0(f, entry))?;
-        //     if i + 1 < W {
-        //         writeln!(f, "\x1B[2D],")?;
-        //         write!(f, "\x1B[u")?;
-        //         write!(f, "\x1B[{}B [", i + 1)?;
-        //     }
-        //     Ok(())
-        // })?;
-        // write!(f, "\x1B[2D]]")
     }
 }
 
