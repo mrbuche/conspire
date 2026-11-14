@@ -50,8 +50,12 @@ impl<'a> Sizing<'a> {
             tolerance,
             gradation,
             floor_fraction,
+            thickness_floor,
         } = curvature;
-        let sdf = tessellation.shape_diameter_function(FRAC_PI_4, 3, 10);
+        let mut sdf = tessellation.shape_diameter_function(FRAC_PI_4, 3, 10);
+        if let Some(floor) = thickness_floor {
+            sdf.iter_mut().for_each(|value| *value = value.max(floor))
+        }
         let coordinates = tessellation.mesh().coordinates();
         if coordinates.is_empty() {
             return Self {
