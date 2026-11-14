@@ -1,6 +1,6 @@
 use super::build_interfaces;
-use crate::domain::feti::dual_primal::CornerSelection;
-use crate::geometry::mesh::Decomposition;
+use crate::domain::decomposition::Decomposition;
+use crate::domain::decomposition::feti::dual_primal::CornerSelection;
 use crate::math::Vector;
 
 #[test]

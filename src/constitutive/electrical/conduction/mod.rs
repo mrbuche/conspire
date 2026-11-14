@@ -2,10 +2,7 @@
 //!
 //! ---
 //!
-#![doc = include_str!("doc.md")]
-
-#[cfg(feature = "doc")]
-pub mod doc;
+//! Electrical conduction constitutive models are defined by a relation for the current density as a function of the potential gradient, and by the potential from which that current density derives.
 
 #[cfg(test)]
 pub mod test;

@@ -1,14 +1,12 @@
 macro_rules! test_implicit_fixed_step {
     ($integration: expr) => {
-        use crate::units::{Rate, Time};
-        use crate::{
-            EPSILON,
-            math::{
-                Quantity, Scalar, Tensor, TensorVector,
-                assert::AssertionError,
-                integrate::{FixedStep, IntegrationError, Times},
-            },
+        use crate::math::EPSILON;
+        use crate::math::{
+            Quantity, Scalar, Tensor, TensorVector,
+            assert::AssertionError,
+            integrate::{FixedStep, IntegrationError, Times},
         };
+        use crate::units::{Rate, Time};
         const TIME_STEP: Quantity<Time> = Time::seconds(0.1);
         const TOLERANCE: Scalar = 0.1;
         const RATE: Quantity<Rate> = Rate::per_second(1.0);

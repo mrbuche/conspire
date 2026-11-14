@@ -1,4 +1,5 @@
 use super::Newmark;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{
         Quantity, Scalar, Tensor, TensorVector,
@@ -66,9 +67,10 @@ fn fixed_step() {
 }
 
 #[test]
-fn second_order() {
+fn second_order() -> Result<(), AssertionError> {
     let ratio = max_error(0.1) / max_error(0.05);
-    assert!((ratio - 4.0).abs() < 0.2, "ratio {ratio}");
+    Assert::within(0.2).eq_within_tols(ratio, &4.0)?;
+    Ok(())
 }
 
 #[test]

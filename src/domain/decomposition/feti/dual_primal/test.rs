@@ -1,5 +1,5 @@
 use super::{BoundaryConditions, CornerSelection, build_splits};
-use crate::geometry::mesh::Decomposition;
+use crate::domain::decomposition::Decomposition;
 
 #[test]
 fn split_separates_primal_and_dual_dofs() {

@@ -67,16 +67,16 @@ fn finite_difference_current_density() -> Result<(), AssertionError> {
     let mut fd = CurrentDensity::zero();
     for i in 0..3 {
         let mut electric_field_plus = electric_field.clone();
-        electric_field_plus[i] += perturbation(0.5 * crate::EPSILON);
+        electric_field_plus[i] += perturbation(0.5 * crate::math::EPSILON);
         let mut electric_field_minus = electric_field.clone();
-        electric_field_minus[i] -= perturbation(0.5 * crate::EPSILON);
+        electric_field_minus[i] -= perturbation(0.5 * crate::math::EPSILON);
         fd[i] = Quantity::new(
             -(model().potential(&electric_field_plus)?.value()
                 - model().potential(&electric_field_minus)?.value())
-                / crate::EPSILON,
+                / crate::math::EPSILON,
         );
     }
-    if current.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if current.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&current, &fd)
     } else {
         Ok(())
@@ -90,17 +90,17 @@ fn finite_difference_tangent() -> Result<(), AssertionError> {
     let mut fd = CurrentDensityTangent::zero();
     for j in 0..3 {
         let mut electric_field_plus = electric_field.clone();
-        electric_field_plus[j] += perturbation(0.5 * crate::EPSILON);
+        electric_field_plus[j] += perturbation(0.5 * crate::math::EPSILON);
         let current_plus = model().current_density(&electric_field_plus)?;
         let mut electric_field_minus = electric_field.clone();
-        electric_field_minus[j] -= perturbation(0.5 * crate::EPSILON);
+        electric_field_minus[j] -= perturbation(0.5 * crate::math::EPSILON);
         let current_minus = model().current_density(&electric_field_minus)?;
         for i in 0..3 {
             fd[i][j] = (current_plus[i] - current_minus[i])
-                / perturbation::<crate::units::ElectricField>(crate::EPSILON);
+                / perturbation::<crate::units::ElectricField>(crate::math::EPSILON);
         }
     }
-    if tangent.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&tangent, &fd)
     } else {
         Ok(())

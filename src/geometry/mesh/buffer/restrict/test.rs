@@ -29,7 +29,7 @@ fn restrict_breaks_vertex_pinch() -> Result<(), AssertionError> {
         vec![[0, 1, 2, 3, 4, 5, 6, 7], [6, 8, 9, 10, 11, 12, 13, 14]].into(),
     )];
     let mut mesh = Mesh::from((connectivities, coordinates));
-    mesh.restrict().unwrap();
+    mesh.restrict()?;
     assert_eq!(mesh.number_of_elements(), 1);
     Ok(())
 }
@@ -54,7 +54,7 @@ fn restrict_leaves_manifold_mesh_untouched() -> Result<(), AssertionError> {
         vec![[0, 1, 2, 3, 4, 5, 6, 7], [1, 8, 9, 2, 5, 10, 11, 6]].into(),
     )];
     let mut mesh = Mesh::from((connectivities, coordinates));
-    mesh.restrict().unwrap();
+    mesh.restrict()?;
     assert_eq!(mesh.number_of_elements(), 2);
     Ok(())
 }

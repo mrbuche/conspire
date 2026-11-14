@@ -43,7 +43,7 @@ fn frame(first: [f64; 3]) -> [Direction<3>; 3] {
 
 #[test]
 fn along_an_axis_the_distance_is_to_its_tip() -> Result<(), AssertionError> {
-    let ellipsoid = Ellipsoid::new(point([1.0, 2.0, 3.0]), semi([4.0, 2.0, 1.0])).unwrap();
+    let ellipsoid = Ellipsoid::new(point([1.0, 2.0, 3.0]), semi([4.0, 2.0, 1.0]))?;
     let distance = |entries| ellipsoid.signed_distance(&point(entries));
     let assert = Assert::default();
     assert.eq_within_tols(distance([6.0, 2.0, 3.0]), &length(1.0))?;
@@ -54,7 +54,7 @@ fn along_an_axis_the_distance_is_to_its_tip() -> Result<(), AssertionError> {
 
 #[test]
 fn a_ball_is_a_sphere() -> Result<(), AssertionError> {
-    let ellipsoid = Ellipsoid::new(point([0.0; 3]), semi([2.0, 2.0, 2.0])).unwrap();
+    let ellipsoid = Ellipsoid::new(point([0.0; 3]), semi([2.0, 2.0, 2.0]))?;
     for entries in [
         [1.0, 0.0, 0.0],
         [0.3, -1.1, 4.0],
@@ -71,7 +71,7 @@ fn a_ball_is_a_sphere() -> Result<(), AssertionError> {
 #[test]
 fn a_point_in_a_plane_of_a_flat_ellipsoid_is_nearest_a_point_out_of_it()
 -> Result<(), AssertionError> {
-    let ellipsoid = Ellipsoid::new(point([0.0; 3]), semi([2.0, 2.0, 0.5])).unwrap();
+    let ellipsoid = Ellipsoid::new(point([0.0; 3]), semi([2.0, 2.0, 0.5]))?;
     let found = ellipsoid.project(&point([0.1, 0.0, 0.0])).unwrap();
     Assert::non_negative(&(found.point[2].abs() - length(0.4)))?;
     Assert::non_positive(

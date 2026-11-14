@@ -1,8 +1,8 @@
 use crate::{
     constitutive::solid::elastic::Elastic,
-    domain::{
-        ElementModelError,
-        feti::block::element::{DecomposableElements, ElementSystem, ElementSystems, positions},
+    domain::ElementModelError,
+    domain::decomposition::feti::block::element::{
+        DecomposableElements, ElementSystem, ElementSystems, positions,
     },
     vem::{
         NodalCoordinates,

@@ -6,7 +6,7 @@ pub(crate) mod rigid_projector;
 #[cfg(test)]
 mod test;
 
-use crate::geometry::mesh::Decomposition;
+use crate::domain::decomposition::Decomposition;
 use crate::math::FxHashSet;
 
 pub(crate) use corner::{CornerDofs, CornerSelection};

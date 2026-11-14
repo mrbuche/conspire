@@ -1,9 +1,11 @@
 use crate::math::{
-    Current, HessianBlock, Quantity, Reference, SquareMatrix, Tensor, TensorArray, TensorRank1,
-    TensorRank2, TensorRank4, Transposed,
+    Current, HessianBlock, Quantity, Reference, SquareMatrix, Tensor, TensorArray, TensorList,
+    TensorRank1, TensorRank2, TensorRank4, TensorVector, Transposed,
+    assert::{Assert, AssertionError},
 };
 use crate::units::Force;
 use crate::units::{Dimensionless, Rate, Stress, Viscosity};
+use core::ops::Mul;
 
 type Deformation = TensorRank2<3, Current, Reference, Dimensionless>;
 type Rates = TensorRank2<3, Reference, Reference, Rate>;
@@ -264,4 +266,45 @@ mod axpy {
         assert_eq!(y[2][1][1], 10.0);
         assert_eq!(y[4][2][2], 4.0);
     }
+}
+
+#[test]
+fn a_list_times_a_borrowed_scalar_leaves_the_list_alone() -> Result<(), AssertionError> {
+    let list = TensorList::<TensorRank1<3, Current>, 2>::from([
+        TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+        TensorRank1::<3, Current>::from([4.0, 5.0, 6.0]),
+    ]);
+    let two = 2.0;
+    let scaled = Mul::mul(&list, &two);
+    Assert::default().eq_within_tols(
+        &scaled[0],
+        &TensorRank1::<3, Current>::from([2.0, 4.0, 6.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &scaled[1],
+        &TensorRank1::<3, Current>::from([8.0, 10.0, 12.0]),
+    )?;
+    Assert::default().eq_within_tols(&list[0], &TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]))
+}
+
+#[test]
+fn a_vector_times_a_borrowed_scalar_leaves_the_vector_alone() -> Result<(), AssertionError> {
+    let vector = TensorVector::from([
+        TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+        TensorRank1::<3, Current>::from([4.0, 5.0, 6.0]),
+    ]);
+    let two = 2.0;
+    let scaled = Mul::mul(&vector, &two);
+    Assert::default().eq_within_tols(
+        &scaled[0],
+        &TensorRank1::<3, Current>::from([2.0, 4.0, 6.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &scaled[1],
+        &TensorRank1::<3, Current>::from([8.0, 10.0, 12.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &vector[0],
+        &TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+    )
 }

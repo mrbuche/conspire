@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test;
 
-use crate::domain::feti::interface::Interface;
+use crate::domain::decomposition::feti::interface::Interface;
 use crate::math::{FxHashSet, LuDecomposition, Matrix, SquareMatrix, Tensor, Vector};
 
 /// One subdomain's local system, already condensed and interfaced.

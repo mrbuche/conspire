@@ -320,14 +320,12 @@ fn bisection_requires_the_ends_to_straddle_the_boundary() {
 #[test]
 fn bisection_terminates_on_a_coincident_interface() -> Result<(), AssertionError> {
     let partition = shared_face_partition();
-    let found = partition
-        .boundary_on_segment(
-            &[1.5, 0.5, 0.5].into(),
-            &[0.5, 0.5, 0.5].into(),
-            0,
-            CREASE_TOLERANCE,
-        )
-        .unwrap();
+    let found = partition.boundary_on_segment(
+        &[1.5, 0.5, 0.5].into(),
+        &[0.5, 0.5, 0.5].into(),
+        0,
+        CREASE_TOLERANCE,
+    )?;
     Assert {
         abs_tol: 1e-8,
         ..Assert::default()

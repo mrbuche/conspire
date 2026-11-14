@@ -1,5 +1,6 @@
+use crate::math::EPSILON;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
-    EPSILON,
     constitutive::thermal::conduction::Fourier,
     math::{Quantity, Scalar, Tensor},
     mechanics::ReferenceCoordinate,
@@ -170,66 +171,66 @@ fn stiffnesses(element: &Element, values: &[Scalar]) -> Vec<Vec<Scalar>> {
         .collect()
 }
 
-fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) {
-    crate::math::assert::Assert {
+fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) -> Result<(), AssertionError> {
+    Assert {
         abs_tol: tolerance,
         rel_tol: tolerance,
         ..Default::default()
     }
     .eq_within_tols(a, &b)
-    .unwrap()
 }
 
 #[test]
-fn gradient_of_a_linear_field_is_its_slope() {
+fn gradient_of_a_linear_field_is_its_slope() -> Result<(), AssertionError> {
     let gradient = [0.3, -0.7, 1.1];
-    cases(0.1).iter().for_each(|(element, nodes)| {
+    cases(0.1).iter().try_for_each(|(element, nodes)| {
         let found = element.temperature_gradient(&temperatures(&linear(nodes, gradient)));
-        (0..3).for_each(|axis| assert_close(found[axis].value(), gradient[axis], 1e-12))
+        (0..3).try_for_each(|axis| assert_close(found[axis].value(), gradient[axis], 1e-12))
     })
 }
 
 #[test]
-fn forces_of_a_linear_field_do_not_depend_on_the_stabilization() {
+fn forces_of_a_linear_field_do_not_depend_on_the_stabilization() -> Result<(), AssertionError> {
     let gradient = [0.3, -0.7, 1.1];
     cases(0.1)
         .iter()
         .zip(cases(0.9).iter())
-        .for_each(|((low, nodes), (high, _))| {
+        .try_for_each(|((low, nodes), (high, _))| {
             let values = linear(nodes, gradient);
             forces(low, &values)
                 .iter()
                 .zip(forces(high, &values))
-                .for_each(|(&a, b)| assert_close(a, b, 1e-12))
+                .try_for_each(|(&a, b)| assert_close(a, b, 1e-12))
         })
 }
 
 #[test]
-fn potential_of_a_linear_field_does_not_depend_on_the_stabilization() {
+fn potential_of_a_linear_field_does_not_depend_on_the_stabilization() -> Result<(), AssertionError>
+{
     let gradient = [0.3, -0.7, 1.1];
     cases(0.1)
         .iter()
         .zip(cases(0.9).iter())
-        .for_each(|((low, nodes), (high, _))| {
+        .try_for_each(|((low, nodes), (high, _))| {
             let values = linear(nodes, gradient);
             assert_close(potential(low, &values), potential(high, &values), 1e-12)
         })
 }
 
 #[test]
-fn forces_sum_to_zero() {
-    cases(0.3).iter().for_each(|(element, nodes)| {
+fn forces_sum_to_zero() -> Result<(), AssertionError> {
+    cases(0.3).iter().try_for_each(|(element, nodes)| {
         let total: Scalar = forces(element, &pseudorandom(nodes.len())).iter().sum();
         assert_close(total, 0.0, 1e-12)
     })
 }
 
 #[test]
-fn forces_are_the_gradient_of_the_potential() {
-    cases(0.3).iter().for_each(|(element, nodes)| {
+fn forces_are_the_gradient_of_the_potential() -> Result<(), AssertionError> {
+    cases(0.3).iter().try_for_each(|(element, nodes)| {
         let values = pseudorandom(nodes.len());
         let found = forces(element, &values);
-        (0..nodes.len()).for_each(|node| {
+        (0..nodes.len()).try_for_each(|node| {
             let shifted = |shift: Scalar| {
                 let mut values = values.clone();
                 values[node] += shift;
@@ -242,18 +243,18 @@ fn forces_are_the_gradient_of_the_potential() {
 }
 
 #[test]
-fn stiffnesses_are_the_gradient_of_the_forces() {
-    cases(0.3).iter().for_each(|(element, nodes)| {
+fn stiffnesses_are_the_gradient_of_the_forces() -> Result<(), AssertionError> {
+    cases(0.3).iter().try_for_each(|(element, nodes)| {
         let values = pseudorandom(nodes.len());
         let found = stiffnesses(element, &values);
-        (0..nodes.len()).for_each(|node| {
+        (0..nodes.len()).try_for_each(|node| {
             let shifted = |shift: Scalar| {
                 let mut values = values.clone();
                 values[node] += shift;
                 forces(element, &values)
             };
             let (above, below) = (shifted(EPSILON), shifted(-EPSILON));
-            (0..nodes.len()).for_each(|other| {
+            (0..nodes.len()).try_for_each(|other| {
                 assert_close(
                     found[other][node],
                     (above[other] - below[other]) / (2.0 * EPSILON),
@@ -265,13 +266,13 @@ fn stiffnesses_are_the_gradient_of_the_forces() {
 }
 
 #[test]
-fn stiffnesses_are_symmetric_and_annihilate_constants() {
-    cases(0.3).iter().for_each(|(element, nodes)| {
+fn stiffnesses_are_symmetric_and_annihilate_constants() -> Result<(), AssertionError> {
+    cases(0.3).iter().try_for_each(|(element, nodes)| {
         let found = stiffnesses(element, &pseudorandom(nodes.len()));
-        (0..nodes.len()).for_each(|row| {
-            assert_close(found[row].iter().sum(), 0.0, 1e-12);
+        (0..nodes.len()).try_for_each(|row| {
+            assert_close(found[row].iter().sum(), 0.0, 1e-12)?;
             (0..nodes.len())
-                .for_each(|column| assert_close(found[row][column], found[column][row], 1e-12))
+                .try_for_each(|column| assert_close(found[row][column], found[column][row], 1e-12))
         })
     })
 }
@@ -295,7 +296,7 @@ fn stiffnesses_are_positive_semidefinite() {
 }
 
 #[test]
-fn stabilization_resists_the_hourglass_mode_in_proportion() {
+fn stabilization_resists_the_hourglass_mode_in_proportion() -> Result<(), AssertionError> {
     let mode = [1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0];
     let energy = |stabilization| {
         let (element, nodes) = box_(stabilization);
@@ -310,12 +311,13 @@ fn stabilization_resists_the_hourglass_mode_in_proportion() {
 }
 
 #[test]
-fn box_with_no_stabilization_has_no_hourglass_energy() {
+fn box_with_no_stabilization_has_no_hourglass_energy() -> Result<(), AssertionError> {
     let (element, nodes) = box_(0.0);
     let found = stiffnesses(&element, &pseudorandom(nodes.len()));
     let mode = [1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0];
-    found
-        .iter()
-        .for_each(|row| assert_close(row.iter().zip(mode).map(|(&k, b)| k * b).sum(), 0.0, 1e-12));
-    assert!(element.volume().value() > 0.0)
+    found.iter().try_for_each(|row| {
+        assert_close(row.iter().zip(mode).map(|(&k, b)| k * b).sum(), 0.0, 1e-12)
+    })?;
+    assert!(element.volume().value() > 0.0);
+    Ok(())
 }

@@ -2,6 +2,7 @@
 mod test;
 
 use crate::math::Norm;
+use crate::math::{ABS_TOL, REL_TOL};
 use crate::math::{
     Derivative, Differentiable, Quantity, Scalar, Tensor, TensorVec,
     integrate::{
@@ -10,7 +11,6 @@ use crate::math::{
     },
     interpolate::InterpolateSolution,
 };
-use crate::{ABS_TOL, REL_TOL};
 use core::ops::{Mul, Sub};
 
 pub(crate) const C_2: Scalar = 0.03462;
@@ -165,7 +165,22 @@ impl EmbeddedTableau for Tableau {
         &[D_1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, D_8, D_9, D_10, D_11, D_12, D_13, D_14, D_15, D_16];
 }
 
-#[doc = include_str!("doc.md")]
+/// Explicit, sixteen-stage, ninth-order, variable-step, Runge-Kutta method.[^1]
+///
+/// ```math
+/// \frac{dy}{dt} = f(t, y)
+/// ```
+/// ```math
+/// t_{n+1} = t_n + h
+/// ```
+/// ```math
+/// k_1 = f(t_n, y_n)
+/// ```
+/// ```math
+/// \cdots
+/// ```
+///
+/// [^1]: J.H. Verner, [Numer. Algor. **53**, 383 (2010)](https://doi.org/10.1007/s11075-009-9290-3).
 #[derive(Debug)]
 pub struct Verner9 {
     /// Absolute error tolerance.

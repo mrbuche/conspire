@@ -12,7 +12,7 @@ mod into;
 mod quality;
 mod read;
 mod remesh;
-mod retain;
+pub(crate) mod retain;
 mod sets;
 mod sheets;
 mod smooth;

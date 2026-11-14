@@ -4,11 +4,11 @@ use crate::math::{
     ContractWith, Differentiable, Erase, Quantity, Tensor, TensorArray, TensorRank0,
 };
 use core::{
-    array::{self, from_fn},
+    array::{IntoIter, from_fn},
     fmt::{Display, Formatter, Result},
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
-    slice,
+    slice::Iter,
 };
 
 /// A fixed-size collection of tensors.
@@ -72,20 +72,6 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "Need to implement Display")
-        // write!(f, "\x1B[s")?;
-        // write!(f, "[[")?;
-        // self.iter().enumerate().try_for_each(|(i, tensor_rank_1)| {
-        //     tensor_rank_1
-        //         .iter()
-        //         .try_for_each(|entry| write_tensor_rank_0(f, entry))?;
-        //     if i + 1 < W {
-        //         writeln!(f, "\x1B[2D],")?;
-        //         write!(f, "\x1B[u")?;
-        //         write!(f, "\x1B[{}B [", i + 1)?;
-        //     }
-        //     Ok(())
-        // })?;
-        // write!(f, "\x1B[2D]]")
     }
 }
 
@@ -147,7 +133,7 @@ where
     T: Tensor,
 {
     type Item = T;
-    type IntoIter = array::IntoIter<Self::Item, N>;
+    type IntoIter = IntoIter<Self::Item, N>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -158,7 +144,7 @@ where
     T: Tensor,
 {
     type Item = &'a T;
-    type IntoIter = slice::Iter<'a, T>;
+    type IntoIter = Iter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
@@ -309,10 +295,13 @@ where
 {
     type Output = TensorList<T, N>;
     fn mul(self, tensor_rank_0: &TensorRank0) -> Self::Output {
-        //
-        // Cloning for now to avoid trait recursion nightmare.
-        //
-        self.clone() * tensor_rank_0
+        self.iter()
+            .map(|self_i| {
+                let mut product = self_i.clone();
+                product *= tensor_rank_0;
+                product
+            })
+            .collect()
     }
 }
 

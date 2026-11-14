@@ -1,8 +1,8 @@
+use crate::math::EPSILON;
 use crate::math::assert::Assert;
 use crate::math::assert::perturbation;
 use crate::math::{Current, Quantity};
 use crate::{
-    EPSILON,
     constitutive::cohesive::elastic::LinearElastic,
     fem::block::element::{
         ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,

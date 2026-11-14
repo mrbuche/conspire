@@ -11,12 +11,16 @@ use std::{
     path::Path,
 };
 
+/// Grid input file.
 pub enum Input<P>
 where
     P: AsRef<Path>,
 {
+    /// NumPy file.
     Npy(P),
+    /// SPN file with element counts per axis.
     Spn(P, Vec<usize>),
+    /// VTI file.
     Vti(P),
 }
 

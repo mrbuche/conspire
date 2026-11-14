@@ -11,10 +11,8 @@ pub use self::{
 };
 
 use self::eq::{non_negative_impl, non_positive_impl, zero_impl, zero_within_tols_impl};
-use crate::{
-    ABS_TOL, EPSILON, REL_TOL,
-    math::{Scalar, Tensor},
-};
+use crate::math::{ABS_TOL, EPSILON, REL_TOL};
+use crate::math::{Scalar, Tensor};
 use core::fmt::Display;
 
 /// Specifies tolerances used by [`AssertEq`] functionalities.
@@ -35,6 +33,14 @@ impl Default for Assert {
 }
 
 impl Assert {
+    /// Returns tolerances that accept only an absolute difference below `abs_tol`.
+    pub fn within(abs_tol: Scalar) -> Self {
+        Self {
+            abs_tol,
+            rel_tol: 0.0,
+            ..Self::default()
+        }
+    }
     /// Asserts exact equality.
     pub fn eq<T, Rhs>(a: T, b: Rhs) -> Result<(), AssertionError>
     where

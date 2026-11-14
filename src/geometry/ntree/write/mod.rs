@@ -10,10 +10,12 @@ use std::{io::Error as ErrorIO, path::Path};
 
 use htg::WriteHtg;
 
+/// Orthotree output file.
 pub enum Output<P>
 where
     P: AsRef<Path>,
 {
+    /// HTG file with compression.
     Htg(Compression<P>),
 }
 

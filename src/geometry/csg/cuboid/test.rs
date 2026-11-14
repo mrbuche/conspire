@@ -22,7 +22,7 @@ fn corner(entries: [f64; 3]) -> Coordinate<3> {
 
 #[test]
 fn signed_distance_is_negative_inside_and_euclidean_past_a_corner() -> Result<(), AssertionError> {
-    let cuboid = Cuboid::new(corner([0.0; 3]), corner([2.0, 4.0, 8.0])).unwrap();
+    let cuboid = Cuboid::new(corner([0.0; 3]), corner([2.0, 4.0, 8.0]))?;
     let distance = |entries| cuboid.signed_distance(&corner(entries));
     let assert = Assert::default();
     assert.eq_within_tols(distance([1.0, 2.0, 4.0]), &length(-1.0))?;
@@ -34,7 +34,7 @@ fn signed_distance_is_negative_inside_and_euclidean_past_a_corner() -> Result<()
 
 #[test]
 fn projects_onto_the_nearest_face_or_clamps_onto_the_surface() -> Result<(), AssertionError> {
-    let cuboid = Cuboid::new(corner([0.0; 3]), corner([2.0; 3])).unwrap();
+    let cuboid = Cuboid::new(corner([0.0; 3]), corner([2.0; 3]))?;
     let assert = Assert::default();
     let inside = cuboid.project(&corner([1.9, 1.0, 1.0])).unwrap();
     assert.eq_within_tols(&inside.point, &corner([2.0, 1.0, 1.0]))?;
@@ -83,7 +83,7 @@ fn satisfies_the_contract_at_any_size_and_place() -> Result<(), AssertionError> 
         ([0.0; 3], [1e-9, 2e-9, 3e-9]),
         ([1e8, -1e8, 0.0], [3e8, 1e8, 1e8]),
     ] {
-        let cuboid = Cuboid::new(corner(low), corner(high)).unwrap();
+        let cuboid = Cuboid::new(corner(low), corner(high))?;
         let scale = (0..3)
             .map(|axis| high[axis] - low[axis])
             .fold(f64::INFINITY, f64::min);
@@ -100,7 +100,7 @@ fn satisfies_the_contract_at_any_size_and_place() -> Result<(), AssertionError> 
 #[test]
 fn agrees_with_a_sampling_of_its_surface() -> Result<(), AssertionError> {
     let (low, high) = ([0.0, -1.0, 0.5], [2.0, 1.0, 1.5]);
-    let cuboid = Cuboid::new(corner(low), corner(high)).unwrap();
+    let cuboid = Cuboid::new(corner(low), corner(high))?;
     let samples = faces(low, high, 41);
     let spacing = (2.0_f64).sqrt() * 2.0 / 40.0 * 0.5 + 1e-12;
     assert_against_samples(&cuboid, &grid(low, high, 6), &samples, spacing)

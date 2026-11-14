@@ -1,6 +1,6 @@
 use crate::{
+    domain::decomposition::Decomposition,
     domain::{Blocks, ElementModelError, Model, NodalCoordinates},
-    geometry::mesh::Decomposition,
     math::{FxHashMap, Scalar, SquareMatrix, Tensor, Vector},
 };
 use core::array::from_fn;

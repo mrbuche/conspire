@@ -1,4 +1,5 @@
 use super::RigidProjector;
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{Tensor, Vector};
 
 fn vector(entries: &[f64]) -> Vector {
@@ -27,29 +28,34 @@ fn a_projected_vector_has_nothing_along_the_columns() {
 }
 
 #[test]
-fn projecting_twice_is_projecting_once() {
+fn projecting_twice_is_projecting_once() -> Result<(), AssertionError> {
     let projector = projector();
     let once = projector.project(&vector(&[3.0, -1.0, 2.0, 5.0]));
     let twice = projector.project(&once);
-    (0..4).for_each(|row| assert!((once[row] - twice[row]).abs() < 1e-12));
+    (0..4).try_for_each(|row| Assert::within(1e-12).eq_within_tols(once[row], &twice[row]))?;
+    Ok(())
 }
 
 #[test]
-fn the_particular_multipliers_satisfy_the_constraint() {
+fn the_particular_multipliers_satisfy_the_constraint() -> Result<(), AssertionError> {
     let projector = projector();
     let e = vector(&[2.0, -3.0]);
     let lambda = projector.particular(&e, 4);
     let restricted = transposed(&projector, &lambda);
-    (0..2).for_each(|row| assert!((restricted[row] - e[row]).abs() < 1e-12));
+    (0..2).try_for_each(|row| Assert::within(1e-12).eq_within_tols(restricted[row], &e[row]))?;
+    Ok(())
 }
 
 #[test]
-fn amplitudes_recover_a_combination_of_the_columns() {
+fn amplitudes_recover_a_combination_of_the_columns() -> Result<(), AssertionError> {
     let projector = projector();
     let combination = projector.particular(&vector(&[1.0, 0.0]), 4);
     let amplitudes = projector.amplitudes(&combination);
     let expected = projector.expand(&amplitudes, 4);
-    (0..4).for_each(|row| assert!((combination[row] - expected[row]).abs() < 1e-12));
+    (0..4).try_for_each(|row| {
+        Assert::within(1e-12).eq_within_tols(combination[row], &expected[row])
+    })?;
+    Ok(())
 }
 
 #[test]

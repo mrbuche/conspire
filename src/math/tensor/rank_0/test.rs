@@ -1,5 +1,5 @@
 use super::{Tensor, TensorRank0};
-use crate::{ABS_TOL, REL_TOL};
+use crate::math::{ABS_TOL, REL_TOL};
 
 #[test]
 fn tensor_rank_0() {

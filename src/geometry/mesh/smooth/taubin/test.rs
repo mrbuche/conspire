@@ -33,8 +33,7 @@ fn spread(mesh: &Mesh<3>) -> Scalar {
 #[test]
 fn zero_iterations_is_identity() -> Result<(), AssertionError> {
     let mut mesh = tri();
-    mesh.taubin_smooth(0, 0.1, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.taubin_smooth(0, 0.1, 0.5, Weighting::Uniform, false, false)?;
     let coordinates = mesh.coordinates();
     Assert::default().eq_within_tols(&coordinates[0], &[0.0, 0.0, 0.0].into())?;
     Assert::default().eq_within_tols(&coordinates[1], &[2.0, 0.0, 0.0].into())?;
@@ -44,13 +43,9 @@ fn zero_iterations_is_identity() -> Result<(), AssertionError> {
 #[test]
 fn first_iteration_matches_laplace_deflate() -> Result<(), AssertionError> {
     let mut laplace = tri();
-    laplace
-        .laplace_smooth(1, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    laplace.laplace_smooth(1, 0.5, Weighting::Uniform, false, false)?;
     let mut taubin = tri();
-    taubin
-        .taubin_smooth(1, 0.1, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    taubin.taubin_smooth(1, 0.1, 0.5, Weighting::Uniform, false, false)?;
     (0..3).try_for_each(|node| {
         Assert::default().eq_within_tols(&laplace.coordinates()[node], &taubin.coordinates()[node])
     })
@@ -102,13 +97,9 @@ fn polyhedron() -> Mesh<3> {
 #[test]
 fn polyhedral_first_iteration_matches_laplace_deflate() -> Result<(), AssertionError> {
     let mut laplace = polyhedron();
-    laplace
-        .laplace_smooth(1, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    laplace.laplace_smooth(1, 0.5, Weighting::Uniform, false, false)?;
     let mut taubin = polyhedron();
-    taubin
-        .taubin_smooth(1, 0.1, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    taubin.taubin_smooth(1, 0.1, 0.5, Weighting::Uniform, false, false)?;
     (0..8).try_for_each(|node| {
         Assert::default().eq_within_tols(&laplace.coordinates()[node], &taubin.coordinates()[node])
     })

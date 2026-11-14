@@ -1,6 +1,6 @@
+use crate::math::EPSILON;
 use crate::math::assert::Assert;
 use crate::{
-    EPSILON,
     math::{
         Quantity, Scalar,
         assert::{AssertionError, perturbation},

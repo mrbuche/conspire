@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test;
 
+use alloc::vec::IntoIter;
 use core::slice::Iter;
 
 macro_rules! collection {
@@ -59,7 +60,7 @@ macro_rules! collection {
         }
         impl IntoIterator for $sets {
             type Item = $set;
-            type IntoIter = alloc::vec::IntoIter<$set>;
+            type IntoIter = IntoIter<$set>;
             fn into_iter(self) -> Self::IntoIter {
                 self.0.into_iter()
             }

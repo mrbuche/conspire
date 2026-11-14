@@ -54,20 +54,20 @@ fn finite_difference() -> Result<(), AssertionError> {
     for k in 0..3 {
         for l in 0..3 {
             let mut rate_plus = deformation_gradient_rate.clone();
-            rate_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+            rate_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
             let stress_plus = model.viscous_cauchy_stress(&deformation_gradient, &rate_plus)?;
             let mut rate_minus = deformation_gradient_rate.clone();
-            rate_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+            rate_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
             let stress_minus = model.viscous_cauchy_stress(&deformation_gradient, &rate_minus)?;
             for i in 0..3 {
                 for j in 0..3 {
                     fd[i][j][k][l] = (stress_plus[i][j] - stress_minus[i][j])
-                        / perturbation::<Rate>(crate::EPSILON);
+                        / perturbation::<Rate>(crate::math::EPSILON);
                 }
             }
         }
     }
-    if tangent.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&tangent, &fd)
     } else {
         Ok(())

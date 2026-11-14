@@ -180,17 +180,15 @@ mod elastic {
     #[test]
     fn forces_are_zero_in_the_reference_configuration() -> Result<(), AssertionError> {
         let forces = Hexahedron::from(reference_coordinates())
-            .nodal_forces(&model(), &coordinates().into())
-            .unwrap();
+            .nodal_forces(&model(), &coordinates().into())?;
         forces.iter().try_for_each(|force| {
             (0..3).try_for_each(|i| Assert::default().eq_within_tols(force[i].value(), 0.0))
         })
     }
     #[test]
     fn forces_balance_for_any_state() -> Result<(), AssertionError> {
-        let forces = Hexahedron::from(reference_coordinates())
-            .nodal_forces(&model(), &inhomogeneous())
-            .unwrap();
+        let forces =
+            Hexahedron::from(reference_coordinates()).nodal_forces(&model(), &inhomogeneous())?;
         (0..3).try_for_each(|i| {
             Assert::default().eq_within_tols(
                 forces.iter().map(|force| force[i].value()).sum::<f64>(),
@@ -201,12 +199,9 @@ mod elastic {
     #[test]
     fn forces_match_full_integration_for_a_homogeneous_deformation() -> Result<(), AssertionError> {
         Assert::default().eq_within_tols(
-            Hexahedron::from(reference_coordinates())
-                .nodal_forces(&model(), &homogeneous())
-                .unwrap(),
+            Hexahedron::from(reference_coordinates()).nodal_forces(&model(), &homogeneous())?,
             &FullHexahedron::from(reference_coordinates())
-                .nodal_forces(&model(), &homogeneous())
-                .unwrap(),
+                .nodal_forces(&model(), &homogeneous())?,
         )
     }
     fn forces_array(forces: &ElementNodalForcesSolid<N>) -> [[f64; 3]; N] {
@@ -237,14 +232,12 @@ mod elastic {
     fn stiffnesses_match_full_integration_on_a_linear_displacement() -> Result<(), AssertionError> {
         let stabilized = stiffnesses_times(
             &Hexahedron::from(reference_coordinates())
-                .nodal_stiffnesses(&model(), &homogeneous())
-                .unwrap(),
+                .nodal_stiffnesses(&model(), &homogeneous())?,
             &linear_displacements(),
         );
         let full = stiffnesses_times(
             &FullHexahedron::from(reference_coordinates())
-                .nodal_stiffnesses(&model(), &homogeneous())
-                .unwrap(),
+                .nodal_stiffnesses(&model(), &homogeneous())?,
             &linear_displacements(),
         );
         (0..N).try_for_each(|a| {
@@ -324,9 +317,7 @@ mod elastic {
         };
         let reference: ElementNodalReferenceCoordinates<N> = cube.into();
         let current: ElementNodalCoordinates<N> = cube.into();
-        let full = FullHexahedron::from(reference.clone())
-            .nodal_stiffnesses(&model(), &current)
-            .unwrap();
+        let full = FullHexahedron::from(reference.clone()).nodal_stiffnesses(&model(), &current)?;
         let hourglass = Hexahedron::from(reference).hourglass_stiffnesses(model().shear_modulus());
         Assert::default().eq_within_tols(energy(&hourglass) / HOURGLASS_PARAMETER, energy(&full))
     }
@@ -360,12 +351,10 @@ mod elastic {
         -> Result<(), AssertionError> {
             Assert::default().eq_within_tols(
                 Hexahedron::from(reference_coordinates())
-                    .helmholtz_free_energy(&model(), &homogeneous())
-                    .unwrap()
+                    .helmholtz_free_energy(&model(), &homogeneous())?
                     .value(),
                 FullHexahedron::from(reference_coordinates())
-                    .helmholtz_free_energy(&model(), &homogeneous())
-                    .unwrap()
+                    .helmholtz_free_energy(&model(), &homogeneous())?
                     .value(),
             )
         }
@@ -529,15 +518,15 @@ mod block {
         let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
         let full = Full::from((model(), connectivity(), &reference_coordinates()));
         Assert::default().eq_within_tols(
-            stabilized.nodal_forces(&homogeneous()).unwrap(),
-            full.nodal_forces(&homogeneous()).unwrap(),
+            stabilized.nodal_forces(&homogeneous())?,
+            full.nodal_forces(&homogeneous())?,
         )
     }
     #[test]
     fn interior_node_is_in_equilibrium_for_a_homogeneous_deformation() -> Result<(), AssertionError>
     {
         let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
-        let forces = stabilized.nodal_forces(&homogeneous()).unwrap();
+        let forces = stabilized.nodal_forces(&homogeneous())?;
         (0..3).try_for_each(|i| {
             Assert::default().eq_within_tols(forces[INTERIOR_NODE][i].value(), 0.0)
         })
@@ -546,12 +535,10 @@ mod block {
     fn forces_vanish_for_a_rigid_motion() -> Result<(), AssertionError> {
         let stabilized = Stabilized::from((model(), connectivity(), &reference_coordinates()));
         let (sin, cos) = 0.3_f64.sin_cos();
-        let forces = stabilized
-            .nodal_forces(&deformed(
-                [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
-                [0.5, -0.4, 0.2],
-            ))
-            .unwrap();
+        let forces = stabilized.nodal_forces(&deformed(
+            [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
+            [0.5, -0.4, 0.2],
+        ))?;
         (0..NODES).try_for_each(|node| {
             (0..3).try_for_each(|i| Assert::default().eq_within_tols(forces[node][i].value(), 0.0))
         })

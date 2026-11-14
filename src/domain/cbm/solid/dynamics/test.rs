@@ -89,14 +89,12 @@ fn a_body_in_its_reference_configuration_falls_with_gravity() -> Result<(), Asse
     let model = model();
     let masses = model.nodal_lumped_masses();
     let weights = weights(&model, Lumped);
-    let accelerations = model
-        .nodal_accelerations(
-            &NodalCoordinates::from(COORDINATES),
-            crate::units::Time::seconds(0.0),
-            &weights,
-            &masses,
-        )
-        .unwrap();
+    let accelerations = model.nodal_accelerations(
+        &NodalCoordinates::from(COORDINATES),
+        crate::units::Time::seconds(0.0),
+        &weights,
+        &masses,
+    )?;
     noise_tolerant().eq_within_tols(&accelerations, &gravity())
 }
 
@@ -107,10 +105,9 @@ fn internal_forces_decelerate_what_they_resist() -> Result<(), AssertionError> {
     let mut stretched = COORDINATES;
     stretched[4][0] += 0.1;
     let stretched = NodalCoordinates::from(stretched);
-    let internal = model.nodal_forces(&stretched).unwrap();
-    let accelerations = model
-        .nodal_accelerations(&stretched, crate::units::Time::seconds(0.0), &(), &masses)
-        .unwrap();
+    let internal = model.nodal_forces(&stretched)?;
+    let accelerations =
+        model.nodal_accelerations(&stretched, crate::units::Time::seconds(0.0), &(), &masses)?;
     let balance = masses.inertial_forces(&accelerations) + &internal;
     noise_tolerant().zero_within_tols(&balance)
 }

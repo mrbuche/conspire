@@ -1,6 +1,7 @@
+use super::Decomposition;
 use crate::geometry::{
     grid::Voxels,
-    mesh::{Decomposition, Mesh, NodeSet, NodeSets, SideSets},
+    mesh::{Mesh, NodeSet, NodeSets, SideSets},
 };
 
 impl Decomposition {

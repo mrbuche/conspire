@@ -1,6 +1,6 @@
+use crate::math::EPSILON;
 use crate::math::assert::Assert;
 use crate::{
-    EPSILON,
     math::{Scalar, assert::AssertionError},
     physics::molecular::single_chain::{Ensemble, IdealChain, Thermodynamics},
     units::ROOM_TEMPERATURE,

@@ -16,6 +16,7 @@ use crate::units::{
 use core::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
+    iter::Sum,
     marker::PhantomData,
     ops::{Add, AddAssign, Div, DivAssign, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -535,7 +536,7 @@ where
     }
 }
 
-impl<U> core::iter::Sum for Quantity<U> {
+impl<U> Sum for Quantity<U> {
     fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = Self>,
@@ -544,7 +545,7 @@ impl<U> core::iter::Sum for Quantity<U> {
     }
 }
 
-impl<'a, U> core::iter::Sum<&'a Quantity<U>> for Quantity<U> {
+impl<'a, U> Sum<&'a Quantity<U>> for Quantity<U> {
     fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = &'a Quantity<U>>,

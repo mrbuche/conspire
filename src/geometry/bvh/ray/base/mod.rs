@@ -3,8 +3,8 @@ mod test;
 
 use core::mem::swap;
 
+use crate::math::REL_TOL;
 use crate::{
-    REL_TOL,
     geometry::{Coordinate, Direction, bbox::BoundingBox, bvh::ray::Ray},
     math::{Quantity, Scalar},
     units::{Area, Length},

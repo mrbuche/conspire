@@ -38,8 +38,7 @@ fn spread(mesh: &Mesh<3>) -> Scalar {
 #[test]
 fn full_step_moves_each_vertex_to_neighbor_centroid() -> Result<(), AssertionError> {
     let mut mesh = tri();
-    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)?;
     let coordinates = mesh.coordinates();
     Assert::default().eq_within_tols(&coordinates[0], &[1.0, 1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&coordinates[1], &[0.0, 1.0, 0.0].into())?;
@@ -49,8 +48,7 @@ fn full_step_moves_each_vertex_to_neighbor_centroid() -> Result<(), AssertionErr
 #[test]
 fn zero_scale_is_identity() -> Result<(), AssertionError> {
     let mut mesh = tri();
-    mesh.laplace_smooth(5, 0.0, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.laplace_smooth(5, 0.0, Weighting::Uniform, false, false)?;
     let coordinates = mesh.coordinates();
     Assert::default().eq_within_tols(&coordinates[0], &[0.0, 0.0, 0.0].into())?;
     Assert::default().eq_within_tols(&coordinates[1], &[2.0, 0.0, 0.0].into())?;
@@ -61,8 +59,7 @@ fn zero_scale_is_identity() -> Result<(), AssertionError> {
 fn preserves_centroid() -> Result<(), AssertionError> {
     let before = centroid(&tri());
     let mut mesh = tri();
-    mesh.laplace_smooth(4, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.laplace_smooth(4, 0.5, Weighting::Uniform, false, false)?;
     Assert::default().eq_within_tols(&before, &centroid(&mesh))
 }
 
@@ -94,18 +91,13 @@ fn square_about(center: Coordinate<3>) -> Mesh<3> {
 fn preserve_boundary_ignores_interior_neighbors() -> Result<(), AssertionError> {
     let mut preserved_a = square_about([1.0, 1.0, 0.0].into());
     let mut preserved_b = square_about([1.5, 0.5, 0.0].into());
-    preserved_a
-        .laplace_smooth(1, 1.0, Weighting::Uniform, true, false)
-        .unwrap();
-    preserved_b
-        .laplace_smooth(1, 1.0, Weighting::Uniform, true, false)
-        .unwrap();
+    preserved_a.laplace_smooth(1, 1.0, Weighting::Uniform, true, false)?;
+    preserved_b.laplace_smooth(1, 1.0, Weighting::Uniform, true, false)?;
     Assert::default().eq_within_tols(&preserved_a.coordinates()[0], &[1.0, 1.0, 0.0].into())?;
     Assert::default()
         .eq_within_tols(&preserved_a.coordinates()[0], &preserved_b.coordinates()[0])?;
     let mut free = square_about([1.5, 0.5, 0.0].into());
-    free.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)
-        .unwrap();
+    free.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)?;
     assert!(
         (free.coordinates()[0][0] - preserved_b.coordinates()[0][0])
             .abs()
@@ -140,18 +132,13 @@ fn two_block_strip(corner: Coordinate<3>) -> Mesh<3> {
 fn preserve_interfaces_ignores_off_interface_neighbors() -> Result<(), AssertionError> {
     let mut interface_a = two_block_strip([0.0, 0.0, 0.0].into());
     let mut interface_b = two_block_strip([-1.0, -1.0, 0.0].into());
-    interface_a
-        .laplace_smooth(1, 1.0, Weighting::Uniform, false, true)
-        .unwrap();
-    interface_b
-        .laplace_smooth(1, 1.0, Weighting::Uniform, false, true)
-        .unwrap();
+    interface_a.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)?;
+    interface_b.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)?;
     Assert::default().eq_within_tols(&interface_a.coordinates()[1], &[1.0, 1.0, 0.0].into())?;
     Assert::default()
         .eq_within_tols(&interface_a.coordinates()[1], &interface_b.coordinates()[1])?;
     let mut free = two_block_strip([-1.0, -1.0, 0.0].into());
-    free.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)
-        .unwrap();
+    free.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)?;
     assert!(
         (free.coordinates()[1][0] - interface_b.coordinates()[1][0])
             .abs()
@@ -168,8 +155,7 @@ fn preserve_interfaces_ignores_off_interface_neighbors() -> Result<(), Assertion
 #[test]
 fn cotangent_full_step() -> Result<(), AssertionError> {
     let mut mesh = tri();
-    mesh.laplace_smooth(1, 1.0, Weighting::Cotangent, false, false)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Cotangent, false, false)?;
     let coordinates = mesh.coordinates();
     Assert::default().eq_within_tols(&coordinates[0], &[1.0, 1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&coordinates[1], &[0.0, 0.0, 0.0].into())?;
@@ -253,8 +239,7 @@ fn polyhedral_edge_adjacency() {
 #[test]
 fn polygonal_full_step() -> Result<(), AssertionError> {
     let mut mesh = polygon();
-    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)?;
     let coordinates = mesh.coordinates();
     Assert::default().eq_within_tols(&coordinates[0], &[1.0, 1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&coordinates[2], &[1.0, 1.0, 0.0].into())
@@ -263,8 +248,7 @@ fn polygonal_full_step() -> Result<(), AssertionError> {
 #[test]
 fn polyhedral_full_step() -> Result<(), AssertionError> {
     let mut mesh = polyhedron();
-    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, false)?;
     Assert::default().eq_within_tols(
         &mesh.coordinates()[0],
         &[1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0].into(),
@@ -275,10 +259,8 @@ fn polyhedral_full_step() -> Result<(), AssertionError> {
 fn polyhedral_preserve_boundary_retains_all_neighbors() -> Result<(), AssertionError> {
     let mut free = polyhedron();
     let mut mesh = polyhedron();
-    free.laplace_smooth(4, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
-    mesh.laplace_smooth(4, 0.5, Weighting::Uniform, true, false)
-        .unwrap();
+    free.laplace_smooth(4, 0.5, Weighting::Uniform, false, false)?;
+    mesh.laplace_smooth(4, 0.5, Weighting::Uniform, true, false)?;
     free.coordinates()
         .iter()
         .zip(mesh.coordinates())
@@ -378,8 +360,7 @@ fn polyhedral_node_element_connectivity() {
 #[test]
 fn polyhedral_preserve_interfaces_holds_the_interface_plane() -> Result<(), AssertionError> {
     let mut mesh = two_polyhedra();
-    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)?;
     Assert::default().eq_within_tols(&mesh.coordinates()[1], &[1.0, 0.5, 0.5].into())?;
     Assert::default().eq_within_tols(&mesh.coordinates()[6], &[1.0, 0.5, 0.5].into())
 }
@@ -387,8 +368,7 @@ fn polyhedral_preserve_interfaces_holds_the_interface_plane() -> Result<(), Asse
 #[test]
 fn mixed_preserve_interfaces_holds_the_interface_plane() -> Result<(), AssertionError> {
     let mut mesh = hexahedron_and_polyhedron();
-    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)
-        .unwrap();
+    mesh.laplace_smooth(1, 1.0, Weighting::Uniform, false, true)?;
     Assert::default().eq_within_tols(&mesh.coordinates()[1], &[1.0, 0.5, 0.5].into())?;
     Assert::default().eq_within_tols(&mesh.coordinates()[6], &[1.0, 0.5, 0.5].into())
 }
@@ -397,12 +377,8 @@ fn mixed_preserve_interfaces_holds_the_interface_plane() -> Result<(), Assertion
 fn mixed_free_smoothing_matches_all_polyhedral() -> Result<(), AssertionError> {
     let mut polyhedral = two_polyhedra();
     let mut mixed = hexahedron_and_polyhedron();
-    polyhedral
-        .laplace_smooth(2, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
-    mixed
-        .laplace_smooth(2, 0.5, Weighting::Uniform, false, false)
-        .unwrap();
+    polyhedral.laplace_smooth(2, 0.5, Weighting::Uniform, false, false)?;
+    mixed.laplace_smooth(2, 0.5, Weighting::Uniform, false, false)?;
     polyhedral
         .coordinates()
         .iter()

@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     constitutive::electrical::dielectric::Linear,
     domain::diffusion::DiffusionElements,
@@ -64,7 +65,7 @@ fn slab() -> (Model<B, 3>, NodalReferenceCoordinates<3>) {
     let coordinates = coordinates(&[0.0, GAP]);
     (
         (
-            B::from((permittivity(2.5), connectivity(0), &coordinates)),
+            (permittivity(2.5), connectivity(0), &coordinates).into(),
             coordinates.clone(),
         )
             .into(),
@@ -77,8 +78,8 @@ fn layers() -> (Model<Blocks<B, B>, 3>, NodalReferenceCoordinates<3>, f64) {
     (
         (
             Blocks(
-                B::from((permittivity(2.5), connectivity(0), &coordinates)),
-                B::from((permittivity(10.0), connectivity(4), &coordinates)),
+                (permittivity(2.5), connectivity(0), &coordinates).into(),
+                (permittivity(10.0), connectivity(4), &coordinates).into(),
             ),
             coordinates.clone(),
         )
@@ -123,14 +124,13 @@ fn electrodes(
     )
 }
 
-fn near(found: f64, expected: f64) {
-    crate::math::assert::Assert {
+fn near(found: f64, expected: f64) -> Result<(), AssertionError> {
+    Assert {
         abs_tol: NEAR * expected.abs().max(1.0),
         rel_tol: NEAR,
         ..Default::default()
     }
     .eq_within_tols(found, &expected)
-    .unwrap()
 }
 
 fn charge(forces: &NodalForcesElectrical, nodes: &[usize]) -> f64 {
@@ -157,11 +157,11 @@ where
 mod parallel_plate {
     use super::*;
     #[test]
-    fn the_potential_rises_linearly_across_the_gap() {
+    fn the_potential_rises_linearly_across_the_gap() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        (0..8).for_each(|node| {
+        (0..8).try_for_each(|node| {
             near(
                 potentials[node].value(),
                 VOLTAGE * coordinates[node][2].value() / GAP,
@@ -169,37 +169,38 @@ mod parallel_plate {
         })
     }
     #[test]
-    fn the_electrodes_hold_equal_and_opposite_charge_of_capacitance_times_voltage() {
+    fn the_electrodes_hold_equal_and_opposite_charge_of_capacitance_times_voltage()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         let capacitance = 2.5 * WIDTH * DEPTH / GAP;
-        near(charge(&forces, &top), capacitance * VOLTAGE);
+        near(charge(&forces, &top), capacitance * VOLTAGE)?;
         near(charge(&forces, &bottom), -capacitance * VOLTAGE)
     }
     #[test]
-    fn the_stored_energy_is_half_capacitance_times_voltage_squared() {
+    fn the_stored_energy_is_half_capacitance_times_voltage_squared() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
         near(
-            model.potential(&potentials).unwrap().value(),
+            model.potential(&potentials)?.value(),
             0.5 * (2.5 * WIDTH * DEPTH / GAP) * VOLTAGE * VOLTAGE,
         )
     }
     #[test]
-    fn the_free_nodes_carry_no_charge() {
+    fn the_free_nodes_carry_no_charge() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         (0..8)
             .filter(|node| !bottom.contains(node) && !top.contains(node))
-            .for_each(|node| near(forces[node].value(), 0.0))
+            .try_for_each(|node| near(forces[node].value(), 0.0))
     }
     #[test]
-    fn minimizing_the_energy_gives_the_same_potentials() {
+    fn minimizing_the_energy_gives_the_same_potentials() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let solved = solve(&model, constraint);
@@ -208,25 +209,25 @@ mod parallel_plate {
             Quantity<Energy>,
             NodalForcesElectrical,
             NodalPotentials,
-        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())
-        .unwrap();
-        (0..8).for_each(|node| near(minimized[node].value(), solved[node].value()))
+        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())?;
+        (0..8).try_for_each(|node| near(minimized[node].value(), solved[node].value()))
     }
 }
 
 mod series {
     use super::*;
     #[test]
-    fn two_layers_make_capacitors_in_series() {
+    fn two_layers_make_capacitors_in_series() -> Result<(), AssertionError> {
         let (model, coordinates, capacitance) = layers();
         let (constraint, bottom, top) = electrodes(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
-        near(charge(&forces, &top), capacitance * VOLTAGE);
+        let forces = model.nodal_forces(&potentials)?;
+        near(charge(&forces, &top), capacitance * VOLTAGE)?;
         near(charge(&forces, &bottom), -capacitance * VOLTAGE)
     }
     #[test]
-    fn the_potential_across_each_layer_divides_inversely_with_its_capacitance() {
+    fn the_potential_across_each_layer_divides_inversely_with_its_capacitance()
+    -> Result<(), AssertionError> {
         let (model, coordinates, capacitance) = layers();
         let (constraint, _, _) = electrodes(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);

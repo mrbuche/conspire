@@ -18,9 +18,9 @@ use core::{
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use crate::math::ABS_TOL;
 use crate::units::{UnitDiv, UnitMul};
 use crate::{
-    ABS_TOL,
     math::{
         matrix::vector::Vector,
         tensor::{
@@ -426,17 +426,6 @@ impl<const D: usize, I, U> From<[TensorRank0; D]> for TensorRank1<D, I, U> {
 impl<const D: usize, I, U> From<TensorRank1<D, I, U>> for [TensorRank0; D] {
     fn from(tensor_rank_1: TensorRank1<D, I, U>) -> Self {
         tensor_rank_1.0.map(|entry| entry.value())
-    }
-}
-
-impl<const D: usize, I, U> From<Vec<TensorRank0>> for TensorRank1<D, I, U> {
-    fn from(vec: Vec<TensorRank0>) -> Self {
-        Self(
-            TryInto::<[TensorRank0; D]>::try_into(vec)
-                .unwrap()
-                .map(Quantity::new),
-            PhantomData,
-        )
     }
 }
 

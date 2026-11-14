@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     constitutive::chemical::diffusion::Fick,
     domain::diffusion::DiffusionElements,
@@ -60,7 +61,7 @@ fn slab() -> (Model<B, 3>, NodalReferenceCoordinates<3>) {
     let coordinates = coordinates(&[0.0, GAP]);
     (
         (
-            B::from((diffusivity(2.5), connectivity(0), &coordinates)),
+            (diffusivity(2.5), connectivity(0), &coordinates).into(),
             coordinates.clone(),
         )
             .into(),
@@ -73,8 +74,8 @@ fn layers() -> (Model<Blocks<B, B>, 3>, NodalReferenceCoordinates<3>, f64) {
     (
         (
             Blocks(
-                B::from((diffusivity(2.5), connectivity(0), &coordinates)),
-                B::from((diffusivity(10.0), connectivity(4), &coordinates)),
+                (diffusivity(2.5), connectivity(0), &coordinates).into(),
+                (diffusivity(10.0), connectivity(4), &coordinates).into(),
             ),
             coordinates.clone(),
         )
@@ -119,14 +120,13 @@ fn ends(
     )
 }
 
-fn near(found: f64, expected: f64) {
-    crate::math::assert::Assert {
+fn near(found: f64, expected: f64) -> Result<(), AssertionError> {
+    Assert {
         abs_tol: NEAR * expected.abs().max(1.0),
         rel_tol: NEAR,
         ..Default::default()
     }
     .eq_within_tols(found, &expected)
-    .unwrap()
 }
 
 fn molar_flow(forces: &NodalMolarFlowRates, nodes: &[usize]) -> f64 {
@@ -153,11 +153,11 @@ where
 mod bar {
     use super::*;
     #[test]
-    fn the_concentration_rises_linearly_along_the_bar() {
+    fn the_concentration_rises_linearly_along_the_bar() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = ends(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        (0..8).for_each(|node| {
+        (0..8).try_for_each(|node| {
             near(
                 potentials[node].value(),
                 DELTA * coordinates[node][2].value() / GAP,
@@ -166,37 +166,38 @@ mod bar {
     }
     #[test]
     fn the_ends_carry_equal_and_opposite_molar_flow_of_transfer_times_the_concentration_difference()
-    {
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = ends(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         let transfer = 2.5 * WIDTH * DEPTH / GAP;
-        near(molar_flow(&forces, &top), transfer * DELTA);
+        near(molar_flow(&forces, &top), transfer * DELTA)?;
         near(molar_flow(&forces, &bottom), -transfer * DELTA)
     }
     #[test]
-    fn the_potential_is_half_the_transfer_times_the_concentration_difference_squared() {
+    fn the_potential_is_half_the_transfer_times_the_concentration_difference_squared()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = ends(&coordinates, GAP);
         let potentials = solve(&model, constraint);
         near(
-            model.potential(&potentials).unwrap().value(),
+            model.potential(&potentials)?.value(),
             0.5 * (2.5 * WIDTH * DEPTH / GAP) * DELTA * DELTA,
         )
     }
     #[test]
-    fn the_free_nodes_carry_no_molar_flow() {
+    fn the_free_nodes_carry_no_molar_flow() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = ends(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         (0..8)
             .filter(|node| !bottom.contains(node) && !top.contains(node))
-            .for_each(|node| near(forces[node].value(), 0.0))
+            .try_for_each(|node| near(forces[node].value(), 0.0))
     }
     #[test]
-    fn minimizing_the_energy_gives_the_same_potentials() {
+    fn minimizing_the_energy_gives_the_same_potentials() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = ends(&coordinates, GAP);
         let solved = solve(&model, constraint);
@@ -205,25 +206,25 @@ mod bar {
             Quantity<MolarFlowRateConcentration>,
             NodalMolarFlowRates,
             NodalConcentrations,
-        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())
-        .unwrap();
-        (0..8).for_each(|node| near(minimized[node].value(), solved[node].value()))
+        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())?;
+        (0..8).try_for_each(|node| near(minimized[node].value(), solved[node].value()))
     }
 }
 
 mod series {
     use super::*;
     #[test]
-    fn two_layers_make_transfers_in_series() {
+    fn two_layers_make_transfers_in_series() -> Result<(), AssertionError> {
         let (model, coordinates, transfer) = layers();
         let (constraint, bottom, top) = ends(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
-        near(molar_flow(&forces, &top), transfer * DELTA);
+        let forces = model.nodal_forces(&potentials)?;
+        near(molar_flow(&forces, &top), transfer * DELTA)?;
         near(molar_flow(&forces, &bottom), -transfer * DELTA)
     }
     #[test]
-    fn the_concentration_across_each_layer_divides_inversely_with_its_transfer() {
+    fn the_concentration_across_each_layer_divides_inversely_with_its_transfer()
+    -> Result<(), AssertionError> {
         let (model, coordinates, transfer) = layers();
         let (constraint, _, _) = ends(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);

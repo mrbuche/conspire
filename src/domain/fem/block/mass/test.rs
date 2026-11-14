@@ -18,13 +18,14 @@ use crate::{
 const DENSITY: Quantity<Density> = Density::kilograms_per_cubic_meter(7.8e3);
 
 fn coordinates() -> NodalReferenceCoordinates<3> {
-    NodalReferenceCoordinates::from([
+    [
         [0.1, 0.2, 0.0],
         [1.3, 0.1, 0.2],
         [0.2, 0.9, 0.1],
         [0.3, 0.4, 1.2],
         [1.5, 1.4, 1.3],
-    ])
+    ]
+    .into()
 }
 
 const CONNECTIVITY: [[usize; 4]; 2] = [[0, 1, 2, 3], [1, 2, 3, 4]];
@@ -39,7 +40,7 @@ macro_rules! test_lumped {
             use super::*;
             type B = Block<(), Tetrahedron<$g>, $g, 3, 4, 4, Quantity<Density>>;
             fn block() -> B {
-                B::from(((), DENSITY, CONNECTIVITY.to_vec(), &coordinates()))
+                ((), DENSITY, CONNECTIVITY.to_vec(), &coordinates()).into()
             }
             #[test]
             fn conserves_the_mass_of_the_block() -> Result<(), AssertionError> {

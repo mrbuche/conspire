@@ -2,9 +2,7 @@ macro_rules! test_thermoelastic_thermal_conduction_rate_element {
     ($element: ident) => {
         mod thermoelastic_thermal_conduction_rate_element {
             use super::{N, coordinates, element};
-            use crate::{
-                EPSILON,
-                constitutive::{
+            use crate::{constitutive::{
                     multiphysics::Canonical,
                     solid::{
                         thermoelastic::{
@@ -18,8 +16,7 @@ macro_rules! test_thermoelastic_thermal_conduction_rate_element {
                         thermohyperelastic::NeoHookean,
                     },
                     thermal::conduction::{Fourier, test::THERMAL_CONDUCTIVITY},
-                },
-                fem::block::element::{
+                }, fem::block::element::{
                     ElementNodalVelocities, FiniteElementError,
                     multiphysics::solid_thermal::{
                         ElementNodalForcesSolidThermal, ElementNodalHeatingStiffnessesSolidThermal,
@@ -30,10 +27,8 @@ macro_rules! test_thermoelastic_thermal_conduction_rate_element {
                         },
                     },
                     thermal::ElementNodalTemperatures,
-                },
-                math::assert::{Assert, AssertionError, perturbation},
-                units::{Length, Temperature, Velocity},
-            };
+                }, math::assert::{Assert, AssertionError, perturbation}, units::{Length, Temperature, Velocity}};
+            use crate::math::{EPSILON};
             use core::array::from_fn;
             fn model() -> Canonical<AlmansiHamel, Fourier> {
                 (

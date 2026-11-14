@@ -1,5 +1,3 @@
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
 pub mod internal_variables;
 
 use crate::{

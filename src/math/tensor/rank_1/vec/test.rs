@@ -89,8 +89,3 @@ fn from_tensor_rank_1_vec_into_vec_vec() {
         &get_vec_vec(),
     );
 }
-
-#[test]
-fn from_vec_vec_into_tensor_rank_1_vec() -> Result<(), AssertionError> {
-    Assert::eq(get_tensor_rank_1_vec(), &get_vec_vec().into())
-}

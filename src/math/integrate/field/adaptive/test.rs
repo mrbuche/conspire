@@ -1,4 +1,5 @@
 use super::{integrate_rkmk_adaptive, integrate_rkmk_dae_adaptive};
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{
     Current, Quantity, Tensor, TensorArray, TensorRank2, TensorVector,
     integrate::{Times, field::Unimodular, ode::explicit::variable_step::bogacki_shampine},
@@ -72,7 +73,7 @@ fn rkmk_adaptive_subdivides_more_for_a_tighter_tolerance() {
 }
 
 #[test]
-fn rkmk_adaptive_keeps_the_group_state_unimodular() {
+fn rkmk_adaptive_keeps_the_group_state_unimodular() -> Result<(), AssertionError> {
     let rate = trace_free_rate();
     let (_, points): (Times, TensorVector<Fp>) =
         integrate_rkmk_adaptive::<Unimodular<Current>, BogackiShampine, _, _>(
@@ -81,13 +82,13 @@ fn rkmk_adaptive_keeps_the_group_state_unimodular() {
             Fp::identity(),
             1e-8,
             0.0,
-        )
-        .unwrap();
-    assert!((points.iter().last().unwrap().determinant() - 1.0).abs() < 1e-10);
+        )?;
+    Assert::within(1e-10).eq_within_tols(points.iter().last().unwrap().determinant(), &1.0)?;
+    Ok(())
 }
 
 #[test]
-fn rkmk_adaptive_retries_with_a_smaller_step_after_a_rate_failure() {
+fn rkmk_adaptive_retries_with_a_smaller_step_after_a_rate_failure() -> Result<(), AssertionError> {
     use core::cell::Cell;
     let rate = trace_free_rate();
     let calls = Cell::new(0_usize);
@@ -105,9 +106,9 @@ fn rkmk_adaptive_retries_with_a_smaller_step_after_a_rate_failure() {
             Fp::identity(),
             1e-6,
             0.0,
-        )
-        .unwrap();
-    assert!((points.iter().last().unwrap().determinant() - 1.0).abs() < 1e-10);
+        )?;
+    Assert::within(1e-10).eq_within_tols(points.iter().last().unwrap().determinant(), &1.0)?;
+    Ok(())
 }
 
 #[test]

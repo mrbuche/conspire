@@ -57,22 +57,22 @@ macro_rules! test_canonical {
             for k in 0..3 {
                 for l in 0..3 {
                     let mut deformation_gradient_plus = deformation_gradient.clone();
-                    deformation_gradient_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+                    deformation_gradient_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
                     let cauchy_stress_plus =
                         model.cauchy_stress(&deformation_gradient_plus, &deformation_gradient_p)?;
                     let mut deformation_gradient_minus = deformation_gradient.clone();
-                    deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+                    deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
                     let cauchy_stress_minus = model
                         .cauchy_stress(&deformation_gradient_minus, &deformation_gradient_p)?;
                     for i in 0..3 {
                         for j in 0..3 {
                             fd[i][j][k][l] = (cauchy_stress_plus[i][j] - cauchy_stress_minus[i][j])
-                                / crate::EPSILON;
+                                / crate::math::EPSILON;
                         }
                     }
                 }
             }
-            if tangent.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+            if tangent.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
                 Assert::default().eq_within_fd_tol(&tangent, &fd)
             } else {
                 Ok(())

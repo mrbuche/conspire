@@ -1,7 +1,8 @@
 use super::{Tensor, TensorArray, TensorRank0, TensorRank1};
 use crate::math::Current;
 use crate::math::assert::Assert;
-use crate::{ABS_TOL, REL_TOL, math::assert::AssertionError};
+use crate::math::assert::AssertionError;
+use crate::math::{ABS_TOL, REL_TOL};
 
 fn get_array() -> [TensorRank0; 4] {
     [1.0, 2.0, 3.0, 4.0]

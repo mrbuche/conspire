@@ -31,8 +31,7 @@ fn a_quadrilateral_gives_a_quarter_of_its_load_to_each_node() -> Result<(), Asse
         &coordinates(),
         &side_set(vec![vec![0, 1, 4, 3]]),
         &[0.0, 0.0, 8.0].into(),
-    )
-    .unwrap();
+    )?;
     Assert::default().eq_within_tols(
         &forces,
         &[
@@ -53,8 +52,7 @@ fn a_node_shared_by_faces_gets_the_load_of_each() -> Result<(), AssertionError> 
         &coordinates(),
         &side_set(vec![vec![0, 1, 4, 3], vec![1, 2, 5, 4]]),
         &[0.0, 0.0, 8.0].into(),
-    )
-    .unwrap();
+    )?;
     Assert::default().eq_within_tols(
         &forces,
         &[
@@ -76,8 +74,7 @@ fn triangles_and_quadrilaterals_together_carry_the_traction_on_the_area()
         &coordinates(),
         &side_set(vec![vec![0, 1, 4, 3], vec![1, 2, 5], vec![1, 5, 4]]),
         &[1.0, 2.0, 3.0].into(),
-    )
-    .unwrap();
+    )?;
     let total = forces.iter().cloned().sum::<Force>();
     Assert::default().eq_within_tols(&total, &[2.0, 4.0, 6.0].into())
 }
@@ -182,12 +179,8 @@ mod patch {
             .fix(Displacement::<1>, &along_x)
             .fix(Displacement::<0>, &along_y);
         let loads = loads(&model);
-        let by_root = model
-            .root(&conditions, &loads, NewtonRaphson::default())
-            .unwrap();
-        let by_minimize = model
-            .minimize(&conditions, &loads, NewtonRaphson::default())
-            .unwrap();
+        let by_root = model.root(&conditions, &loads, NewtonRaphson::default())?;
+        let by_minimize = model.minimize(&conditions, &loads, NewtonRaphson::default())?;
         let youngs = 9.0 * BULK * SHEAR / (3.0 * BULK + SHEAR);
         let stretch = PULL / youngs;
         (4..8).try_for_each(|node| {
@@ -221,13 +214,11 @@ mod patch {
     #[test]
     fn a_traction_that_depends_on_time_takes_the_time_it_is_given() -> Result<(), AssertionError> {
         let model = model();
-        let loads = Loads::<Solid<3>>::new()
-            .traction_with(
-                model.coordinates(),
-                model.side_sets().iter().next().unwrap(),
-                |time| Traction::from([0.0, 0.0, time.value()]),
-            )
-            .unwrap();
+        let loads = Loads::<Solid<3>>::new().traction_with(
+            model.coordinates(),
+            model.side_sets().iter().next().unwrap(),
+            |time| Traction::from([0.0, 0.0, time.value()]),
+        )?;
         let mut expected = [[0.0; 3]; 8];
         (4..8).for_each(|node| expected[node][2] = -3.0 / 4.0);
         Assert::default().eq_within_tols(
@@ -245,13 +236,11 @@ mod patch {
             fem::boundary::{LoadAt, SolidThermal},
         };
         let model = model();
-        let loads = Loads::<SolidThermal<3>>::new()
-            .traction_with(
-                model.coordinates(),
-                model.side_sets().iter().next().unwrap(),
-                |time| Traction::from([0.0, 0.0, time.value()]),
-            )
-            .unwrap();
+        let loads = Loads::<SolidThermal<3>>::new().traction_with(
+            model.coordinates(),
+            model.side_sets().iter().next().unwrap(),
+            |time| Traction::from([0.0, 0.0, time.value()]),
+        )?;
         let states: NodalStatesSolidThermal = join_states(
             &at_rest(&model),
             &crate::fem::diffusion::NodalFields::<crate::units::Power>::zero(8),
@@ -264,9 +253,7 @@ mod patch {
                 )
             })
             .collect::<NodalForcesSolidThermal>();
-        loads
-            .subtract_at(Time::seconds(3.0), &states, &mut residual)
-            .unwrap();
+        loads.subtract_at(Time::seconds(3.0), &states, &mut residual)?;
         (0..8).try_for_each(|node| {
             let force = if node < 4 { 0.0 } else { -3.0 / 4.0 };
             Assert::default().eq_within_tols(
@@ -285,11 +272,10 @@ mod patch {
     -> Result<(), AssertionError> {
         let model = model();
         let side_set = model.side_sets().iter().next().unwrap();
-        let timed = Loads::<Solid<3>>::new()
-            .traction_with(model.coordinates(), side_set, |_| {
+        let timed =
+            Loads::<Solid<3>>::new().traction_with(model.coordinates(), side_set, |_| {
                 Traction::from([0.0, 0.0, PULL])
-            })
-            .unwrap();
+            })?;
         Assert::default().eq_within_tols(
             residual_at(&timed, &model, 7.0),
             residual_at(&loads(&model), &model, 0.0),
@@ -307,15 +293,9 @@ mod patch {
             .fix(Displacement::<0>, &along_y);
         let mut forces = [[0.0; 3]; 8];
         (4..8).for_each(|node| forces[node][2] = PULL / 4.0);
-        let nodal = Loads::<Solid<3>>::new()
-            .nodal_forces(model.coordinates(), forces.into())
-            .unwrap();
-        let by_nodes = model
-            .root(&conditions, &nodal, NewtonRaphson::default())
-            .unwrap();
-        let by_traction = model
-            .root(&conditions, &loads(&model), NewtonRaphson::default())
-            .unwrap();
+        let nodal = Loads::<Solid<3>>::new().nodal_forces(model.coordinates(), forces.into())?;
+        let by_nodes = model.root(&conditions, &nodal, NewtonRaphson::default())?;
+        let by_traction = model.root(&conditions, &loads(&model), NewtonRaphson::default())?;
         Assert::default().eq_within_tols(&by_nodes, &by_traction)
     }
     #[test]
@@ -423,24 +403,20 @@ mod rate {
             rel_tol: 1e-8,
             ..Default::default()
         };
-        let (_, by_forces, _) = model
-            .root(
-                &conditions,
-                &loads,
-                integrator(),
-                &times,
-                NewtonRaphson::default(),
-            )
-            .unwrap();
-        let (_, by_potential, _) = model
-            .minimize(
-                &conditions,
-                &loads,
-                integrator(),
-                &times,
-                NewtonRaphson::default(),
-            )
-            .unwrap();
+        let (_, by_forces, _) = model.root(
+            &conditions,
+            &loads,
+            integrator(),
+            &times,
+            NewtonRaphson::default(),
+        )?;
+        let (_, by_potential, _) = model.minimize(
+            &conditions,
+            &loads,
+            integrator(),
+            &times,
+            NewtonRaphson::default(),
+        )?;
         let (forces, potential) = (
             by_forces.into_iter().last().unwrap(),
             by_potential.into_iter().last().unwrap(),
@@ -528,9 +504,11 @@ mod body {
     #[test]
     fn a_uniform_force_gives_each_node_its_share_of_the_volume() -> Result<(), AssertionError> {
         let model = model();
-        let loads = Loads::<Solid<3>>::new()
-            .body_force(model.coordinates(), &model.nodal_volumes(), &force(-10.0))
-            .unwrap();
+        let loads = Loads::<Solid<3>>::new().body_force(
+            model.coordinates(),
+            &model.nodal_volumes(),
+            &force(-10.0),
+        )?;
         Assert::default().eq_within_tols(
             residual_at(&loads, &model, 0.0),
             &forces(|_| 10.0 * 6.0 / 8.0),
@@ -541,8 +519,7 @@ mod body {
     -> Result<(), AssertionError> {
         let model = model();
         let loads = Loads::<Solid<3>>::new()
-            .body_force_field(&model, |coordinate| force(coordinate[2].value()))
-            .unwrap();
+            .body_force_field(&model, |coordinate| force(coordinate[2].value()))?;
         Assert::default().eq_within_tols(
             residual_at(&loads, &model, 0.0),
             &forces(|node| if node < 4 { -0.25 } else { -0.5 }),
@@ -551,11 +528,11 @@ mod body {
     #[test]
     fn a_force_that_depends_on_time_takes_the_time_it_is_given() -> Result<(), AssertionError> {
         let model = model();
-        let loads = Loads::<Solid<3>>::new()
-            .body_force_with(model.coordinates(), &model.nodal_volumes(), |time| {
-                force(time.value())
-            })
-            .unwrap();
+        let loads = Loads::<Solid<3>>::new().body_force_with(
+            model.coordinates(),
+            &model.nodal_volumes(),
+            |time| force(time.value()),
+        )?;
         [2.0, 3.0].into_iter().try_for_each(|time| {
             Assert::default().eq_within_tols(
                 residual_at(&loads, &model, time),
@@ -754,27 +731,24 @@ mod follower {
             let side_set = side_set();
             let x = deformed();
             let time = Quantity::<Time>::new(2.0);
-            let fixed = Loads::<Solid<3>>::new()
-                .pressure(&side_set, Quantity::<Stress>::new(1.5))
-                .unwrap();
-            let timed = Loads::<Solid<3>>::new()
-                .pressure_with(&side_set, |time| {
-                    Quantity::<Stress>::new(0.75) * time.value()
-                })
-                .unwrap();
+            let fixed =
+                Loads::<Solid<3>>::new().pressure(&side_set, Quantity::<Stress>::new(1.5))?;
+            let timed = Loads::<Solid<3>>::new().pressure_with(&side_set, |time| {
+                Quantity::<Stress>::new(0.75) * time.value()
+            })?;
             let (mut a, mut b) = (
                 NodalForcesSolid::<3>::zero(8),
                 NodalForcesSolid::<3>::zero(8),
             );
-            fixed.subtract_at(time, &x, &mut a).unwrap();
-            timed.subtract_at(time, &x, &mut b).unwrap();
+            fixed.subtract_at(time, &x, &mut a)?;
+            timed.subtract_at(time, &x, &mut b)?;
             Assert::default().eq_within_tols(&a, &b)?;
             let (mut k, mut l) = (
                 NodalStiffnessesSolid::<3>::zero(8),
                 NodalStiffnessesSolid::<3>::zero(8),
             );
-            fixed.add_stiffness_at(time, &x, &mut k).unwrap();
-            timed.add_stiffness_at(time, &x, &mut l).unwrap();
+            fixed.add_stiffness_at(time, &x, &mut k)?;
+            timed.add_stiffness_at(time, &x, &mut l)?;
             Assert::default().eq_within_tols(&k, &l)
         }
         #[test]
@@ -783,28 +757,24 @@ mod follower {
             let side_set = side_set();
             let x = deformed();
             let time = Quantity::<Time>::new(0.0);
-            let plain = Loads::<Solid<3>>::new()
-                .pressure(&side_set, Quantity::<Stress>::new(1.5))
-                .unwrap();
+            let plain =
+                Loads::<Solid<3>>::new().pressure(&side_set, Quantity::<Stress>::new(1.5))?;
             let coupled = Loads::<SolidThermal<3>>::new()
-                .pressure(&side_set, Quantity::<Stress>::new(1.5))
-                .unwrap();
+                .pressure(&side_set, Quantity::<Stress>::new(1.5))?;
             let states = join_states(&x, &temperatures());
             let mut forces = NodalForcesSolid::<3>::zero(8);
-            plain.subtract_at(time, &x, &mut forces).unwrap();
+            plain.subtract_at(time, &x, &mut forces)?;
             let mut residual: NodalForcesSolidThermal = (0..8)
                 .map(|_| TensorTuple(TensorRank1::zero(), Quantity::<Power>::new(0.0)))
                 .collect();
-            coupled.subtract_at(time, &states, &mut residual).unwrap();
+            coupled.subtract_at(time, &states, &mut residual)?;
             let mechanical: NodalForcesSolid<3> = residual.iter().map(|r| r.0.clone()).collect();
             Assert::default().eq_within_tols(&mechanical, &forces)?;
             assert!(residual.iter().all(|r| r.1.value() == 0.0));
             let mut stiffnesses = NodalStiffnessesSolid::<3>::zero(8);
-            plain.add_stiffness_at(time, &x, &mut stiffnesses).unwrap();
+            plain.add_stiffness_at(time, &x, &mut stiffnesses)?;
             let mut tangent = NodalStiffnessesSolidThermal::zero(8);
-            coupled
-                .add_stiffness_at(time, &states, &mut tangent)
-                .unwrap();
+            coupled.add_stiffness_at(time, &states, &mut tangent)?;
             stiffnesses.iter().enumerate().try_for_each(|(a, row)| {
                 row.entries().try_for_each(|(b, block)| {
                     Assert::default().eq_within_tols(&tangent[a][b].0.0, block)

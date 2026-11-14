@@ -2,8 +2,8 @@ macro_rules! test_dielectric {
     ($element: ident) => {
         mod dielectric_element {
             use super::{N, element};
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::electrical::dielectric::Linear,
                 fem::block::element::{
                     FiniteElementError,

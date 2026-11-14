@@ -9,7 +9,7 @@ use crate::units::{Dimensionless, UnitDiv, UnitMul};
 use crate::math::assert::FiniteDifference;
 
 use core::{
-    array::from_fn,
+    array::{IntoIter, from_fn},
     fmt::{self, Debug, Display, Formatter},
     iter::Sum,
     marker::PhantomData,
@@ -307,27 +307,6 @@ impl<K, U> From<TensorRank4<3, Reference, Reference, K, Reference, U>>
     }
 }
 
-impl<const D: usize, I, J, K, L, U> From<Vec<Vec<Vec<Vec<TensorRank0>>>>>
-    for TensorRank4<D, I, J, K, L, U>
-{
-    fn from(vec_rank_4: Vec<Vec<Vec<Vec<TensorRank0>>>>) -> Self {
-        vec_rank_4
-            .into_iter()
-            .map(|vec_rank_3| {
-                vec_rank_3
-                    .into_iter()
-                    .map(|vec_rank_2| {
-                        vec_rank_2
-                            .into_iter()
-                            .map(|vec_rank_1| vec_rank_1.into_iter().collect())
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect()
-    }
-}
-
 impl<const D: usize, I, J, K, L, U> From<TensorRank4<D, I, J, K, L, U>>
     for Vec<Vec<Vec<Vec<TensorRank0>>>>
 {
@@ -579,7 +558,7 @@ impl<const D: usize, I, J, K, L, U> Tensor for TensorRank4<D, I, J, K, L, U> {
 
 impl<const D: usize, I, J, K, L, U> IntoIterator for TensorRank4<D, I, J, K, L, U> {
     type Item = TensorRank3<D, J, K, L, U>;
-    type IntoIter = core::array::IntoIter<Self::Item, D>;
+    type IntoIter = IntoIter<Self::Item, D>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }

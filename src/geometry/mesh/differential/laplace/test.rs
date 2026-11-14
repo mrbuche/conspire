@@ -19,8 +19,7 @@ fn single_triangle() -> Result<(), AssertionError> {
         Coordinate::const_from([2.0, 0.0, 0.0]),
         Coordinate::const_from([0.0, 2.0, 0.0]),
     ])
-    .laplacian(Weighting::Uniform)
-    .unwrap();
+    .laplacian(Weighting::Uniform)?;
     Assert::default().eq_within_tols(&laplacian[0], &[-1.0, -1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&laplacian[1], &[2.0, -1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&laplacian[2], &[-1.0, 2.0, 0.0].into())
@@ -33,8 +32,7 @@ fn vertex_at_neighbor_centroid_is_fixed() -> Result<(), AssertionError> {
         Coordinate::const_from([2.0, 0.0, 0.0]),
         Coordinate::const_from([1.0, 0.0, 0.0]),
     ])
-    .laplacian(Weighting::Uniform)
-    .unwrap();
+    .laplacian(Weighting::Uniform)?;
     Assert::default().eq_within_tols(&laplacian[2], &[0.0, 0.0, 0.0].into())
 }
 
@@ -45,15 +43,13 @@ fn translation_invariant() -> Result<(), AssertionError> {
         Coordinate::const_from([2.0, 0.0, 0.0]),
         Coordinate::const_from([0.0, 2.0, 0.0]),
     ])
-    .laplacian(Weighting::Uniform)
-    .unwrap();
+    .laplacian(Weighting::Uniform)?;
     let shifted = triangle([
         Coordinate::const_from([5.0, -3.0, 7.0]),
         Coordinate::const_from([7.0, -3.0, 7.0]),
         Coordinate::const_from([5.0, -1.0, 7.0]),
     ])
-    .laplacian(Weighting::Uniform)
-    .unwrap();
+    .laplacian(Weighting::Uniform)?;
     (0..3).try_for_each(|n| Assert::default().eq_within_tols(&base[n], &shifted[n]))
 }
 
@@ -64,8 +60,7 @@ fn cotangent_single_right_triangle() -> Result<(), AssertionError> {
         Coordinate::const_from([2.0, 0.0, 0.0]),
         Coordinate::const_from([0.0, 2.0, 0.0]),
     ])
-    .laplacian(Weighting::Cotangent)
-    .unwrap();
+    .laplacian(Weighting::Cotangent)?;
     Assert::default().eq_within_tols(&laplacian[0], &[-1.0, -1.0, 0.0].into())?;
     Assert::default().eq_within_tols(&laplacian[1], &[2.0, 0.0, 0.0].into())?;
     Assert::default().eq_within_tols(&laplacian[2], &[0.0, 2.0, 0.0].into())
@@ -78,14 +73,12 @@ fn cotangent_translation_invariant() -> Result<(), AssertionError> {
         Coordinate::const_from([2.0, 0.0, 0.0]),
         Coordinate::const_from([0.0, 2.0, 0.0]),
     ])
-    .laplacian(Weighting::Cotangent)
-    .unwrap();
+    .laplacian(Weighting::Cotangent)?;
     let shifted = triangle([
         Coordinate::const_from([5.0, -3.0, 7.0]),
         Coordinate::const_from([7.0, -3.0, 7.0]),
         Coordinate::const_from([5.0, -1.0, 7.0]),
     ])
-    .laplacian(Weighting::Cotangent)
-    .unwrap();
+    .laplacian(Weighting::Cotangent)?;
     (0..3).try_for_each(|n| Assert::default().eq_within_tols(&base[n], &shifted[n]))
 }

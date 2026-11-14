@@ -1,5 +1,5 @@
 use super::super::{Quantity, Scalar};
-use crate::ABS_TOL;
+use crate::math::ABS_TOL;
 
 /// Absolute error tolerances.
 ///

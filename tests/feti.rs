@@ -2,17 +2,20 @@
 
 use conspire::{
     constitutive::solid::{elastic::AlmansiHamelLagrangian, hyperelastic::NeoHookean},
+    domain::decomposition::{
+        Decomposition,
+        feti::{Feti, Formulation, GMRES},
+    },
     fem::{
         Minimize, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::{Block, element::linear::Hexahedron},
         boundary::{BoundaryConditions as Conditions, Constrain, ConstrainAt, Displacement, Solid},
         solid::NodalForcesSolid,
     },
-    feti::{Feti, Formulation, GMRES},
     geometry::{
         Coordinates,
         grid::Voxels,
-        mesh::{Connectivities, Connectivity, Decomposition, Mesh},
+        mesh::{Connectivities, Connectivity, Mesh},
     },
     math::{
         Tensor,
@@ -330,7 +333,7 @@ fn benchmark_scaling_24() {
 #[test]
 fn the_linear_solver_path_reproduces_the_block_solve() {
     use conspire::{
-        feti::{BoundaryConditions, DecomposableElements},
+        domain::decomposition::feti::{BoundaryConditions, DecomposableElements},
         math::optimize::LinearSolver,
     };
     let nel = [6; 3];
@@ -524,7 +527,7 @@ fn newton_with_classical_feti_matches_newton_with_the_sparse_solve() {
 
 #[test]
 fn classical_differs_from_dual_primal_by_the_prestress() {
-    use conspire::feti::BoundaryConditions;
+    use conspire::domain::decomposition::feti::BoundaryConditions;
     let nel = [8; 3];
     let (connectivities, coordinates): (Connectivities, Coordinates<3>) = mesh(nel).into();
     let block = block(connectivities, &coordinates, 1.0);

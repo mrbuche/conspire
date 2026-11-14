@@ -51,22 +51,22 @@ fn finite_difference_0() -> Result<(), AssertionError> {
     for k in 0..3 {
         for l in 0..3 {
             let mut deformation_gradient_plus = deformation_gradient.clone();
-            deformation_gradient_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
             let cauchy_stress_plus =
                 model.cauchy_stress(&deformation_gradient_plus, &deformation_gradient_2)?;
             let mut deformation_gradient_minus = deformation_gradient.clone();
-            deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
             let cauchy_stress_minus =
                 model.cauchy_stress(&deformation_gradient_minus, &deformation_gradient_2)?;
             for i in 0..3 {
                 for j in 0..3 {
-                    fd[i][j][k][l] =
-                        (cauchy_stress_plus[i][j] - cauchy_stress_minus[i][j]) / crate::EPSILON;
+                    fd[i][j][k][l] = (cauchy_stress_plus[i][j] - cauchy_stress_minus[i][j])
+                        / crate::math::EPSILON;
                 }
             }
         }
     }
-    if tangent.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent.error_fd(&fd, 5e1 * crate::math::EPSILON).is_some() {
         Assert::default().eq_within_fd_tol(&tangent, &fd)
     } else {
         Ok(())
@@ -100,23 +100,27 @@ fn finite_difference_1() -> Result<(), AssertionError> {
     for k in 0..3 {
         for l in 0..3 {
             let mut deformation_gradient_plus = deformation_gradient.clone();
-            deformation_gradient_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
             let residual_plus = model
                 .internal_variables_residual(&deformation_gradient_plus, &deformation_gradient_2)?;
             let mut deformation_gradient_minus = deformation_gradient.clone();
-            deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
             let residual_minus = model.internal_variables_residual(
                 &deformation_gradient_minus,
                 &deformation_gradient_2,
             )?;
             for i in 0..3 {
                 for j in 0..3 {
-                    fd[i][j][k][l] = (residual_plus[i][j] - residual_minus[i][j]) / crate::EPSILON;
+                    fd[i][j][k][l] =
+                        (residual_plus[i][j] - residual_minus[i][j]) / crate::math::EPSILON;
                 }
             }
         }
     }
-    if tangent_1.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent_1
+        .error_fd(&fd, 5e1 * crate::math::EPSILON)
+        .is_some()
+    {
         Assert::default().eq_within_fd_tol(&tangent_1, &fd)
     } else {
         Ok(())
@@ -150,25 +154,29 @@ fn finite_difference_2() -> Result<(), AssertionError> {
     for k in 0..3 {
         for l in 0..3 {
             let mut deformation_gradient_2_plus = deformation_gradient_2.clone();
-            deformation_gradient_2_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_2_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
             let residual_plus = model.first_piola_kirchhoff_stress(
                 &deformation_gradient,
                 &deformation_gradient_2_plus,
             )?;
             let mut deformation_gradient_2_minus = deformation_gradient_2.clone();
-            deformation_gradient_2_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_2_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
             let residual_minus = model.first_piola_kirchhoff_stress(
                 &deformation_gradient,
                 &deformation_gradient_2_minus,
             )?;
             for i in 0..3 {
                 for j in 0..3 {
-                    fd[i][j][k][l] = (residual_plus[i][j] - residual_minus[i][j]) / crate::EPSILON;
+                    fd[i][j][k][l] =
+                        (residual_plus[i][j] - residual_minus[i][j]) / crate::math::EPSILON;
                 }
             }
         }
     }
-    if tangent_2.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent_2
+        .error_fd(&fd, 5e1 * crate::math::EPSILON)
+        .is_some()
+    {
         Assert::default().eq_within_fd_tol(&tangent_2, &fd)
     } else {
         Ok(())
@@ -202,23 +210,27 @@ fn finite_difference_3() -> Result<(), AssertionError> {
     for k in 0..3 {
         for l in 0..3 {
             let mut deformation_gradient_2_plus = deformation_gradient_2.clone();
-            deformation_gradient_2_plus[k][l] += perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_2_plus[k][l] += perturbation(0.5 * crate::math::EPSILON);
             let residual_plus = model
                 .internal_variables_residual(&deformation_gradient, &deformation_gradient_2_plus)?;
             let mut deformation_gradient_2_minus = deformation_gradient_2.clone();
-            deformation_gradient_2_minus[k][l] -= perturbation(0.5 * crate::EPSILON);
+            deformation_gradient_2_minus[k][l] -= perturbation(0.5 * crate::math::EPSILON);
             let residual_minus = model.internal_variables_residual(
                 &deformation_gradient,
                 &deformation_gradient_2_minus,
             )?;
             for i in 0..3 {
                 for j in 0..3 {
-                    fd[i][j][k][l] = (residual_plus[i][j] - residual_minus[i][j]) / crate::EPSILON;
+                    fd[i][j][k][l] =
+                        (residual_plus[i][j] - residual_minus[i][j]) / crate::math::EPSILON;
                 }
             }
         }
     }
-    if tangent_3.error_fd(&fd, 5e1 * crate::EPSILON).is_some() {
+    if tangent_3
+        .error_fd(&fd, 5e1 * crate::math::EPSILON)
+        .is_some()
+    {
         Assert::default().eq_within_fd_tol(&tangent_3, &fd)
     } else {
         Ok(())
@@ -286,8 +298,8 @@ fn root_1_condensed() -> Result<(), AssertionError> {
 
 #[test]
 fn moduli() -> Result<(), AssertionError> {
+    use crate::math::EPSILON;
     use crate::{
-        EPSILON,
         constitutive::solid::Solid,
         math::{
             Rank2,

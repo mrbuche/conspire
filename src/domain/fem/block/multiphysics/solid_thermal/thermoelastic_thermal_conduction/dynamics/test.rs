@@ -47,8 +47,8 @@ macro_rules! test_thermoelastic_thermal_conduction_time_scale_block {
                 Quantity<Density>,
                 Quantity<VolumetricHeatCapacity>,
             > {
-                Block::<_, _, G, M, N, P, Quantity<Density>>::from((
-                    Canonical::from((
+                Block::<_, _, G, M, N, P, _>::from((
+                    (
                         AlmansiHamel {
                             bulk_modulus: BULK_MODULUS,
                             shear_modulus: SHEAR_MODULUS,
@@ -58,7 +58,7 @@ macro_rules! test_thermoelastic_thermal_conduction_time_scale_block {
                         Fourier {
                             thermal_conductivity: THERMAL_CONDUCTIVITY,
                         },
-                    )),
+                    ).into(),
                     DENSITY,
                     get_connectivity(),
                     &get_reference_coordinates_block(),
@@ -71,7 +71,7 @@ macro_rules! test_thermoelastic_thermal_conduction_time_scale_block {
             #[test]
             fn motion_is_that_of_the_elastic_block_at_the_reference_temperature()
             -> Result<(), AssertionError> {
-                let elastic = Block::<AlmansiHamelEulerian, $element, G, M, N, P, Quantity<Density>>::from((
+                let elastic = Block::<_, $element, G, M, N, P, _>::from((
                     AlmansiHamelEulerian {
                         bulk_modulus: BULK_MODULUS,
                         shear_modulus: SHEAR_MODULUS,
@@ -92,7 +92,7 @@ macro_rules! test_thermoelastic_thermal_conduction_time_scale_block {
             }
             #[test]
             fn diffusion_is_that_of_the_thermal_block() -> Result<(), AssertionError> {
-                let thermal = Block::<Fourier, $element, G, M, N, P>::from((
+                let thermal = Block::<_, $element, G, M, N, P>::from((
                     Fourier {
                         thermal_conductivity: THERMAL_CONDUCTIVITY,
                     },

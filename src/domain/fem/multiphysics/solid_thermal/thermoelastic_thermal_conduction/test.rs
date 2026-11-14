@@ -437,17 +437,15 @@ mod dynamics {
     }
     #[test]
     fn stretching_cools_at_the_adiabatic_rate() -> Result<(), AssertionError> {
-        let (accelerations, rates) = model()
-            .nodal_rates(
-                &NodalCoordinates::from(COORDINATES),
-                &stretching(),
-                &uniform_temperatures(),
-                crate::units::Time::seconds(0.0),
-                &(),
-                &model().nodal_lumped_masses(),
-                &model().nodal_lumped_heat_capacities(),
-            )
-            .unwrap();
+        let (accelerations, rates) = model().nodal_rates(
+            &NodalCoordinates::from(COORDINATES),
+            &stretching(),
+            &uniform_temperatures(),
+            crate::units::Time::seconds(0.0),
+            &(),
+            &model().nodal_lumped_masses(),
+            &model().nodal_lumped_heat_capacities(),
+        )?;
         let expected = -9.0
             * COEFFICIENT_OF_THERMAL_EXPANSION.value()
             * BULK_MODULUS.value()
@@ -498,19 +496,17 @@ mod dynamics {
             .prescribe_nodes_with(Displacement::<2>, 0..3, |time| {
                 Length::meters(0.1 * time.value())
             });
-        let (_, coordinates, _, _, temperatures, _) = model()
-            .integrate(
-                Unchecked,
-                Lumped,
-                Lumped,
-                &DormandPrinceFixedStep::default(),
-                &time(),
-                (NodalCoordinates::from(COORDINATES), translating()),
-                uniform_temperatures(),
-                &(),
-                &conditions,
-            )
-            .unwrap();
+        let (_, coordinates, _, _, temperatures, _) = model().integrate(
+            Unchecked,
+            Lumped,
+            Lumped,
+            &DormandPrinceFixedStep::default(),
+            &time(),
+            (NodalCoordinates::from(COORDINATES), translating()),
+            uniform_temperatures(),
+            &(),
+            &conditions,
+        )?;
         temperatures[temperatures.len() - 1]
             .iter()
             .try_for_each(|temperature| {
@@ -610,7 +606,7 @@ mod dynamics {
     }
     #[test]
     fn a_stable_step_agrees_with_the_unbounded_integration() -> Result<(), AssertionError> {
-        let (coordinates, temperatures) = integrate_bounded(&time(), 0.9, 1).unwrap();
+        let (coordinates, temperatures) = integrate_bounded(&time(), 0.9, 1)?;
         let (expected_coordinates, expected_temperatures) =
             integrate(stretching(), vec![EqualityConstraint::None]);
         Assert::default().eq_within_tols(&coordinates, &expected_coordinates)?;
@@ -955,8 +951,7 @@ mod dynamics {
                     uniform_temperatures(),
                     &(),
                     &conditions,
-                )
-                .unwrap();
+                )?;
             temperatures[temperatures.len() - 1]
                 .iter()
                 .try_for_each(|temperature| {
@@ -1010,8 +1005,7 @@ mod dynamics {
                     uniform_temperatures(),
                     &(),
                     &conditions,
-                )
-                .unwrap();
+                )?;
             temperatures[temperatures.len() - 1]
                 .iter()
                 .try_for_each(|temperature| {

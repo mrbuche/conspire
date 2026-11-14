@@ -1,8 +1,6 @@
 use super::{Assert, AssertionError};
-use crate::{
-    EPSILON,
-    math::{Current, TensorRank1, TensorRank1List},
-};
+use crate::math::EPSILON;
+use crate::math::{Current, TensorRank1, TensorRank1List};
 
 #[test]
 #[should_panic(expected = "Assertion `left == right` failed.")]
@@ -131,4 +129,17 @@ fn assert_non_positive_success() -> Result<(), AssertionError> {
 #[should_panic(expected = "Assertion `left <= right` failed.")]
 fn assert_non_positive_fail() {
     Assert::non_positive(&1.0).unwrap()
+}
+
+#[test]
+fn within_accepts_a_difference_below_the_tolerance() -> Result<(), AssertionError> {
+    Assert::within(1e-3).eq_within_tols(1.0, &1.0005)
+}
+
+#[test]
+#[should_panic(expected = "Assertion `left ≈= right` failed in 1 places.")]
+fn within_ignores_the_relative_tolerance() {
+    Assert::within(1e-3)
+        .eq_within_tols(1.0e9, &(1.0e9 + 1.0))
+        .unwrap()
 }

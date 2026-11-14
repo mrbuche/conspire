@@ -2,6 +2,7 @@
 
 use conspire::{
     constitutive::solid::hyperelastic::NeoHookean,
+    domain::decomposition::feti::Feti,
     fem::boundary::{
         BoundaryConditions as Conditions, Constrain, ConstrainAt, Displacement, Solid,
     },
@@ -9,7 +10,6 @@ use conspire::{
         Minimize, Model, NodalCoordinates, NodalReferenceCoordinates,
         solid::elastic::ElasticElements,
     },
-    feti::Feti,
     geometry::{
         Coordinates,
         grid::Voxels,

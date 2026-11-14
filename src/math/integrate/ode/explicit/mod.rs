@@ -85,14 +85,20 @@ where
     V: TensorVec<Item = Derivative<Y, T>>,
 {
     const SLOPES: usize;
-    #[doc = include_str!("doc.md")]
+    /// Solves an initial value problem by explicitly integrating a system of ordinary differential equations.
+    ///
+    /// ```math
+    /// \frac{dy}{dt} = f(t, y),\quad y(t_0) = y_0
+    /// ```
     fn integrate(
         &self,
         function: impl FnMut(Quantity<T>, &Y) -> Result<Derivative<Y, T>, String>,
         time: &[Quantity<T>],
         initial_condition: Y,
     ) -> Result<(Times<T>, U, V), IntegrationError>;
-    #[doc = include_str!("bounded.md")]
+    /// Solves an initial value problem like [`integrate`](Self::integrate), subject to a stability bound.
+    ///
+    /// At each step, `bound` reports the fastest time scale of the right-hand side at the current state, and where its eigenvalues lie in the complex plane. The stability limit is that time scale times the extent of the method's stability region along the reported direction. The time step may use at most the fraction `safety` of that limit, where `safety` is in $`(0, 1]`$. A fixed time step above it is an error, and an adaptive time step is reduced to it.
     fn integrate_bounded(
         &self,
         function: impl FnMut(Quantity<T>, &Y) -> Result<Derivative<Y, T>, String>,

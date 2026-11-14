@@ -14,22 +14,22 @@ jobs:
       fail-fast: true
       matrix:
         features:
-          - math
           - io
+          - math
           - geometry
           - mechanics
           - physics
           - constitutive
+          - cbm
           - fem
           - vem
-          - cbm
           - all
-        os: [macos-latest, windows-latest, ubuntu-latest]
-        toolchain: [beta, stable]
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        toolchain: [stable, beta]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
@@ -48,18 +48,16 @@ jobs:
       fail-fast: true
       matrix:
         features:
-          - math
           - io
+          - math
           - geometry
           - mechanics
           - physics
           - constitutive
-          # - fem
-          # - vem
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
@@ -78,11 +76,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
@@ -98,7 +96,7 @@ jobs:
       RUSTFLAGS: -Zautodiff=Enable
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
@@ -106,4 +104,4 @@ jobs:
       - name: Enzyme
         run: rustup component add enzyme
       - name: Test
-        run: cargo test --release --features all,autodiff --lib autodiff
+        run: cargo build --release --features all

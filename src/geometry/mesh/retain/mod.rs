@@ -47,7 +47,7 @@ impl<const D: usize> Mesh<D> {
     }
 }
 
-pub(super) fn subset(
+pub(crate) fn subset(
     block: &Connectivity,
     kept: &[&[usize]],
     id: &mut impl FnMut(usize) -> usize,

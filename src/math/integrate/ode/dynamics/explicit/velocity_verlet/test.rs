@@ -1,4 +1,5 @@
 use super::VelocityVerlet;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{
         Quantity, Scalar, Tensor, TensorVector,
@@ -67,9 +68,10 @@ fn oscillator_matches_exact_solution() {
 }
 
 #[test]
-fn second_order_convergence() {
+fn second_order_convergence() -> Result<(), AssertionError> {
     let ratio = max_error(0.01) / max_error(0.005);
-    assert!((ratio - 4.0).abs() < 0.1, "ratio {ratio}");
+    Assert::within(0.1).eq_within_tols(ratio, &4.0)?;
+    Ok(())
 }
 
 #[test]

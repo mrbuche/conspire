@@ -3,7 +3,10 @@ use super::{
 };
 use crate::{
     geometry::Coordinate,
-    math::{FxHashMap, FxHashSet, Tensor, assert::Assert},
+    math::{
+        FxHashMap, FxHashSet, Tensor,
+        assert::{Assert, AssertionError},
+    },
 };
 use alloc::collections::BTreeMap;
 use core::array::from_fn;
@@ -56,14 +59,13 @@ fn borrowed(triangles: &[Triangle; 3]) -> [[&Coordinate<3>; 3]; 3] {
 }
 
 #[test]
-fn three_triangles_meet_at_a_point_inside_all_of_them() {
+fn three_triangles_meet_at_a_point_inside_all_of_them() -> Result<(), AssertionError> {
     let triangles = around([0.1, 0.2, 0.3]);
-    let (located, found) = meeting(borrowed(&triangles)).unwrap().unwrap();
+    let (located, found) = meeting(borrowed(&triangles))?.unwrap();
     assert_eq!(located, [Located::Face; 3]);
     let expected = Coordinate::from([0.1, 0.2, 0.3]);
-    Assert::default()
-        .zero_within_tols(&(&found - &expected).norm())
-        .unwrap();
+    Assert::default().zero_within_tols(&(&found - &expected).norm())?;
+    Ok(())
 }
 
 #[test]

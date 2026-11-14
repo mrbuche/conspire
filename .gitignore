@@ -1,13 +1,13 @@
 target/
+
 .claude/
 .venv/
 .vscode/
+
 **.exo
 **.stl
+**.svg
 **.swp
+**.vtk
 **.vtm
 **.vtu
-**.vtm
-book/build/
-**.svg
-**__pycache__/

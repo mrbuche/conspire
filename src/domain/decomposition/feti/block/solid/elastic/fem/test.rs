@@ -1,14 +1,15 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     constitutive::solid::{
         elastic::test::{BULK_MODULUS, SHEAR_MODULUS},
         hyperelastic::NeoHookean,
     },
-    domain::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
+    domain::decomposition::Decomposition,
+    domain::decomposition::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
     fem::{
         NodalCoordinates, NodalReferenceCoordinates,
         block::{Block, element::linear::Tetrahedron},
     },
-    geometry::mesh::Decomposition,
     math::{Tensor, Vector},
 };
 
@@ -119,7 +120,7 @@ fn a_boundary_condition_on_a_corner_node_solves_correctly() {
 
 #[test]
 fn element_systems_are_stress_free_and_symmetric_at_zero_deformation() {
-    use crate::domain::feti::DecomposableElements;
+    use crate::domain::decomposition::feti::DecomposableElements;
     let block = block();
     let systems = block
         .element_systems(&NodalCoordinates::from(coordinates()))
@@ -160,7 +161,7 @@ fn classical_refuses_a_block_that_can_still_rotate() {
 }
 
 #[test]
-fn classical_matches_dual_primal_when_every_subdomain_is_pinned() {
+fn classical_matches_dual_primal_when_every_subdomain_is_pinned() -> Result<(), AssertionError> {
     let boundary_conditions = BoundaryConditions::new(
         (1..4)
             .flat_map(|node| (0..3).map(move |component| (node, component)))
@@ -178,5 +179,6 @@ fn classical_matches_dual_primal_when_every_subdomain_is_pinned() {
     classical
         .iter()
         .zip(dual_primal.iter())
-        .for_each(|(a, b)| assert!((a - b).abs() < 1e-10));
+        .try_for_each(|(a, b)| Assert::within(1e-10).eq_within_tols(a, b))?;
+    Ok(())
 }

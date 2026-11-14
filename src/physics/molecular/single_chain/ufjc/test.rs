@@ -1,6 +1,6 @@
+use crate::math::EPSILON;
 use crate::math::assert::Assert;
 use crate::{
-    EPSILON,
     math::{Scalar, assert::AssertionError},
     physics::molecular::{
         potential::{Harmonic, Morse},

@@ -3,14 +3,14 @@ use crate::math::{
     TensorRank1List, TensorVec,
 };
 use crate::units::Dimensionless;
-use alloc::{collections::VecDeque, vec};
+use alloc::{collections::VecDeque, vec::IntoIter};
 use core::{
     fmt::{Display, Formatter, Result},
     iter::Sum,
     mem::forget,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
     ptr::read,
-    slice,
+    slice::Iter,
 };
 
 /// A resizable collection of tensors.
@@ -172,20 +172,6 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "Need to implement Display")
-        // write!(f, "\x1B[s")?;
-        // write!(f, "[[")?;
-        // self.iter().enumerate().try_for_each(|(i, tensor_rank_1)| {
-        //     tensor_rank_1
-        //         .iter()
-        //         .try_for_each(|entry| write_tensor_rank_0(f, entry))?;
-        //     if i + 1 < W {
-        //         writeln!(f, "\x1B[2D],")?;
-        //         write!(f, "\x1B[u")?;
-        //         write!(f, "\x1B[{}B [", i + 1)?;
-        //     }
-        //     Ok(())
-        // })?;
-        // write!(f, "\x1B[2D]]")
     }
 }
 
@@ -254,7 +240,7 @@ where
     T: Tensor,
 {
     type Item = T;
-    type IntoIter = vec::IntoIter<Self::Item>;
+    type IntoIter = IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -265,7 +251,7 @@ where
     T: Tensor,
 {
     type Item = &'a T;
-    type IntoIter = slice::Iter<'a, T>;
+    type IntoIter = Iter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
@@ -446,16 +432,21 @@ where
     }
 }
 
-// impl<T> Mul<&TensorRank0> for &TensorVector<T>
-// where
-//     T: Tensor,
-//     for <'a> &'a T: Mul<&'a TensorRank0, Output=T>
-// {
-//     type Output = TensorVector<T>;
-//     fn mul(self, tensor_rank_0: &TensorRank0) -> Self::Output {
-//         self.iter().map(|self_i| self_i * tensor_rank_0).collect()
-//     }
-// }
+impl<T> Mul<&TensorRank0> for &TensorVector<T>
+where
+    T: Tensor,
+{
+    type Output = TensorVector<T>;
+    fn mul(self, tensor_rank_0: &TensorRank0) -> Self::Output {
+        self.iter()
+            .map(|self_i| {
+                let mut product = self_i.clone();
+                product *= tensor_rank_0;
+                product
+            })
+            .collect()
+    }
+}
 
 impl<T> MulAssign<TensorRank0> for TensorVector<T>
 where

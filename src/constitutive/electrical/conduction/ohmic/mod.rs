@@ -8,7 +8,16 @@ use crate::{
     units::{Current, ElectricalConductivity, PowerDensity},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Ohmic electrical conduction constitutive model.
+///
+/// **Parameters**
+/// - The electrical conductivity $`\sigma`$.
+///
+/// **External variables**
+/// - The potential gradient $`\nabla\phi`$.
+///
+/// **Internal variables**
+/// - None.
 #[derive(Clone, Debug)]
 pub struct Ohmic {
     /// The electrical conductivity $`\sigma`$.
@@ -19,21 +28,27 @@ impl Electrical for Ohmic {}
 
 impl Diffusion for Ohmic {
     type Balance = Current;
-    #[doc = include_str!("potential.md")]
+    /// ```math
+    /// u(\nabla\phi) = \frac{1}{2}\sigma\nabla\phi\cdot\nabla\phi
+    /// ```
     fn potential(
         &self,
         potential_gradient: &ElectricField,
     ) -> Result<Quantity<PowerDensity>, ConstitutiveError> {
         Ok(potential_gradient.norm_squared() * self.electrical_conductivity * 0.5)
     }
-    #[doc = include_str!("current_density.md")]
+    /// ```math
+    /// \mathbf{J}(\nabla\phi) = -\sigma\nabla\phi
+    /// ```
     fn flux(
         &self,
         potential_gradient: &ElectricField,
     ) -> Result<CurrentDensity, ConstitutiveError> {
         Ok(potential_gradient * -self.electrical_conductivity)
     }
-    #[doc = include_str!("current_density_tangent.md")]
+    /// ```math
+    /// \frac{\partial\mathbf{J}}{\partial\nabla\phi} = -\sigma\mathbf{I}
+    /// ```
     fn tangent(
         &self,
         _potential_gradient: &ElectricField,

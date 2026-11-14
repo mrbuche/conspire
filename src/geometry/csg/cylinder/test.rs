@@ -81,8 +81,7 @@ fn a_tilted_axis_is_measured_along_itself() -> Result<(), AssertionError> {
         axis([1.0, 1.0, 0.0]),
         length(1.0),
         length(8.0_f64.sqrt()),
-    )
-    .unwrap();
+    )?;
     let distance = |entries| cylinder.signed_distance(&point(entries));
     let assert = Assert::default();
     assert.eq_within_tols(distance([1.0, 1.0, 0.0]), &length(-1.0))?;

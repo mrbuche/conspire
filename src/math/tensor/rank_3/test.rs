@@ -3,7 +3,7 @@ use super::{
     TensorRank0, TensorRank2, TensorRank3, levi_civita,
 };
 use crate::math::Current;
-use crate::{ABS_TOL, REL_TOL};
+use crate::math::{ABS_TOL, REL_TOL};
 
 fn get_array() -> [[[TensorRank0; 4]; 4]; 4] {
     [

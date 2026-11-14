@@ -1,6 +1,6 @@
 use super::*;
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     math::assert::{Assert, AssertionError, perturbation},
     math::{ContractWith, Tensor, TensorArray},
 };

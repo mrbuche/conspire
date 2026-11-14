@@ -7,7 +7,23 @@ use crate::{
     units::{ReciprocalTemperature, Stress, Temperature},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Almansi-Hamel thermoelastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The coefficient of thermal expansion $`\alpha`$.
+/// - The reference temperature $`T_\mathrm{ref}`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+/// - The temperature $`T`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Almansi-Hamel strain measure is given by $`\mathbf{e}=\tfrac{1}{2}(\mathbf{1}-\mathbf{B}^{-1})`$.
 #[derive(Clone, Debug)]
 pub struct AlmansiHamel {
     /// The bulk modulus $`\kappa`$.
@@ -30,7 +46,9 @@ impl Solid for AlmansiHamel {
 }
 
 impl Thermoelastic for AlmansiHamel {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}, T) = \frac{2\mu}{J}\,\mathbf{e}' + \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{e})\mathbf{1} - \frac{3\alpha\kappa}{J}(T - T_\mathrm{ref})\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -50,7 +68,14 @@ impl Thermoelastic for AlmansiHamel {
                             * self.coefficient_of_thermal_expansion
                             * (temperature - self.reference_temperature()))))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \begin{aligned}
+    /// \mathcal{T}_{ijkL}(\mathbf{F}, T) =
+    /// \,& \frac{\mu}{J}\left[B_{jk}^{-1}F_{iL}^{-T} + B_{ik}^{-1}F_{jL}^{-T} - 2e_{ij}'F_{kL}^{-T}\right] + \frac{\lambda}{J}\,\delta_{ij}B_{km}^{-1}F_{mL}^{-T}
+    /// \\
+    /// &- \frac{\kappa}{J}\Big[\mathrm{tr}(\mathbf{e}) - 3\alpha(T - T_\mathrm{ref})\Big]\delta_{ij}F_{kL}^{-T}
+    /// \end{aligned}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -86,7 +111,9 @@ impl Thermoelastic for AlmansiHamel {
                 &inverse_transpose_deformation_gradient,
             ))
     }
-    #[doc = include_str!("cauchy_thermal_tangent.md")]
+    /// ```math
+    /// \frac{\partial\boldsymbol{\sigma}}{\partial T}(\mathbf{F}) = -\frac{3\alpha\kappa}{J}\,\mathbf{1}
+    /// ```
     fn cauchy_thermal_tangent(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -96,7 +123,9 @@ impl Thermoelastic for AlmansiHamel {
         Ok(IDENTITY
             * (-3.0 * self.bulk_modulus() * self.coefficient_of_thermal_expansion / jacobian))
     }
-    #[doc = include_str!("cauchy_mixed_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2\sigma_{ij}}{\partial F_{kL}\partial T}(\mathbf{F}) = \frac{3\alpha\kappa}{J}\,\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_mixed_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -108,7 +137,9 @@ impl Thermoelastic for AlmansiHamel {
                 * (3.0 * self.bulk_modulus() * self.coefficient_of_thermal_expansion / jacobian),
         )
     }
-    #[doc = include_str!("cauchy_thermal_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2\boldsymbol{\sigma}}{\partial T^2}(\mathbf{F}) = \mathbf{0}
+    /// ```
     fn cauchy_thermal_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

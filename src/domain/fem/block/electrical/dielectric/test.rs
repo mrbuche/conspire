@@ -4,8 +4,8 @@ macro_rules! test_dielectric_block {
             use super::{
                 D, G, M, N, P, get_connectivity, get_reference_coordinates_block, $element,
             };
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::electrical::dielectric::Linear,
                 domain::diffusion::DiffusionElements,
                 fem::{
@@ -34,11 +34,12 @@ macro_rules! test_dielectric_block {
                         .collect()
                 }
                 fn block() -> Block<Linear, $element, G, M, N, P> {
-                    Block::<Linear, $element, G, M, N, P>::from((
+                    (
                         MODEL,
                         get_connectivity(),
                         &get_reference_coordinates_block(),
-                    ))
+                    )
+                        .into()
                 }
                 #[test]
                 fn potential() -> Result<(), AssertionError> {

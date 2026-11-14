@@ -707,8 +707,8 @@ mod direct {
     fn a_later_tangent_is_not_solved_with_an_earlier_factorization() -> Result<(), AssertionError> {
         let mut dense = direct(None);
         let residual = Vector::from([1.0, 2.0, 3.0]);
-        let first: Vector = dense(tangent(1.0), &[1], &residual).unwrap();
-        let second: Vector = dense(tangent(2.0), &[1], &residual).unwrap();
+        let first: Vector = dense(tangent(1.0), &[1], &residual)?;
+        let second: Vector = dense(tangent(2.0), &[1], &residual)?;
         Assert::default().eq_within_tols(&first, &Vector::from([0.25, 0.0, 0.5]))?;
         Assert::default().eq_within_tols(&second, &Vector::from([0.125, 0.0, 0.25]))
     }
@@ -718,8 +718,7 @@ mod direct {
             SquareMatrix::from([[2.0, 0.0], [0.0, 4.0]]),
             &[],
             &Vector::from([1.0, 2.0]),
-        )
-        .unwrap();
+        )?;
         Assert::default().eq_within_tols(&decrement, &Vector::from([0.5, 0.5]))
     }
 }

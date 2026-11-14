@@ -1,5 +1,3 @@
-#[cfg(feature = "autodiff")]
-mod autodiff;
 mod quadrilateral;
 mod triangle;
 
