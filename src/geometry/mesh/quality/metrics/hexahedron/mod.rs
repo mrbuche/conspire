@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod test;
 
-pub(crate) mod bernstein;
-
 use crate::{
     geometry::Coordinates,
     math::{Quantity, Scalar, Tensor},

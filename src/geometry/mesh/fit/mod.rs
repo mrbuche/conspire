@@ -31,42 +31,7 @@ pub enum Fitting {
     Snap,
 }
 
-/// Which nodes an energy fit is free to move.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Freedom {
-    /// Every node of the mesh.
-    Whole,
-    /// The boundary nodes and their immediate neighbours only.
-    Shell,
-}
-
 impl Mesh<3> {
-    /// Deforms the mesh onto the target through energy fitting.
-    pub fn inflate(
-        &mut self,
-        target: &Tessellation,
-        freedom: Freedom,
-        fitting: Fitting,
-    ) -> Result<(), &'static str> {
-        let mut boundary: Vec<usize> = self.exterior_faces().into_iter().flatten().collect();
-        boundary.sort_unstable();
-        boundary.dedup();
-        let free = match freedom {
-            Freedom::Whole => (0..self.number_of_nodes()).collect(),
-            Freedom::Shell => {
-                let neighbors = self.node_node_connectivity();
-                let mut nodes: Vec<usize> = boundary
-                    .iter()
-                    .flat_map(|&node| neighbors[node].iter().copied())
-                    .chain(boundary.iter().copied())
-                    .collect();
-                nodes.sort_unstable();
-                nodes.dedup();
-                nodes
-            }
-        };
-        self.fit_to(&free, &boundary, target, fitting)
-    }
     pub(crate) fn fit_to(
         &mut self,
         free: &[usize],
