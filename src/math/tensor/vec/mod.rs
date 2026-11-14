@@ -432,6 +432,22 @@ where
     }
 }
 
+impl<T> Mul<&TensorRank0> for &TensorVector<T>
+where
+    T: Tensor,
+{
+    type Output = TensorVector<T>;
+    fn mul(self, tensor_rank_0: &TensorRank0) -> Self::Output {
+        self.iter()
+            .map(|self_i| {
+                let mut product = self_i.clone();
+                product *= tensor_rank_0;
+                product
+            })
+            .collect()
+    }
+}
+
 impl<T> MulAssign<TensorRank0> for TensorVector<T>
 where
     T: Tensor,

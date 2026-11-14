@@ -295,10 +295,13 @@ where
 {
     type Output = TensorList<T, N>;
     fn mul(self, tensor_rank_0: &TensorRank0) -> Self::Output {
-        //
-        // Cloning for now to avoid trait recursion nightmare.
-        //
-        self.clone() * tensor_rank_0
+        self.iter()
+            .map(|self_i| {
+                let mut product = self_i.clone();
+                product *= tensor_rank_0;
+                product
+            })
+            .collect()
     }
 }
 
