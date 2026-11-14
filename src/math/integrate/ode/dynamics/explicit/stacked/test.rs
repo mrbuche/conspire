@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{
         Quantity, Scalar, Tensor, TensorVector,
@@ -325,15 +326,17 @@ fn mixed_limit(real: Scalar, imaginary: Scalar) -> Scalar {
 }
 
 #[test]
-fn mixed_spectrum_is_limited_by_the_real_axis_when_it_binds() {
+fn mixed_spectrum_is_limited_by_the_real_axis_when_it_binds() -> Result<(), AssertionError> {
     let stability = DormandPrinceTableau::stability();
     let reported = mixed_limit(1.0, 1.0e3);
-    assert!((reported - stability.extent(0.0)).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(reported, &stability.extent(0.0))?;
+    Ok(())
 }
 
 #[test]
-fn mixed_spectrum_is_limited_by_the_imaginary_axis_when_it_binds() {
+fn mixed_spectrum_is_limited_by_the_imaginary_axis_when_it_binds() -> Result<(), AssertionError> {
     let stability = DormandPrinceTableau::stability();
     let reported = mixed_limit(1.0e3, 1.0);
-    assert!((reported - stability.extent(FRAC_PI_2)).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(reported, &stability.extent(FRAC_PI_2))?;
+    Ok(())
 }

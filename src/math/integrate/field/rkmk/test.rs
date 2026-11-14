@@ -1,4 +1,5 @@
 use super::{rkmk_dae_step, rkmk_step};
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{
     Current, Intermediate, Quantity, Reference, Tensor, TensorArray, TensorRank2, TensorVector,
     integrate::{
@@ -90,7 +91,7 @@ fn rkmk_reuses_the_fsal_stage_across_steps() {
 }
 
 #[test]
-fn rkmk_dae_reuses_the_fsal_stage_across_steps() {
+fn rkmk_dae_reuses_the_fsal_stage_across_steps() -> Result<(), AssertionError> {
     use core::cell::Cell;
     let rate = trace_free_rate();
     let rate_evaluations = Cell::new(0_usize);
@@ -119,8 +120,7 @@ fn rkmk_dae_reuses_the_fsal_stage_across_steps() {
                 dt,
                 &mut scratch,
                 carry.as_ref(),
-            )
-            .unwrap();
+            )?;
         point = advanced_point;
         z = advanced_z;
         carry = next_carry;
@@ -128,25 +128,26 @@ fn rkmk_dae_reuses_the_fsal_stage_across_steps() {
     }
     assert_eq!(rate_evaluations.get(), 3 * steps + 1);
     assert_eq!(solve_evaluations.get(), 4 * steps + 1);
-    assert!((point.determinant() - 1.0).abs() < 1e-10);
-    assert!((z.value() - t.value()).abs() < 1e-12);
+    Assert::within(1e-10).eq_within_tols(point.determinant(), &1.0)?;
+    Assert::within(1e-12).eq_within_tols(z.value(), &t.value())?;
+    Ok(())
 }
 
 #[test]
-fn rkmk_keeps_the_group_state_unimodular() {
+fn rkmk_keeps_the_group_state_unimodular() -> Result<(), AssertionError> {
     let rate = trace_free_rate();
     let (_, points): (Times, TensorVector<Fp>) =
         integrate_rkmk::<Unimodular<Current>, BogackiShampine, _, _>(
             |_: Quantity<Time>, _: &Fp| Ok(rate.clone()),
             &steps(),
             Fp::identity(),
-        )
-        .unwrap();
-    assert!((points.iter().last().unwrap().determinant() - 1.0).abs() < 1e-10);
+        )?;
+    Assert::within(1e-10).eq_within_tols(points.iter().last().unwrap().determinant(), &1.0)?;
+    Ok(())
 }
 
 #[test]
-fn rkmk_on_a_flat_field_is_the_plain_tableau() {
+fn rkmk_on_a_flat_field_is_the_plain_tableau() -> Result<(), AssertionError> {
     use crate::math::integrate::field::Flat;
     const RATE: Quantity<Rate> = Rate::per_second(1.0);
     let time = uniform_time(10);
@@ -155,13 +156,13 @@ fn rkmk_on_a_flat_field_is_the_plain_tableau() {
             |_: Quantity<Time>, y: &Quantity| Ok(y * -RATE),
             &time,
             Quantity::new(1.0),
-        )
-        .unwrap();
-    assert!((rkmk.iter().last().unwrap().value() - (-1.0_f64).exp()).abs() < 1e-4);
+        )?;
+    Assert::within(1e-4).eq_within_tols(rkmk.iter().last().unwrap().value(), &(-1.0_f64).exp())?;
+    Ok(())
 }
 
 #[test]
-fn rkmk_on_a_field_whose_increment_is_not_its_point() {
+fn rkmk_on_a_field_whose_increment_is_not_its_point() -> Result<(), AssertionError> {
     type PlasticField = Unimodular<Intermediate, Reference>;
     type Fp = TensorRank2<3, Intermediate, Reference, Dimensionless>;
     type Dp = TensorRank2<3, Intermediate, Intermediate, Rate>;
@@ -171,11 +172,11 @@ fn rkmk_on_a_field_whose_increment_is_not_its_point() {
             |_: Quantity<Time>, _: &Fp| Ok(d_p.clone()),
             &uniform_time(16),
             Fp::identity(),
-        )
-        .unwrap();
+        )?;
     let last = points.iter().last().unwrap();
-    assert!((last.determinant() - 1.0).abs() < 1e-10);
+    Assert::within(1e-10).eq_within_tols(last.determinant(), &1.0)?;
     assert!((last - &Fp::identity()).norm().value() > 1e-2);
+    Ok(())
 }
 
 #[test]

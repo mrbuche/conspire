@@ -8,10 +8,11 @@ use crate::domain::decomposition::feti::{
     },
     interface::build_interfaces,
 };
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{Matrix, SquareMatrix, Vector};
 
 #[test]
-fn splits_interior_and_boundary_and_computes_the_schur_complement() {
+fn splits_interior_and_boundary_and_computes_the_schur_complement() -> Result<(), AssertionError> {
     let stiffness: SquareMatrix = [[4.0, 1.0, 0.0], [1.0, 4.0, 1.0], [0.0, 1.0, 4.0]]
         .into_iter()
         .map(|row| row.into_iter().collect())
@@ -21,7 +22,8 @@ fn splits_interior_and_boundary_and_computes_the_schur_complement() {
     let local = DirichletLocal::try_build(&stiffness, &dual_dofs, &interface_dofs).unwrap();
     assert_eq!(local.boundary_dofs(), &[1]);
     let x: Vector = [1.0].into_iter().collect();
-    assert!((local.apply(&x)[0] - 3.75).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(local.apply(&x)[0], &3.75)?;
+    Ok(())
 }
 
 #[test]
@@ -64,7 +66,8 @@ fn a_singular_interior_block_is_refused_though_the_dual_block_is_not() {
 }
 
 #[test]
-fn a_floating_subdomain_solves_a_consistent_system_through_its_kernel() {
+fn a_floating_subdomain_solves_a_consistent_system_through_its_kernel() -> Result<(), AssertionError>
+{
     let decomposition = Decomposition::from_parts_nodes(vec![vec![0, 1], vec![1, 2]]);
     let (interfaces, _) = build_interfaces(&decomposition, &CornerSelection::new(vec![]), 1);
     let interface = interfaces.into_iter().next().unwrap();
@@ -100,5 +103,6 @@ fn a_floating_subdomain_solves_a_consistent_system_through_its_kernel() {
     let force: Vector = [2.0, -2.0].into_iter().collect();
     let solved = subdomain.local_solve(&force);
     let applied = &stiffness * &solved;
-    (0..2).for_each(|dof| assert!((applied[dof] - force[dof]).abs() < 1e-12));
+    (0..2).try_for_each(|dof| Assert::within(1e-12).eq_within_tols(applied[dof], &force[dof]))?;
+    Ok(())
 }

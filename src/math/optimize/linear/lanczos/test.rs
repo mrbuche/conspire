@@ -5,14 +5,6 @@ use crate::math::{
 };
 use core::f64::consts::PI;
 
-fn within(abs_tol: Scalar) -> Assert {
-    Assert {
-        abs_tol,
-        rel_tol: 0.0,
-        ..Assert::default()
-    }
-}
-
 fn stiffness(n: usize) -> SquareMatrix {
     let mut k = SquareMatrix::zero(n);
     for i in 0..n {
@@ -76,7 +68,8 @@ fn lowest_modes_of_a_fixed_free_chain() -> Result<(), AssertionError> {
     let a = shifted(&k, &m, -0.1);
     let pairs = Lanczos::default().solve(inverse(&a), diagonal(&m), -0.1, n, 4)?;
     assert_eq!(pairs.values.len(), 4);
-    within(1e-10).eq_within_tols(Vector::from(pairs.values), Vector::from(&analytic(n)[..4]))
+    Assert::within(1e-10)
+        .eq_within_tols(Vector::from(pairs.values), Vector::from(&analytic(n)[..4]))
 }
 
 #[test]
@@ -87,10 +80,10 @@ fn nonuniform_mass_residuals_and_orthonormality() -> Result<(), AssertionError> 
     let a = shifted(&k, &m, -0.05);
     let pairs = Lanczos::default().solve(inverse(&a), diagonal(&m), -0.05, n, 5)?;
     for (i, (value, x)) in pairs.values.iter().zip(&pairs.vectors).enumerate() {
-        within(1e-8).zero_within_tols(&residual(&k, &m, *value, x))?;
+        Assert::within(1e-8).zero_within_tols(&residual(&k, &m, *value, x))?;
         for (j, y) in pairs.vectors.iter().enumerate() {
             let expected = if i == j { 1.0 } else { 0.0 };
-            within(1e-9).eq_within_tols(mass_dot(&m, x, y), expected)?;
+            Assert::within(1e-9).eq_within_tols(mass_dot(&m, x, y), expected)?;
         }
     }
     assert!(pairs.values.windows(2).all(|w| w[0] < w[1]));
@@ -109,7 +102,7 @@ fn modes_nearest_an_interior_shift() -> Result<(), AssertionError> {
     expected.sort_by(|a, b| (a - shift).abs().total_cmp(&(b - shift).abs()));
     let mut expected = expected[..3].to_vec();
     expected.sort_by(Scalar::total_cmp);
-    within(1e-9).eq_within_tols(Vector::from(pairs.values), Vector::from(expected))
+    Assert::within(1e-9).eq_within_tols(Vector::from(pairs.values), Vector::from(expected))
 }
 
 #[test]
@@ -119,7 +112,7 @@ fn the_whole_spectrum_is_recovered_exactly() -> Result<(), AssertionError> {
     let m = vec![1.0; n];
     let a = shifted(&k, &m, -0.1);
     let pairs = Lanczos::default().solve(inverse(&a), diagonal(&m), -0.1, n, n)?;
-    within(1e-10).eq_within_tols(Vector::from(pairs.values), Vector::from(analytic(n)))
+    Assert::within(1e-10).eq_within_tols(Vector::from(pairs.values), Vector::from(analytic(n)))
 }
 
 #[test]
@@ -191,7 +184,7 @@ fn pencil(spectrum: &[Scalar], shift: Scalar, count: usize) -> Result<Vec<Scalar
 #[test]
 fn double_eigenvalues_are_found_twice() -> Result<(), AssertionError> {
     let found = pencil(&repeated(2, 10), -0.5, 6)?;
-    within(1e-10).eq_within_tols(
+    Assert::within(1e-10).eq_within_tols(
         Vector::from(found),
         Vector::from(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
     )
@@ -200,7 +193,7 @@ fn double_eigenvalues_are_found_twice() -> Result<(), AssertionError> {
 #[test]
 fn triple_eigenvalues_are_found_three_times() -> Result<(), AssertionError> {
     let found = pencil(&repeated(3, 8), -0.5, 7)?;
-    within(1e-10).eq_within_tols(
+    Assert::within(1e-10).eq_within_tols(
         Vector::from(found),
         Vector::from(vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0]),
     )
@@ -209,7 +202,7 @@ fn triple_eigenvalues_are_found_three_times() -> Result<(), AssertionError> {
 #[test]
 fn more_modes_than_distinct_eigenvalues_are_found() -> Result<(), AssertionError> {
     let found = pencil(&repeated(2, 3), -0.5, 5)?;
-    within(1e-10).eq_within_tols(
+    Assert::within(1e-10).eq_within_tols(
         Vector::from(found),
         Vector::from(vec![1.0, 1.0, 2.0, 2.0, 3.0]),
     )

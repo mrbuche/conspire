@@ -1,4 +1,5 @@
 use super::{Flat, Integrable, List, Product, Unimodular, integrate_euler, integrate_rkmk};
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{
     Current, Quantity, Tensor, TensorArray, TensorRank1, TensorRank2, TensorTuple, TensorVector,
     integrate::{Times, ode::explicit::variable_step::bogacki_shampine},
@@ -25,15 +26,15 @@ fn times() -> Vec<Quantity<Time>> {
 }
 
 #[test]
-fn unimodular_update_preserves_unit_determinant() {
+fn unimodular_update_preserves_unit_determinant() -> Result<(), AssertionError> {
     let rate = trace_free_rate();
     let (_, points): (Times, TensorVector<Fp>) = integrate_euler::<Unimodular<Current>, _, _>(
         |_: Quantity<Time>, _: &Fp| Ok(rate.clone()),
         &steps(),
         Fp::identity(),
-    )
-    .unwrap();
-    assert!((points.iter().last().unwrap().determinant() - 1.0).abs() < 1e-10);
+    )?;
+    Assert::within(1e-10).eq_within_tols(points.iter().last().unwrap().determinant(), &1.0)?;
+    Ok(())
 }
 
 #[test]
@@ -49,7 +50,7 @@ fn additive_update_of_the_same_rate_drifts_off_the_group() {
 }
 
 #[test]
-fn three_deep_product_field_round_trips_through_the_driver() {
+fn three_deep_product_field_round_trips_through_the_driver() -> Result<(), AssertionError> {
     type Back = TensorRank1<3, Current>;
     type Field = Product<Flat<Quantity>, Product<Flat<Back>, Unimodular<Current>>>;
     type Point = <Field as Integrable>::Point;
@@ -68,12 +69,12 @@ fn three_deep_product_field_round_trips_through_the_driver() {
             Quantity::new(1.0),
             TensorTuple(Back::zero(), Fp::identity()),
         ),
-    )
-    .unwrap();
+    )?;
     assert_eq!(points.iter().count(), steps().len());
     let last = points.iter().last().unwrap();
-    assert!((last.1.1.determinant() - 1.0).abs() < 1e-10);
-    assert!((last.0.value() - 1.5).abs() < 1e-12);
+    Assert::within(1e-10).eq_within_tols(last.1.1.determinant(), &1.0)?;
+    Assert::within(1e-12).eq_within_tols(last.0.value(), &1.5)?;
+    Ok(())
 }
 
 #[test]
@@ -108,7 +109,7 @@ fn list_field_advances_each_entry_by_its_own_flat_rate() {
 }
 
 #[test]
-fn list_field_keeps_every_entry_on_the_group_through_rkmk() {
+fn list_field_keeps_every_entry_on_the_group_through_rkmk() -> Result<(), AssertionError> {
     let rate_a = trace_free_rate();
     let rate_b = rate_a.clone() * -2.0;
     let starts: TensorVector<Fp> = [Fp::identity(), Fp::identity()].into();
@@ -117,22 +118,21 @@ fn list_field_keeps_every_entry_on_the_group_through_rkmk() {
             |_: Quantity<Time>, _: &TensorVector<Fp>| Ok([rate_a.clone(), rate_b.clone()].into()),
             &steps(),
             starts,
-        )
-        .unwrap();
+        )?;
     let last = points.iter().last().unwrap();
     last.iter()
-        .for_each(|fp| assert!((fp.determinant() - 1.0).abs() < 1e-10));
+        .try_for_each(|fp| Assert::within(1e-10).eq_within_tols(fp.determinant(), &1.0))?;
     let (_, reference_a): (Times, TensorVector<Fp>) =
         integrate_rkmk::<Unimodular<Current>, BogackiShampine, _, _>(
             |_: Quantity<Time>, _: &Fp| Ok(rate_a.clone()),
             &steps(),
             Fp::identity(),
-        )
-        .unwrap();
+        )?;
     last.iter()
         .next()
         .unwrap()
         .iter()
         .zip(reference_a.iter().last().unwrap().iter())
         .for_each(|(a, b)| assert_eq!(a, b));
+    Ok(())
 }

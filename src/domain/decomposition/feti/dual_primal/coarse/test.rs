@@ -2,6 +2,7 @@ use super::{Coarse, CoarseSystem};
 use crate::domain::decomposition::feti::dual_primal::{
     BoundaryConditions, CornerDofs, CornerSelection, DualPrimalSplit, condense::Condensed,
 };
+use crate::math::assert::{Assert, AssertionError};
 use crate::math::{Matrix, Scalar, SquareMatrix, Tensor, Vector};
 
 impl Coarse {
@@ -62,7 +63,7 @@ fn shares_corner_contributions_across_subdomains() {
 }
 
 #[test]
-fn solves_the_assembled_system() {
+fn solves_the_assembled_system() -> Result<(), AssertionError> {
     let system = CoarseSystem {
         len: 1,
         pattern: vec![(0, 0)],
@@ -70,11 +71,12 @@ fn solves_the_assembled_system() {
     };
     let force = [5.0].into_iter().collect();
     let solution = Coarse::new(system).solve(&force);
-    assert!((solution[0] - 1.0).abs() < 1e-14);
+    Assert::within(1e-14).eq_within_tols(solution[0], &1.0)?;
+    Ok(())
 }
 
 #[test]
-fn sums_duplicate_positions_before_solving() {
+fn sums_duplicate_positions_before_solving() -> Result<(), AssertionError> {
     let system = CoarseSystem {
         len: 2,
         pattern: vec![(0, 0), (0, 1), (1, 0), (1, 1), (0, 0)],
@@ -82,8 +84,9 @@ fn sums_duplicate_positions_before_solving() {
     };
     let force = [6.0, 4.0].into_iter().collect();
     let solution = Coarse::new(system).solve(&force);
-    assert!((solution[0] - 1.0).abs() < 1e-12);
-    assert!((solution[1] - 1.0).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(solution[0], &1.0)?;
+    Assert::within(1e-12).eq_within_tols(solution[1], &1.0)?;
+    Ok(())
 }
 
 #[test]

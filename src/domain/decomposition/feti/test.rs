@@ -1,4 +1,5 @@
 use super::THREADS;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     domain::decomposition::Decomposition,
     domain::decomposition::feti::{
@@ -179,7 +180,7 @@ fn serial_dual_action(
 }
 
 #[test]
-fn dual_reduce_parallel_path_matches_serial_reference() {
+fn dual_reduce_parallel_path_matches_serial_reference() -> Result<(), AssertionError> {
     let count = 8;
     let setup = chain_setup(count);
     let lambda: Vector = (0..setup.num_multipliers).map(|i| 1.0 + i as f64).collect();
@@ -189,7 +190,8 @@ fn dual_reduce_parallel_path_matches_serial_reference() {
     parallel
         .iter()
         .zip(serial.iter())
-        .for_each(|(&p, &s)| assert!((p - s).abs() < 1e-12));
+        .try_for_each(|(&p, &s)| Assert::within(1e-12).eq_within_tols(p, &s))?;
+    Ok(())
 }
 
 #[test]
@@ -217,57 +219,64 @@ fn dual_reduce_uses_no_more_than_the_thread_cap() {
 }
 
 #[test]
-fn dual_action_matches_the_hand_derived_operator() {
+fn dual_action_matches_the_hand_derived_operator() -> Result<(), AssertionError> {
     let setup = setup();
     let lambda: Vector = [1.0].into_iter().collect();
     let f_lambda = dual_action(&setup.subdomains, &lambda, THREADS);
-    assert!((f_lambda[0] - 7.0 / 12.0).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(f_lambda[0], &(7.0 / 12.0))?;
+    Ok(())
 }
 
 #[test]
-fn dual_operator_includes_the_coarse_coupling_correction() {
+fn dual_operator_includes_the_coarse_coupling_correction() -> Result<(), AssertionError> {
     let setup = setup();
     let lambda: Vector = [1.0].into_iter().collect();
     let f_aug_lambda = dual_operator(&setup.subdomains, &lambda, &setup.coarse, THREADS);
-    assert!((f_aug_lambda[0] - 27.0 / 46.0).abs() < 1e-10);
+    Assert::within(1e-10).eq_within_tols(f_aug_lambda[0], &(27.0 / 46.0))?;
+    Ok(())
 }
 
 #[test]
-fn lumped_preconditioner_matches_the_hand_derived_operator() {
+fn lumped_preconditioner_matches_the_hand_derived_operator() -> Result<(), AssertionError> {
     let setup = setup();
     let lambda: Vector = [1.0].into_iter().collect();
     let preconditioned = dual_precondition(&setup.subdomains, &lambda, THREADS);
-    assert!((preconditioned[0] - 7.0).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(preconditioned[0], &7.0)?;
+    Ok(())
 }
 
 #[test]
-fn dirichlet_preconditioner_matches_lumped_when_every_dual_dof_is_on_the_interface() {
+fn dirichlet_preconditioner_matches_lumped_when_every_dual_dof_is_on_the_interface()
+-> Result<(), AssertionError> {
     let setup = setup();
     let lambda: Vector = [1.0].into_iter().collect();
     let lumped = dual_precondition(&setup.subdomains, &lambda, THREADS);
     let dirichlet = dual_precondition_dirichlet(&setup.subdomains, &lambda, THREADS);
-    assert!((dirichlet[0] - lumped[0]).abs() < 1e-12);
+    Assert::within(1e-12).eq_within_tols(dirichlet[0], &lumped[0])?;
+    Ok(())
 }
 
 #[test]
-fn projected_pcg_solves_the_augmented_dual_problem() {
+fn projected_pcg_solves_the_augmented_dual_problem() -> Result<(), AssertionError> {
     let setup = setup();
     let rhs: Vector = [1.0].into_iter().collect();
-    let lambda = projected_pcg(&setup.subdomains, &setup.coarse, &rhs).unwrap();
-    assert!((lambda[0] - 46.0 / 27.0).abs() < 1e-8);
+    let lambda = projected_pcg(&setup.subdomains, &setup.coarse, &rhs)?;
+    Assert::within(1e-8).eq_within_tols(lambda[0], &(46.0 / 27.0))?;
+    Ok(())
 }
 
 #[test]
-fn primal_recovery_matches_the_hand_derived_solution() {
+fn primal_recovery_matches_the_hand_derived_solution() -> Result<(), AssertionError> {
     let setup = setup();
     let local_forces = [Vector::zero(2), Vector::zero(2)];
     let corner_solution: Vector = [-1.0 / 46.0].into_iter().collect();
     let lambda: Vector = [1.0].into_iter().collect();
     let recovered = primal_recovery(&setup.subdomains, &local_forces, &corner_solution, &lambda);
-    assert!((recovered[0][0] - (-1.0 / 46.0)).abs() < 1e-10);
-    assert!((recovered[0][1] - (-15.0 / 46.0)).abs() < 1e-10);
-    assert!((recovered[1][0] - (-1.0 / 46.0)).abs() < 1e-10);
-    assert!((recovered[1][1] - (6.0 / 23.0)).abs() < 1e-10);
+    Assert::within(1e-10).eq_within_tols(recovered[0][0], &(-1.0 / 46.0))?;
+    Assert::within(1e-10).eq_within_tols(recovered[0][1], &(-15.0 / 46.0))?;
+    Assert::within(1e-10).eq_within_tols(recovered[1][0], &(-1.0 / 46.0))?;
+    Assert::within(1e-10).eq_within_tols(recovered[1][1], &(6.0 / 23.0))?;
+    Ok(())
 }
 
 fn nonsymmetric_stiffnesses() -> [SquareMatrix; 2] {
@@ -304,7 +313,8 @@ fn dense_reference(
 }
 
 #[test]
-fn dual_operator_matches_the_dense_elimination_for_a_nonsymmetric_tangent() {
+fn dual_operator_matches_the_dense_elimination_for_a_nonsymmetric_tangent()
+-> Result<(), AssertionError> {
     let stiffnesses = nonsymmetric_stiffnesses();
     let forces = [Vector::zero(2), Vector::zero(2)];
     let setup = setup_with(stiffnesses.clone(), forces.clone());
@@ -315,15 +325,13 @@ fn dual_operator_matches_the_dense_elimination_for_a_nonsymmetric_tangent() {
     let expected = constraint.full_contraction(&unconstrained.solve_lu(&constraint).unwrap());
     let lambda: Vector = [1.0].into_iter().collect();
     let operator = dual_operator(&setup.subdomains, &lambda, &setup.coarse, THREADS);
-    assert!(
-        (operator[0] - expected).abs() < 1e-12,
-        "{} against {expected}",
-        operator[0]
-    );
+    Assert::within(1e-12).eq_within_tols(operator[0], &expected)?;
+    Ok(())
 }
 
 #[test]
-fn a_nonsymmetric_tangent_is_solved_end_to_end_through_the_dual_problem() {
+fn a_nonsymmetric_tangent_is_solved_end_to_end_through_the_dual_problem()
+-> Result<(), AssertionError> {
     let stiffnesses = nonsymmetric_stiffnesses();
     let forces: [Vector; 2] = [
         [1.0, 2.0].into_iter().collect(),
@@ -345,17 +353,17 @@ fn a_nonsymmetric_tangent_is_solved_end_to_end_through_the_dual_problem() {
         Preconditioner::Dirichlet,
         Quantity::new(1e-14),
         GMRES,
-    )
-    .unwrap();
+    )?;
     let corner_solution = setup.coarse.solve(
         &(&setup.reduced_force
             + &coupling_transpose(&setup.subdomains, &lambda, setup.coarse.len())),
     );
     let recovered = primal_recovery(&setup.subdomains, &forces, &corner_solution, &lambda);
     let tolerance = 1e-10;
-    assert!((lambda[0] - reference[3]).abs() < tolerance);
-    assert!((recovered[0][0] - reference[0]).abs() < tolerance);
-    assert!((recovered[1][0] - reference[0]).abs() < tolerance);
-    assert!((recovered[0][1] - reference[1]).abs() < tolerance);
-    assert!((recovered[1][1] - reference[2]).abs() < tolerance);
+    Assert::within(tolerance).eq_within_tols(lambda[0], &reference[3])?;
+    Assert::within(tolerance).eq_within_tols(recovered[0][0], &reference[0])?;
+    Assert::within(tolerance).eq_within_tols(recovered[1][0], &reference[0])?;
+    Assert::within(tolerance).eq_within_tols(recovered[0][1], &reference[1])?;
+    Assert::within(tolerance).eq_within_tols(recovered[1][1], &reference[2])?;
+    Ok(())
 }

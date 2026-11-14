@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{
         Quantity, Scalar, Tensor, TensorVector,
@@ -44,9 +45,10 @@ fn max_error(dt: Scalar) -> Scalar {
 }
 
 #[test]
-fn first_order() {
+fn first_order() -> Result<(), AssertionError> {
     let ratio = max_error(0.02) / max_error(0.01);
-    assert!((ratio - 2.0).abs() < 0.1, "ratio {ratio}");
+    Assert::within(0.1).eq_within_tols(ratio, &2.0)?;
+    Ok(())
 }
 
 #[test]

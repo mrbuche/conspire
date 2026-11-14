@@ -33,6 +33,14 @@ impl Default for Assert {
 }
 
 impl Assert {
+    /// Returns tolerances that accept only an absolute difference below `abs_tol`.
+    pub fn within(abs_tol: Scalar) -> Self {
+        Self {
+            abs_tol,
+            rel_tol: 0.0,
+            ..Self::default()
+        }
+    }
     /// Asserts exact equality.
     pub fn eq<T, Rhs>(a: T, b: Rhs) -> Result<(), AssertionError>
     where
