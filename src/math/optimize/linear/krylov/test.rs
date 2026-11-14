@@ -1,5 +1,9 @@
 use super::{Krylov, KrylovMethod};
-use crate::math::{Quantity, SquareMatrix, Vector, assert::Assert, optimize::Preconditioning};
+use crate::math::{
+    Quantity, SquareMatrix, Vector,
+    assert::{Assert, AssertionError},
+    optimize::Preconditioning,
+};
 
 fn krylov() -> Krylov {
     Krylov {
@@ -48,30 +52,24 @@ fn apply(matrix: &SquareMatrix) -> impl FnMut(&Vector) -> Vector + '_ {
 }
 
 #[test]
-fn matches_the_direct_solve() {
+fn matches_the_direct_solve() -> Result<(), AssertionError> {
     let matrix = coupled();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
-    let solution = krylov()
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = krylov().solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
-fn diagonal_preconditioner_also_matches() {
+fn diagonal_preconditioner_also_matches() -> Result<(), AssertionError> {
     let matrix = coupled();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
     let diagonal: Vector = (0..3).map(|i| matrix[i][i]).collect();
-    let solution = krylov()
-        .solve(apply(&matrix), Preconditioning::Diagonal(diagonal), &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = krylov().solve(apply(&matrix), Preconditioning::Diagonal(diagonal), &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
@@ -86,16 +84,13 @@ fn refuses_a_nonpositive_curvature() {
 }
 
 #[test]
-fn minres_serves_the_indefinite_system() {
+fn minres_serves_the_indefinite_system() -> Result<(), AssertionError> {
     let matrix = indefinite();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
-    let solution = minres()
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = minres().solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 fn gmres(restart: usize) -> Krylov {
@@ -120,66 +115,53 @@ fn nonsymmetric() -> SquareMatrix {
 }
 
 #[test]
-fn gmres_serves_the_nonsymmetric_system() {
+fn gmres_serves_the_nonsymmetric_system() -> Result<(), AssertionError> {
     let matrix = nonsymmetric();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
-    let solution = gmres(30)
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = gmres(30).solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
-fn gmres_restarts() {
+fn gmres_restarts() -> Result<(), AssertionError> {
     let matrix = nonsymmetric();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
-    let solution = gmres(2)
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = gmres(2).solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
-fn gmres_diagonal_preconditioner_matches() {
+fn gmres_diagonal_preconditioner_matches() -> Result<(), AssertionError> {
     let matrix = nonsymmetric();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
     let diagonal: Vector = (0..3).map(|i| matrix[i][i]).collect();
-    let solution = gmres(30)
-        .solve(apply(&matrix), Preconditioning::Diagonal(diagonal), &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = gmres(30).solve(apply(&matrix), Preconditioning::Diagonal(diagonal), &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
-fn gmres_serves_the_indefinite_system() {
+fn gmres_serves_the_indefinite_system() -> Result<(), AssertionError> {
     let matrix = indefinite();
     let rhs = right_hand_side();
     let expected = matrix.clone().solve_lu(&rhs).unwrap();
-    let solution = gmres(30)
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(&solution, &expected)
-        .unwrap();
+    let solution = gmres(30).solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &expected)?;
+    Ok(())
 }
 
 #[test]
-fn gmres_zero_right_hand_side() {
+fn gmres_zero_right_hand_side() -> Result<(), AssertionError> {
     let matrix = nonsymmetric();
     let rhs = Vector::zero(3);
-    let solution = gmres(30)
-        .solve(apply(&matrix), Preconditioning::None, &rhs)
-        .unwrap();
-    Assert::default().eq_within_tols(&solution, &rhs).unwrap();
+    let solution = gmres(30).solve(apply(&matrix), Preconditioning::None, &rhs)?;
+    Assert::default().eq_within_tols(&solution, &rhs)?;
+    Ok(())
 }
 
 mod typed {
@@ -217,33 +199,23 @@ mod typed {
         (0..3).map(|i| displacement[i].value()).collect()
     }
     #[test]
-    fn matches_the_direct_solve() {
+    fn matches_the_direct_solve() -> Result<(), AssertionError> {
         let expected = coupled().solve_lu(&right_hand_side()).unwrap();
-        let solution = krylov()
-            .solve(stiffness(coupled()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(flat(&solution), &expected)
-            .unwrap();
+        let solution = krylov().solve(stiffness(coupled()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(flat(&solution), &expected)?;
+        Ok(())
     }
     #[test]
-    fn matches_the_solve_without_units() {
+    fn matches_the_solve_without_units() -> Result<(), AssertionError> {
         let matrix = coupled();
-        let bare = krylov()
-            .solve(apply(&matrix), Preconditioning::None, &right_hand_side())
-            .unwrap();
-        let typed = krylov()
-            .solve(
-                stiffness(coupled()),
-                |load: &Load| {
-                    Displacement::from([load[0].value(), load[1].value(), load[2].value()])
-                },
-                &load(),
-            )
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(flat(&typed), &bare)
-            .unwrap();
+        let bare = krylov().solve(apply(&matrix), Preconditioning::None, &right_hand_side())?;
+        let typed = krylov().solve(
+            stiffness(coupled()),
+            |load: &Load| Displacement::from([load[0].value(), load[1].value(), load[2].value()]),
+            &load(),
+        )?;
+        Assert::default().eq_within_tols(flat(&typed), &bare)?;
+        Ok(())
     }
     #[test]
     fn refuses_a_nonpositive_curvature() {
@@ -291,16 +263,13 @@ mod typed {
             .unwrap()
     }
     #[test]
-    fn minres_serves_the_indefinite_system() {
-        let solution = minres()
-            .solve(stiffness(indefinite()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &indefinite().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+    fn minres_serves_the_indefinite_system() -> Result<(), AssertionError> {
+        let solution = minres().solve(stiffness(indefinite()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &indefinite().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
     fn minres_does_not_depend_on_the_size_of_the_load() {
@@ -343,28 +312,22 @@ mod typed {
         assert!(flat(&solution).iter().all(|&entry| entry == 0.0))
     }
     #[test]
-    fn gmres_serves_the_nonsymmetric_system() {
-        let solution = gmres(30)
-            .solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+    fn gmres_serves_the_nonsymmetric_system() -> Result<(), AssertionError> {
+        let solution = gmres(30).solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
-    fn gmres_restarts() {
-        let solution = gmres(2)
-            .solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+    fn gmres_restarts() -> Result<(), AssertionError> {
+        let solution = gmres(2).solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
     fn gmres_does_not_depend_on_the_size_of_the_load() {
@@ -384,23 +347,16 @@ mod typed {
         }
     }
     #[test]
-    fn gmres_matches_the_solve_without_units() {
+    fn gmres_matches_the_solve_without_units() -> Result<(), AssertionError> {
         let matrix = nonsymmetric();
-        let bare = gmres(30)
-            .solve(apply(&matrix), Preconditioning::None, &right_hand_side())
-            .unwrap();
-        let typed = gmres(30)
-            .solve(
-                stiffness(nonsymmetric()),
-                |load: &Load| {
-                    Displacement::from([load[0].value(), load[1].value(), load[2].value()])
-                },
-                &load(),
-            )
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(flat(&typed), &bare)
-            .unwrap();
+        let bare = gmres(30).solve(apply(&matrix), Preconditioning::None, &right_hand_side())?;
+        let typed = gmres(30).solve(
+            stiffness(nonsymmetric()),
+            |load: &Load| Displacement::from([load[0].value(), load[1].value(), load[2].value()]),
+            &load(),
+        )?;
+        Assert::default().eq_within_tols(flat(&typed), &bare)?;
+        Ok(())
     }
     #[test]
     fn gmres_gives_a_zero_solution_for_a_zero_load() {
@@ -428,61 +384,50 @@ mod typed {
         }
     }
     #[test]
-    fn gmres_converges_within_one_cycle() {
+    fn gmres_converges_within_one_cycle() -> Result<(), AssertionError> {
         let one_cycle = Krylov {
             max_steps: 3,
             method: KrylovMethod::Gmres(30),
             rel_tol: Quantity::new(1e-12),
         };
-        let solution = one_cycle
-            .solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+        let solution = one_cycle.solve(stiffness(nonsymmetric()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
-    fn gmres_converges_within_one_cycle_without_a_preconditioner() {
+    fn gmres_converges_within_one_cycle_without_a_preconditioner() -> Result<(), AssertionError> {
         let one_cycle = Krylov {
             max_steps: 3,
             method: KrylovMethod::Gmres(30),
             rel_tol: Quantity::new(1e-12),
         };
-        let solution = one_cycle
-            .solve(
-                stiffness(nonsymmetric()),
-                |load: &Load| {
-                    Displacement::from([load[0].value(), load[1].value(), load[2].value()])
-                },
-                &load(),
-            )
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+        let solution = one_cycle.solve(
+            stiffness(nonsymmetric()),
+            |load: &Load| Displacement::from([load[0].value(), load[1].value(), load[2].value()]),
+            &load(),
+        )?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &nonsymmetric().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
-    fn minres_converges_within_the_dimension() {
+    fn minres_converges_within_the_dimension() -> Result<(), AssertionError> {
         let exact = Krylov {
             max_steps: 3,
             method: KrylovMethod::Minres,
             rel_tol: Quantity::new(1e-12),
         };
-        let solution = exact
-            .solve(stiffness(indefinite()), jacobi(coupled()), &load())
-            .unwrap();
-        Assert::default()
-            .eq_within_tols(
-                flat(&solution),
-                &indefinite().solve_lu(&right_hand_side()).unwrap(),
-            )
-            .unwrap();
+        let solution = exact.solve(stiffness(indefinite()), jacobi(coupled()), &load())?;
+        Assert::default().eq_within_tols(
+            flat(&solution),
+            &indefinite().solve_lu(&right_hand_side()).unwrap(),
+        )?;
+        Ok(())
     }
     #[test]
     fn minres_stops_when_the_residual_cannot_be_shortened() {

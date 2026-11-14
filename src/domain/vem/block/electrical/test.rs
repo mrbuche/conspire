@@ -2,6 +2,7 @@ use super::super::thermal::test::{
     INTERIOR, MODEL, NODES, block, block_with, coordinates, pseudorandom, temperatures,
 };
 use crate::math::EPSILON;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     constitutive::electrical::dielectric::Linear,
     domain::{diffusion::DiffusionElements, electrical::NodalPotentials},
@@ -34,12 +35,17 @@ fn charges(block: &B, values: &[Scalar]) -> Vec<Scalar> {
         .collect()
 }
 
-fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) {
-    assert!((a - b).abs() <= tolerance, "{a} != {b}");
+fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) -> Result<(), AssertionError> {
+    Assert {
+        abs_tol: tolerance,
+        rel_tol: 0.0,
+        ..Default::default()
+    }
+    .eq_within_tols(a, &b)
 }
 
 #[test]
-fn a_linear_potential_leaves_the_interior_node_uncharged() {
+fn a_linear_potential_leaves_the_interior_node_uncharged() -> Result<(), AssertionError> {
     let gradient = [0.3, -0.7, 1.1];
     let values = coordinates()
         .iter()
@@ -50,18 +56,19 @@ fn a_linear_potential_leaves_the_interior_node_uncharged() {
         })
         .collect::<Vec<_>>();
     let found = charges(&dielectric(), &values);
-    assert_close(found[INTERIOR], 0.0, 1e-12);
+    assert_close(found[INTERIOR], 0.0, 1e-12)?;
     assert!(
         found
             .iter()
             .enumerate()
             .any(|(index, charge)| index != INTERIOR && charge.abs() > 1e-3),
         "the boundary nodes must carry the charge"
-    )
+    );
+    Ok(())
 }
 
 #[test]
-fn the_charges_sum_to_zero() {
+fn the_charges_sum_to_zero() -> Result<(), AssertionError> {
     assert_close(
         charges(&dielectric(), &pseudorandom()).iter().sum(),
         0.0,
@@ -70,11 +77,11 @@ fn the_charges_sum_to_zero() {
 }
 
 #[test]
-fn the_charges_are_the_gradient_of_the_energy() {
+fn the_charges_are_the_gradient_of_the_energy() -> Result<(), AssertionError> {
     let block = dielectric();
     let values = pseudorandom();
     let found = charges(&block, &values);
-    (0..NODES).for_each(|node| {
+    (0..NODES).try_for_each(|node| {
         let shifted = |shift: Scalar| {
             let mut values = values.clone();
             values[node] += shift;
@@ -89,18 +96,18 @@ fn the_charges_are_the_gradient_of_the_energy() {
 }
 
 #[test]
-fn the_stiffnesses_are_the_gradient_of_the_charges() {
+fn the_stiffnesses_are_the_gradient_of_the_charges() -> Result<(), AssertionError> {
     let block = dielectric();
     let values = pseudorandom();
-    let found = block.nodal_stiffnesses(&potentials(&values)).unwrap();
-    (0..NODES).for_each(|node| {
+    let found = block.nodal_stiffnesses(&potentials(&values))?;
+    (0..NODES).try_for_each(|node| {
         let shifted = |shift: Scalar| {
             let mut values = values.clone();
             values[node] += shift;
             charges(&block, &values)
         };
         let (above, below) = (shifted(EPSILON), shifted(-EPSILON));
-        (0..NODES).for_each(|other| {
+        (0..NODES).try_for_each(|other| {
             let entry = found.entry(other, node);
             assert_close(entry, (above[other] - below[other]) / (2.0 * EPSILON), 1e-7)
         })
@@ -108,12 +115,13 @@ fn the_stiffnesses_are_the_gradient_of_the_charges() {
 }
 
 #[test]
-fn the_charges_match_the_heat_flows_of_a_conductor_with_the_same_number() {
+fn the_charges_match_the_heat_flows_of_a_conductor_with_the_same_number()
+-> Result<(), AssertionError> {
     assert_eq!(MODEL.thermal_conductivity.value(), 2.5);
     let values = pseudorandom();
-    let flows = block().nodal_forces(&temperatures(&values)).unwrap();
+    let flows = block().nodal_forces(&temperatures(&values))?;
     charges(&dielectric(), &values)
         .iter()
         .zip(flows.iter())
-        .for_each(|(charge, flow)| assert_close(*charge, flow.value(), 1e-12))
+        .try_for_each(|(charge, flow)| assert_close(*charge, flow.value(), 1e-12))
 }

@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     constitutive::electrical::conduction::Ohmic,
     domain::diffusion::DiffusionElements,
@@ -116,14 +117,13 @@ fn electrodes(
     )
 }
 
-fn near(found: f64, expected: f64) {
-    crate::math::assert::Assert {
+fn near(found: f64, expected: f64) -> Result<(), AssertionError> {
+    Assert {
         abs_tol: NEAR * expected.abs().max(1.0),
         rel_tol: NEAR,
         ..Default::default()
     }
     .eq_within_tols(found, &expected)
-    .unwrap()
 }
 
 fn current(forces: &NodalCurrents, nodes: &[usize]) -> f64 {
@@ -151,11 +151,11 @@ where
 mod bar {
     use super::*;
     #[test]
-    fn the_potential_rises_linearly_along_the_bar() {
+    fn the_potential_rises_linearly_along_the_bar() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        (0..8).for_each(|node| {
+        (0..8).try_for_each(|node| {
             near(
                 potentials[node].value(),
                 VOLTAGE * coordinates[node][2].value() / GAP,
@@ -163,37 +163,39 @@ mod bar {
         })
     }
     #[test]
-    fn the_electrodes_carry_equal_and_opposite_current_of_conductance_times_voltage() {
+    fn the_electrodes_carry_equal_and_opposite_current_of_conductance_times_voltage()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         let conductance = 2.5 * WIDTH * DEPTH / GAP;
-        near(current(&forces, &top), conductance * VOLTAGE);
+        near(current(&forces, &top), conductance * VOLTAGE)?;
         near(current(&forces, &bottom), -conductance * VOLTAGE)
     }
     #[test]
-    fn the_potential_is_half_the_dissipated_power_of_conductance_times_voltage_squared() {
+    fn the_potential_is_half_the_dissipated_power_of_conductance_times_voltage_squared()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
         near(
-            model.potential(&potentials).unwrap().value(),
+            model.potential(&potentials)?.value(),
             0.5 * (2.5 * WIDTH * DEPTH / GAP) * VOLTAGE * VOLTAGE,
         )
     }
     #[test]
-    fn the_free_nodes_carry_no_current() {
+    fn the_free_nodes_carry_no_current() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, bottom, top) = electrodes(&coordinates, GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
+        let forces = model.nodal_forces(&potentials)?;
         (0..8)
             .filter(|node| !bottom.contains(node) && !top.contains(node))
-            .for_each(|node| near(forces[node].value(), 0.0))
+            .try_for_each(|node| near(forces[node].value(), 0.0))
     }
     #[test]
-    fn minimizing_the_energy_gives_the_same_potentials() {
+    fn minimizing_the_energy_gives_the_same_potentials() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let (constraint, _, _) = electrodes(&coordinates, GAP);
         let solved = solve(&model, constraint);
@@ -202,25 +204,24 @@ mod bar {
             Quantity<Power>,
             NodalCurrents,
             NodalPotentials,
-        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())
-        .unwrap();
-        (0..8).for_each(|node| near(minimized[node].value(), solved[node].value()))
+        >>::minimize(&model, &constraint, &(), NewtonRaphson::default())?;
+        (0..8).try_for_each(|node| near(minimized[node].value(), solved[node].value()))
     }
 }
 
 mod series {
     use super::*;
     #[test]
-    fn two_layers_make_resistors_in_series() {
+    fn two_layers_make_resistors_in_series() -> Result<(), AssertionError> {
         let (model, coordinates, conductance) = layers();
         let (constraint, bottom, top) = electrodes(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);
-        let forces = model.nodal_forces(&potentials).unwrap();
-        near(current(&forces, &top), conductance * VOLTAGE);
+        let forces = model.nodal_forces(&potentials)?;
+        near(current(&forces, &top), conductance * VOLTAGE)?;
         near(current(&forces, &bottom), -conductance * VOLTAGE)
     }
     #[test]
-    fn the_potential_across_each_layer_divides_with_its_resistance() {
+    fn the_potential_across_each_layer_divides_with_its_resistance() -> Result<(), AssertionError> {
         let (model, coordinates, conductance) = layers();
         let (constraint, _, _) = electrodes(&coordinates, 3.0 * GAP);
         let potentials = solve(&model, constraint);
@@ -271,7 +272,8 @@ mod source {
         BoundaryConditions::new().fix_nodes(Potential, 0..4)
     }
     #[test]
-    fn the_currents_a_linear_potential_needs_at_the_top_of_a_slab_give_that_potential() {
+    fn the_currents_a_linear_potential_needs_at_the_top_of_a_slab_give_that_potential()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let potentials =
             <Model<B, 3> as Root<NodalCurrents, NodalConductances, NodalPotentials>>::root(
@@ -279,20 +281,20 @@ mod source {
                 &grounded(),
                 &injection(&model, &coordinates),
                 NewtonRaphson::default(),
-            )
-            .unwrap();
+            )?;
         let expected = linear(&coordinates);
-        (0..8).for_each(|node| near(potentials[node].value(), expected[node].value()))
+        (0..8).try_for_each(|node| near(potentials[node].value(), expected[node].value()))
     }
     #[test]
-    fn the_injected_current_is_the_conductance_times_the_rise() {
+    fn the_injected_current_is_the_conductance_times_the_rise() -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let top = (4..8).collect::<Vec<_>>();
-        let sources = model.nodal_forces(&linear(&coordinates)).unwrap();
+        let sources = model.nodal_forces(&linear(&coordinates))?;
         near(current(&sources, &top), 2.5 * WIDTH * DEPTH / GAP * RISE)
     }
     #[test]
-    fn minimizing_the_energy_with_the_source_gives_the_same_potentials() {
+    fn minimizing_the_energy_with_the_source_gives_the_same_potentials()
+    -> Result<(), AssertionError> {
         let (model, coordinates) = slab();
         let solved =
             <Model<B, 3> as Root<NodalCurrents, NodalConductances, NodalPotentials>>::root(
@@ -300,16 +302,14 @@ mod source {
                 &grounded(),
                 &injection(&model, &coordinates),
                 NewtonRaphson::default(),
-            )
-            .unwrap();
+            )?;
         let minimized =
             <Model<B, 3> as Minimize<Quantity<Power>, NodalCurrents, NodalPotentials>>::minimize(
                 &model,
                 &grounded(),
                 &injection(&model, &coordinates),
                 NewtonRaphson::default(),
-            )
-            .unwrap();
-        (0..8).for_each(|node| near(minimized[node].value(), solved[node].value()))
+            )?;
+        (0..8).try_for_each(|node| near(minimized[node].value(), solved[node].value()))
     }
 }

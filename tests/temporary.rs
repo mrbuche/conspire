@@ -7671,8 +7671,7 @@ fn temporary_elastic_viscoplastic_rkmk_dae_adaptive_minimize() -> Result<(), Ass
             &time,
             &conditions_temporary_elastic_viscoplastic(),
             &(),
-        )
-        .unwrap();
+        )?;
     // one load window only: a single [t_0, t_end] adaptive step across the
     // whole [0, 1] span (as the sibling root-finding test exercises) starts
     // with a full-span trial step, which is too large a jump for this
@@ -7682,14 +7681,13 @@ fn temporary_elastic_viscoplastic_rkmk_dae_adaptive_minimize() -> Result<(), Ass
     let span = [time[0], time[1]];
     let (times, nodal_coordinates_history, state_variables_history) = fem_model
         .root_rkmk_dae_adaptive_minimize::<BogackiShampineTableau>(
-            NewtonRaphson::default(),
-            &span,
-            &conditions_temporary_elastic_viscoplastic(),
-            &(),
-            1e-6,
-            1e-6,
-        )
-        .unwrap();
+        NewtonRaphson::default(),
+        &span,
+        &conditions_temporary_elastic_viscoplastic(),
+        &(),
+        1e-6,
+        1e-6,
+    )?;
     // the controller subdivided the single [t_0, t_end] span
     assert!(times.len() > 2);
     // the fixed-step reference is a single coarse (0.25s) window, not a
@@ -7746,26 +7744,23 @@ fn temporary_elastic_viscoplastic_rkmk_dae_adaptive() -> Result<(), AssertionErr
     let fem_model: Model<Block<_, LinearTetrahedron<G>, _, _, _, _>, 3> =
         (mesh, model).try_into()?;
     let time: Vec<Quantity<Time>> = (0..=4).map(|i| Time::seconds(0.25 * i as f64)).collect();
-    let (_, reference_coordinates_history, _) = fem_model
-        .root_rkmk_dae::<BogackiShampineTableau>(
-            NewtonRaphson::default(),
-            &time,
-            &conditions_temporary_elastic_viscoplastic(),
-            &(),
-        )
-        .unwrap();
+    let (_, reference_coordinates_history, _) = fem_model.root_rkmk_dae::<BogackiShampineTableau>(
+        NewtonRaphson::default(),
+        &time,
+        &conditions_temporary_elastic_viscoplastic(),
+        &(),
+    )?;
     let reference = reference_coordinates_history.iter().last().unwrap().clone();
     let span = [time[0], *time.last().unwrap()];
     let (times, nodal_coordinates_history, state_variables_history) = fem_model
         .root_rkmk_dae_adaptive::<BogackiShampineTableau>(
-            NewtonRaphson::default(),
-            &span,
-            &conditions_temporary_elastic_viscoplastic(),
-            &(),
-            1e-6,
-            1e-6,
-        )
-        .unwrap();
+        NewtonRaphson::default(),
+        &span,
+        &conditions_temporary_elastic_viscoplastic(),
+        &(),
+        1e-6,
+        1e-6,
+    )?;
     // the controller subdivided the single [t_0, t_end] span
     assert!(times.len() > 2);
     let error = (nodal_coordinates_history.iter().last().unwrap() - &reference)
@@ -8188,7 +8183,7 @@ mod cbm_forces_smoke {
         geometry::{Coordinate, Coordinates, mesh::PrimitiveConnectivity},
         math::{
             Tensor,
-            assert::{Assert, perturbation},
+            assert::{Assert, AssertionError, perturbation},
         },
         mechanics::{DeformationGradient, Displacement},
         units::{Length, Stress},
@@ -8210,7 +8205,7 @@ mod cbm_forces_smoke {
     }
 
     #[test]
-    fn nodal_forces_and_stiffnesses_finite_difference() {
+    fn nodal_forces_and_stiffnesses_finite_difference() -> Result<(), AssertionError> {
         let (connectivity, reference_coordinates) = two_tetrahedra_reference();
         let constitutive_model = AlmansiHamelEulerian {
             bulk_modulus: Stress::pascals(13.0),
@@ -8224,7 +8219,7 @@ mod cbm_forces_smoke {
             .map(|reference_coordinate| &deformation_gradient * reference_coordinate)
             .collect::<conspire::cbm::NodalCoordinates<3>>();
         coordinates[4] += Displacement::from([0.03, -0.02, 0.015]);
-        let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates).unwrap();
+        let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates)?;
         let number_of_nodes = reference_coordinates.len();
         let mut finite_difference = NodalStiffnessesSolid::<3>::zero(number_of_nodes);
         (0..number_of_nodes).for_each(|node_b| {
@@ -8243,9 +8238,7 @@ mod cbm_forces_smoke {
                 })
             })
         });
-        Assert::default()
-            .eq_within_fd_tol(&nodal_stiffnesses, &finite_difference)
-            .unwrap()
+        Assert::default().eq_within_fd_tol(&nodal_stiffnesses, &finite_difference)
     }
 }
 

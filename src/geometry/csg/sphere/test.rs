@@ -23,7 +23,7 @@ fn point(entries: [f64; 3]) -> Coordinate<3> {
 
 #[test]
 fn signed_distance_is_radial_and_negative_inside() -> Result<(), AssertionError> {
-    let sphere = Sphere::new(point([1.0, 2.0, 3.0]), length(4.0)).unwrap();
+    let sphere = Sphere::new(point([1.0, 2.0, 3.0]), length(4.0))?;
     let distance = |entries| sphere.signed_distance(&point(entries));
     let assert = Assert::default();
     assert.eq_within_tols(distance([1.0, 2.0, 3.0]), &length(-4.0))?;
@@ -33,7 +33,7 @@ fn signed_distance_is_radial_and_negative_inside() -> Result<(), AssertionError>
 
 #[test]
 fn projects_along_the_radius() -> Result<(), AssertionError> {
-    let sphere = Sphere::new(point([0.0; 3]), length(3.0)).unwrap();
+    let sphere = Sphere::new(point([0.0; 3]), length(3.0))?;
     let projection = sphere.project(&point([6.0, 0.0, 0.0])).unwrap();
     let assert = Assert::default();
     assert.eq_within_tols(&projection.point, &point([3.0, 0.0, 0.0]))?;
@@ -42,7 +42,7 @@ fn projects_along_the_radius() -> Result<(), AssertionError> {
 
 #[test]
 fn the_centre_projects_somewhere_on_the_surface() -> Result<(), AssertionError> {
-    let sphere = Sphere::new(point([1.0, 2.0, 3.0]), length(2.0)).unwrap();
+    let sphere = Sphere::new(point([1.0, 2.0, 3.0]), length(2.0))?;
     let projection = sphere.project(&point([1.0, 2.0, 3.0])).unwrap();
     let radius = (&projection.point - &point([1.0, 2.0, 3.0])).norm();
     Assert::default().eq_within_tols(radius, &length(2.0))
@@ -78,7 +78,7 @@ fn satisfies_the_contract_at_any_size_and_place() -> Result<(), AssertionError> 
         ([5e8, 0.0, 0.0], 3e8),
         ([1e6, 1e6, 1e6], 1.0),
     ] {
-        let sphere = Sphere::new(point(center), length(radius)).unwrap();
+        let sphere = Sphere::new(point(center), length(radius))?;
         let low = center.map(|x| x - radius);
         let high = center.map(|x| x + radius);
         let points = grid(low, high, 7);
@@ -92,7 +92,7 @@ fn satisfies_the_contract_at_any_size_and_place() -> Result<(), AssertionError> 
 #[test]
 fn agrees_with_a_sampling_of_its_surface() -> Result<(), AssertionError> {
     let (center, radius) = ([0.3, -0.2, 0.1], 1.0);
-    let sphere = Sphere::new(point(center), length(radius)).unwrap();
+    let sphere = Sphere::new(point(center), length(radius))?;
     let samples = surface(center, radius, 4000);
     let spacing = (4.0 * PI / 4000.0_f64).sqrt() * 1.3;
     let points = grid(center.map(|x| x - radius), center.map(|x| x + radius), 6);

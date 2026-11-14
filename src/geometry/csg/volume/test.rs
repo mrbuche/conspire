@@ -147,7 +147,7 @@ fn a_package_of_a_surface_and_a_primitive_is_one_material() {
 #[test]
 fn a_union_answers_as_the_nearer_of_its_parts() -> Result<(), AssertionError> {
     let package = host_and_package().pop().unwrap();
-    let primitive = Cuboid::new(point([3.0, 0.0, 0.0]), point([4.0, 1.0, 1.0])).unwrap();
+    let primitive = Cuboid::new(point([3.0, 0.0, 0.0]), point([4.0, 1.0, 1.0]))?;
     let surface = solid([4.0, 0.0, 0.0], [5.0, 1.0, 1.0]);
     for query in grid().iter() {
         let expected = primitive

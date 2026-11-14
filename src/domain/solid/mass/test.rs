@@ -82,8 +82,7 @@ mod consistent_masses {
         let forces = masses.inertial_forces(&accelerations);
         Assert::default().eq_within_tols(
             masses
-                .factor()
-                .unwrap()
+                .factor()?
                 .nodal_accelerations(&(&NodalForcesSolid::zero(2) - &forces)),
             accelerations,
         )

@@ -1,5 +1,6 @@
 use super::super::test::{B, INTERIOR, NODES, block, coordinates, pseudorandom, temperatures};
 use crate::math::EPSILON;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     domain::{Model, diffusion::DiffusionElements},
     math::{Hessian, Scalar, Tensor},
@@ -15,12 +16,17 @@ fn forces(block: &B, values: &[Scalar]) -> Vec<Scalar> {
         .collect()
 }
 
-fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) {
-    assert!((a - b).abs() <= tolerance, "{a} != {b}");
+fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) -> Result<(), AssertionError> {
+    Assert {
+        abs_tol: tolerance,
+        rel_tol: 0.0,
+        ..Default::default()
+    }
+    .eq_within_tols(a, &b)
 }
 
 #[test]
-fn linear_field_is_in_equilibrium_at_the_interior_node() {
+fn linear_field_is_in_equilibrium_at_the_interior_node() -> Result<(), AssertionError> {
     let gradient = [0.3, -0.7, 1.1];
     let values = coordinates()
         .iter()
@@ -31,27 +37,28 @@ fn linear_field_is_in_equilibrium_at_the_interior_node() {
         })
         .collect::<Vec<_>>();
     let found = forces(&block(), &values);
-    assert_close(found[INTERIOR], 0.0, 1e-12);
+    assert_close(found[INTERIOR], 0.0, 1e-12)?;
     assert!(
         found
             .iter()
             .enumerate()
             .any(|(index, force)| index != INTERIOR && force.abs() > 1e-3),
         "the boundary nodes must carry the flux"
-    )
+    );
+    Ok(())
 }
 
 #[test]
-fn forces_sum_to_zero() {
+fn forces_sum_to_zero() -> Result<(), AssertionError> {
     assert_close(forces(&block(), &pseudorandom()).iter().sum(), 0.0, 1e-11)
 }
 
 #[test]
-fn forces_are_the_gradient_of_the_potential() {
+fn forces_are_the_gradient_of_the_potential() -> Result<(), AssertionError> {
     let block = block();
     let values = pseudorandom();
     let found = forces(&block, &values);
-    (0..NODES).for_each(|node| {
+    (0..NODES).try_for_each(|node| {
         let shifted = |shift: Scalar| {
             let mut values = values.clone();
             values[node] += shift;
@@ -66,18 +73,18 @@ fn forces_are_the_gradient_of_the_potential() {
 }
 
 #[test]
-fn stiffnesses_are_the_gradient_of_the_forces() {
+fn stiffnesses_are_the_gradient_of_the_forces() -> Result<(), AssertionError> {
     let block = block();
     let values = pseudorandom();
-    let found = block.nodal_stiffnesses(&temperatures(&values)).unwrap();
-    (0..NODES).for_each(|node| {
+    let found = block.nodal_stiffnesses(&temperatures(&values))?;
+    (0..NODES).try_for_each(|node| {
         let shifted = |shift: Scalar| {
             let mut values = values.clone();
             values[node] += shift;
             forces(&block, &values)
         };
         let (above, below) = (shifted(EPSILON), shifted(-EPSILON));
-        (0..NODES).for_each(|other| {
+        (0..NODES).try_for_each(|other| {
             let entry = found.entry(other, node);
             assert_close(entry, (above[other] - below[other]) / (2.0 * EPSILON), 1e-7)
         })
@@ -85,13 +92,12 @@ fn stiffnesses_are_the_gradient_of_the_forces() {
 }
 
 #[test]
-fn model_assembles_the_block() {
+fn model_assembles_the_block() -> Result<(), AssertionError> {
     let values = temperatures(&pseudorandom());
     let model: Model<B, 3> = (block(), NodalReferenceCoordinates::from(coordinates())).into();
     model
-        .nodal_forces(&values)
-        .unwrap()
+        .nodal_forces(&values)?
         .iter()
-        .zip(block().nodal_forces(&values).unwrap().iter())
-        .for_each(|(a, b)| assert_close(a.value(), b.value(), 0.0))
+        .zip(block().nodal_forces(&values)?.iter())
+        .try_for_each(|(a, b)| Assert::eq(a.value(), &b.value()))
 }

@@ -231,7 +231,7 @@ fn interior_points_rounded_onto_or_just_past_the_boundary_are_nudged_inside()
         point(-1e-14, 10.0, 0.0),
         point(32.0, 32.0 + 1e-13, 0.0),
     ] {
-        let found = run(&triangle, &[(key(0), position.clone())], &[], &[]).unwrap();
+        let found = run(&triangle, &[(key(0), position.clone())], &[], &[])?;
         let [u, v] = found.input.points[3];
         assert!(u > 0.0 && v > 0.0 && u + v < 1.0, "{position:?} {u} {v}");
         let [x, y] = [position[0].value() / 64.0, position[1].value() / 64.0];

@@ -30,7 +30,7 @@ fn core() -> Mesh<3> {
 
 #[test]
 fn buffer_captures_corners() -> Result<(), AssertionError> {
-    let mesh = core().buffer(&tessellation(), Fitting::Soft).unwrap();
+    let mesh = core().buffer(&tessellation(), Fitting::Soft)?;
     assert_eq!(mesh.coordinates().len(), 16);
     assert_eq!(mesh.number_of_element_blocks(), 1);
     assert_eq!(mesh.iter().flatten().count(), 7);
@@ -64,7 +64,7 @@ fn buffer_captures_corners() -> Result<(), AssertionError> {
 #[test]
 fn buffer_snaps_to_surface() -> Result<(), AssertionError> {
     let target = tessellation();
-    let mesh = core().buffer(&target, Fitting::Snap).unwrap();
+    let mesh = core().buffer(&target, Fitting::Snap)?;
     let surface = target.mesh();
     let elements: Vec<&[usize]> = surface.connectivities().iter().flatten().collect();
     let bvh = target.bvh();
@@ -232,9 +232,9 @@ fn assert_manifold_boundary(mesh: &Mesh<3>) {
 #[test]
 fn buffer_tets_repairs_a_pinched_trim() -> Result<(), AssertionError> {
     let target = bar();
-    let (mut mesh, _) = target.lattice_tet_background(Quantity::new(0.1)).unwrap();
-    target.trim(&mut mesh).unwrap();
-    let mesh = mesh.buffer_tets(&target, Fitting::Soft).unwrap();
+    let (mut mesh, _) = target.lattice_tet_background(Quantity::new(0.1))?;
+    target.trim(&mut mesh)?;
+    let mesh = mesh.buffer_tets(&target, Fitting::Soft)?;
     assert_eq!(mesh.number_of_element_blocks(), 1);
     assert_manifold_boundary(&mesh);
     assert!(worst_scaled_jacobian(&mesh) > 0.0);

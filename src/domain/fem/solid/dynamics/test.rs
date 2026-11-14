@@ -123,14 +123,12 @@ mod accelerations {
         let model = model();
         let masses = model.nodal_lumped_masses();
         let weights = weights(&model, Lumped);
-        let accelerations = model
-            .nodal_accelerations(
-                &NodalCoordinates::from(COORDINATES),
-                crate::units::Time::seconds(0.0),
-                &weights,
-                &masses,
-            )
-            .unwrap();
+        let accelerations = model.nodal_accelerations(
+            &NodalCoordinates::from(COORDINATES),
+            crate::units::Time::seconds(0.0),
+            &weights,
+            &masses,
+        )?;
         noise_tolerant().eq_within_tols(&accelerations, &gravity())
     }
     #[test]
@@ -140,10 +138,13 @@ mod accelerations {
         let mut stretched = COORDINATES;
         stretched[4][0] += 0.1;
         let stretched = NodalCoordinates::from(stretched);
-        let internal = model.nodal_forces(&stretched).unwrap();
-        let accelerations = model
-            .nodal_accelerations(&stretched, crate::units::Time::seconds(0.0), &(), &masses)
-            .unwrap();
+        let internal = model.nodal_forces(&stretched)?;
+        let accelerations = model.nodal_accelerations(
+            &stretched,
+            crate::units::Time::seconds(0.0),
+            &(),
+            &masses,
+        )?;
         let balance = masses.inertial_forces(&accelerations) + &internal;
         noise_tolerant().zero_within_tols(&balance)
     }
@@ -163,10 +164,7 @@ mod consistent_accelerations {
             [7.0, -3.0, 0.25],
         ]);
         let forces = masses.inertial_forces(&accelerations);
-        let recovered = masses
-            .factor()
-            .unwrap()
-            .nodal_accelerations(&unbalanced(&forces));
+        let recovered = masses.factor()?.nodal_accelerations(&unbalanced(&forces));
         Assert {
             abs_tol: 1e-9,
             rel_tol: 1e-9,
@@ -179,14 +177,12 @@ mod consistent_accelerations {
         let model = model();
         let masses = model.nodal_masses();
         let weights = weights(&model, Consistent);
-        let accelerations = model
-            .nodal_accelerations(
-                &NodalCoordinates::from(COORDINATES),
-                crate::units::Time::seconds(0.0),
-                &weights,
-                &masses.factor().unwrap(),
-            )
-            .unwrap();
+        let accelerations = model.nodal_accelerations(
+            &NodalCoordinates::from(COORDINATES),
+            crate::units::Time::seconds(0.0),
+            &weights,
+            &masses.factor()?,
+        )?;
         noise_tolerant().eq_within_tols(&accelerations, &gravity())
     }
 }
@@ -816,7 +812,7 @@ mod consistent_masses {
     #[test]
     fn fixed_degrees_of_freedom_are_eliminated_from_the_solve() -> Result<(), AssertionError> {
         let masses = model().nodal_masses();
-        let inverse = MassMatrix::<3>::inverse(&masses, &FIXED).unwrap();
+        let inverse = MassMatrix::<3>::inverse(&masses, &FIXED)?;
         let accelerations = inverse.nodal_accelerations(&unbalanced(&forces()));
         FIXED
             .iter()
@@ -835,12 +831,10 @@ mod consistent_masses {
     #[test]
     fn without_fixed_degrees_of_freedom_the_full_mass_is_solved() -> Result<(), AssertionError> {
         let masses = model().nodal_masses();
-        let free = MassMatrix::<3>::inverse(&masses, &[])
-            .unwrap()
-            .nodal_accelerations(&unbalanced(&forces()));
+        let free =
+            MassMatrix::<3>::inverse(&masses, &[])?.nodal_accelerations(&unbalanced(&forces()));
         let full = masses
-            .factor::<3>()
-            .unwrap()
+            .factor::<3>()?
             .nodal_accelerations(&unbalanced(&forces()));
         Assert {
             abs_tol: 1e-9,

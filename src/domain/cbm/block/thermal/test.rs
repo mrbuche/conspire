@@ -1,4 +1,5 @@
 use super::NodalTemperatures;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     cbm::{
         Model, NodalReferenceCoordinates,
@@ -69,34 +70,38 @@ fn times(dt: f64, steps: usize) -> Vec<Quantity<Time>> {
         .collect()
 }
 
-fn near(a: f64, b: f64, tolerance: f64) {
-    assert!(
-        (a - b).abs() <= tolerance * b.abs().max(1.0),
-        "{a} is not within {tolerance} of {b}"
-    );
+fn near(a: f64, b: f64, tolerance: f64) -> Result<(), AssertionError> {
+    Assert {
+        abs_tol: tolerance * b.abs().max(1.0),
+        rel_tol: 0.0,
+        ..Default::default()
+    }
+    .eq_within_tols(a, &b)
 }
 
 mod conduction {
     use super::*;
     #[test]
-    fn a_linear_temperature_field_has_its_gradient_at_every_particle() {
+    fn a_linear_temperature_field_has_its_gradient_at_every_particle() -> Result<(), AssertionError>
+    {
         let gradient = [3.0, -2.0, 5.0];
         let field = temperatures(
             COORDINATES
                 .map(|[x, y, z]| 300.0 + gradient[0] * x + gradient[1] * y + gradient[2] * z),
         );
-        block().nodes.iter().for_each(|node| {
+        block().nodes.iter().try_for_each(|node| {
             let found = node.temperature_gradient(&field);
-            (0..3).for_each(|i| near(found[i].value(), gradient[i], 1e-10))
-        });
+            (0..3).try_for_each(|i| near(found[i].value(), gradient[i], 1e-10))
+        })?;
+        Ok(())
     }
     #[test]
-    fn the_nodal_heating_is_the_potential_gradient() {
+    fn the_nodal_heating_is_the_potential_gradient() -> Result<(), AssertionError> {
         let model = model();
         let initial = temperatures([300.0, 500.0, 350.0, 420.0, 280.0]);
-        let forces = model.nodal_forces(&initial).unwrap();
+        let forces = model.nodal_forces(&initial)?;
         let step = 1e-4;
-        (0..NODES).for_each(|node| {
+        (0..NODES).try_for_each(|node| {
             let shifted = |sign: f64| {
                 let mut shifted = initial.clone();
                 shifted[node] += Temperature::kelvin(sign * step);
@@ -107,51 +112,51 @@ mod conduction {
                 forces[node].value(),
                 1e-6,
             )
-        });
+        })?;
+        Ok(())
     }
     #[test]
-    fn the_stiffness_is_the_symmetric_derivative_of_the_heating() {
+    fn the_stiffness_is_the_symmetric_derivative_of_the_heating() -> Result<(), AssertionError> {
         let model = model();
         let initial = temperatures([300.0, 500.0, 350.0, 420.0, 280.0]);
-        let stiffnesses = model.nodal_stiffnesses(&initial).unwrap();
+        let stiffnesses = model.nodal_stiffnesses(&initial)?;
         let step = 1.0;
-        (0..NODES).for_each(|column| {
+        (0..NODES).try_for_each(|column| {
             let shifted = |sign: f64| {
                 let mut shifted = initial.clone();
                 shifted[column] += Temperature::kelvin(sign * step);
                 model.nodal_forces(&shifted).unwrap()
             };
             let (up, down) = (shifted(1.0), shifted(-1.0));
-            (0..NODES).for_each(|row| {
+            (0..NODES).try_for_each(|row| {
                 near(
                     (up[row].value() - down[row].value()) / (2.0 * step),
                     stiffnesses.entry(row, column),
                     1e-8,
-                );
+                )?;
                 near(
                     stiffnesses.entry(row, column),
                     stiffnesses.entry(column, row),
                     1e-12,
                 )
             })
-        });
+        })?;
+        Ok(())
     }
     #[test]
-    fn heat_is_conserved_and_a_uniform_temperature_does_not_flow() {
+    fn heat_is_conserved_and_a_uniform_temperature_does_not_flow() -> Result<(), AssertionError> {
         let model = model();
-        let flows = model
-            .nodal_forces(&temperatures([300.0, 500.0, 350.0, 420.0, 280.0]))
-            .unwrap();
+        let flows = model.nodal_forces(&temperatures([300.0, 500.0, 350.0, 420.0, 280.0]))?;
         near(
             flows.iter().map(|flow| flow.value()).sum::<f64>(),
             0.0,
             1e-9,
-        );
+        )?;
         model
-            .nodal_forces(&temperatures([300.0; NODES]))
-            .unwrap()
+            .nodal_forces(&temperatures([300.0; NODES]))?
             .iter()
-            .for_each(|flow| near(flow.value(), 0.0, 1e-9));
+            .try_for_each(|flow| near(flow.value(), 0.0, 1e-9))?;
+        Ok(())
     }
     #[test]
     fn the_solver_pattern_covers_every_stored_stiffness() {
@@ -173,7 +178,8 @@ mod conduction {
 mod capacity {
     use super::*;
     #[test]
-    fn the_nodal_capacities_total_the_volumetric_capacity_times_the_volume() {
+    fn the_nodal_capacities_total_the_volumetric_capacity_times_the_volume()
+    -> Result<(), AssertionError> {
         let model = model();
         let total: f64 = model
             .nodal_lumped_heat_capacities()
@@ -184,7 +190,8 @@ mod capacity {
             .with_density(Density::kilograms_per_cubic_meter(1.0))
             .mass()
             .value();
-        near(total, heat_capacity().value() * volume, 1e-10);
+        near(total, heat_capacity().value() * volume, 1e-10)?;
+        Ok(())
     }
 }
 
@@ -225,7 +232,8 @@ mod integrate {
             .value()
     }
     #[test]
-    fn an_insulated_body_conserves_its_heat_and_relaxes_to_the_mean() {
+    fn an_insulated_body_conserves_its_heat_and_relaxes_to_the_mean() -> Result<(), AssertionError>
+    {
         let model = model();
         let dt = step(&model);
         let capacities = model.nodal_lumped_heat_capacities();
@@ -237,44 +245,41 @@ mod integrate {
                 .sum()
         };
         let initial = temperatures([300.0, 500.0, 350.0, 420.0, 280.0]);
-        let (_, history, _) = model
-            .integrate(
-                Checked {
-                    safety: 0.5,
-                    interval: 1,
-                },
-                Lumped,
-                &Euler::default(),
-                &times(dt, 4000),
-                initial.clone(),
-                &(),
-                &fixed_temperatures(&[]),
-            )
-            .unwrap();
+        let (_, history, _) = model.integrate(
+            Checked {
+                safety: 0.5,
+                interval: 1,
+            },
+            Lumped,
+            &Euler::default(),
+            &times(dt, 4000),
+            initial.clone(),
+            &(),
+            &fixed_temperatures(&[]),
+        )?;
         let last = history.iter().last().unwrap();
-        near(heat(last), heat(&initial), 1e-9);
+        near(heat(last), heat(&initial), 1e-9)?;
         let mean = heat(&initial) / capacities.iter().map(|c| c.value()).sum::<f64>();
         last.iter()
-            .for_each(|temperature| near(temperature.value(), mean, 1e-6));
+            .try_for_each(|temperature| near(temperature.value(), mean, 1e-6))?;
+        Ok(())
     }
     #[test]
-    fn a_fixed_temperature_is_held_and_the_rest_relax_to_it() {
+    fn a_fixed_temperature_is_held_and_the_rest_relax_to_it() -> Result<(), AssertionError> {
         let model = model();
         let dt = step(&model);
-        let (_, history, rates) = model
-            .integrate(
-                Checked {
-                    safety: 0.5,
-                    interval: 1,
-                },
-                Lumped,
-                &Euler::default(),
-                &times(dt, 4000),
-                temperatures([300.0, 500.0, 350.0, 420.0, 280.0]),
-                &(),
-                &fixed_temperatures(&[0]),
-            )
-            .unwrap();
+        let (_, history, rates) = model.integrate(
+            Checked {
+                safety: 0.5,
+                interval: 1,
+            },
+            Lumped,
+            &Euler::default(),
+            &times(dt, 4000),
+            temperatures([300.0, 500.0, 350.0, 420.0, 280.0]),
+            &(),
+            &fixed_temperatures(&[0]),
+        )?;
         history.iter().for_each(|t| assert_eq!(t[0].value(), 300.0));
         rates.iter().for_each(|r| assert_eq!(r[0].value(), 0.0));
         history
@@ -282,7 +287,8 @@ mod integrate {
             .last()
             .unwrap()
             .iter()
-            .for_each(|temperature| near(temperature.value(), 300.0, 1e-6));
+            .try_for_each(|temperature| near(temperature.value(), 300.0, 1e-6))?;
+        Ok(())
     }
 }
 
@@ -335,7 +341,8 @@ mod integrate_implicit {
         (history, rates)
     }
     #[test]
-    fn an_insulated_body_conserves_its_heat_and_relaxes_at_many_times_the_explicit_limit() {
+    fn an_insulated_body_conserves_its_heat_and_relaxes_at_many_times_the_explicit_limit()
+    -> Result<(), AssertionError> {
         let model = model();
         let capacities = model.nodal_lumped_heat_capacities();
         let heat = |temperatures: &NodalTemperatures| -> f64 {
@@ -355,17 +362,18 @@ mod integrate_implicit {
         );
         history
             .iter()
-            .for_each(|temperatures| near(heat(temperatures), heat(&initial), 1e-9));
+            .try_for_each(|temperatures| near(heat(temperatures), heat(&initial), 1e-9))?;
         let mean = heat(&initial) / capacities.iter().map(|c| c.value()).sum::<f64>();
         history
             .iter()
             .last()
             .unwrap()
             .iter()
-            .for_each(|temperature| near(temperature.value(), mean, 1e-6));
+            .try_for_each(|temperature| near(temperature.value(), mean, 1e-6))?;
+        Ok(())
     }
     #[test]
-    fn a_fixed_temperature_is_held_and_the_rest_relax_to_it() {
+    fn a_fixed_temperature_is_held_and_the_rest_relax_to_it() -> Result<(), AssertionError> {
         let model = model();
         let (history, rates) = run(
             &model,
@@ -381,6 +389,7 @@ mod integrate_implicit {
             .last()
             .unwrap()
             .iter()
-            .for_each(|temperature| near(temperature.value(), 300.0, 1e-6));
+            .try_for_each(|temperature| near(temperature.value(), 300.0, 1e-6))?;
+        Ok(())
     }
 }

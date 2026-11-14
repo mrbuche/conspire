@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     cbm::{Model, NodalReferenceCoordinates, block::Block},
     constitutive::{electrical::dielectric::Linear, thermal::conduction::Fourier},
@@ -61,20 +62,22 @@ fn potentials(volts: [f64; NODES]) -> NodalPotentials {
     volts.map(ElectricPotential::volts).into()
 }
 
-fn near(a: f64, b: f64, tolerance: f64) {
-    assert!(
-        (a - b).abs() <= tolerance * b.abs().max(1.0),
-        "{a} is not within {tolerance} of {b}"
-    );
+fn near(a: f64, b: f64, tolerance: f64) -> Result<(), AssertionError> {
+    Assert {
+        abs_tol: tolerance * b.abs().max(1.0),
+        rel_tol: 0.0,
+        ..Default::default()
+    }
+    .eq_within_tols(a, &b)
 }
 
 #[test]
-fn the_charge_is_the_potential_gradient() {
+fn the_charge_is_the_potential_gradient() -> Result<(), AssertionError> {
     let model = model();
     let initial = potentials(VOLTS);
-    let charges = model.nodal_forces(&initial).unwrap();
+    let charges = model.nodal_forces(&initial)?;
     let step = 1e-4;
-    (0..NODES).for_each(|node| {
+    (0..NODES).try_for_each(|node| {
         let shifted = |sign: f64| {
             let mut shifted = initial.clone();
             shifted[node] += ElectricPotential::volts(sign * step);
@@ -85,59 +88,61 @@ fn the_charge_is_the_potential_gradient() {
             charges[node].value(),
             1e-6,
         )
-    });
+    })?;
+    Ok(())
 }
 
 #[test]
-fn the_stiffness_is_the_symmetric_derivative_of_the_charge() {
+fn the_stiffness_is_the_symmetric_derivative_of_the_charge() -> Result<(), AssertionError> {
     let model = model();
     let initial = potentials(VOLTS);
-    let stiffnesses = model.nodal_stiffnesses(&initial).unwrap();
+    let stiffnesses = model.nodal_stiffnesses(&initial)?;
     let step = 1.0;
-    (0..NODES).for_each(|column| {
+    (0..NODES).try_for_each(|column| {
         let shifted = |sign: f64| {
             let mut shifted = initial.clone();
             shifted[column] += ElectricPotential::volts(sign * step);
             model.nodal_forces(&shifted).unwrap()
         };
         let (up, down) = (shifted(1.0), shifted(-1.0));
-        (0..NODES).for_each(|row| {
+        (0..NODES).try_for_each(|row| {
             near(
                 (up[row].value() - down[row].value()) / (2.0 * step),
                 stiffnesses.entry(row, column),
                 1e-8,
-            );
+            )?;
             near(
                 stiffnesses.entry(row, column),
                 stiffnesses.entry(column, row),
                 1e-12,
             )
         })
-    });
+    })?;
+    Ok(())
 }
 
 #[test]
-fn charge_is_conserved_and_a_uniform_potential_has_none() {
+fn charge_is_conserved_and_a_uniform_potential_has_none() -> Result<(), AssertionError> {
     let model = model();
     let total: f64 = model
-        .nodal_forces(&potentials(VOLTS))
-        .unwrap()
+        .nodal_forces(&potentials(VOLTS))?
         .iter()
         .map(|charge| charge.value())
         .sum();
-    near(total, 0.0, 1e-12);
+    near(total, 0.0, 1e-12)?;
     model
-        .nodal_forces(&potentials([7.3; NODES]))
-        .unwrap()
+        .nodal_forces(&potentials([7.3; NODES]))?
         .iter()
-        .for_each(|charge| near(charge.value(), 0.0, 1e-12));
+        .try_for_each(|charge| near(charge.value(), 0.0, 1e-12))?;
+    Ok(())
 }
 
 #[test]
-fn the_charges_match_the_heat_flows_of_a_conductor_with_the_same_number() {
-    let charges = model().nodal_forces(&potentials(VOLTS)).unwrap();
-    let flows = thermal_model()
-        .nodal_forces(&NodalTemperatures::from(VOLTS.map(Temperature::kelvin)))
-        .unwrap();
-    (0..NODES).for_each(|node| near(charges[node].value(), flows[node].value(), 1e-12));
+fn the_charges_match_the_heat_flows_of_a_conductor_with_the_same_number()
+-> Result<(), AssertionError> {
+    let charges = model().nodal_forces(&potentials(VOLTS))?;
+    let flows =
+        thermal_model().nodal_forces(&NodalTemperatures::from(VOLTS.map(Temperature::kelvin)))?;
+    (0..NODES).try_for_each(|node| near(charges[node].value(), flows[node].value(), 1e-12))?;
+    Ok(())
 }

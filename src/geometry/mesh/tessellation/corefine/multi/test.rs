@@ -43,7 +43,7 @@ fn owned(boxes: &[Box3], material: usize) -> f64 {
 }
 
 fn assert_materials(boxes: &[Box3], touching: bool) -> Result<(), AssertionError> {
-    let interfaces = Interfaces::new(&make(boxes)).unwrap();
+    let interfaces = Interfaces::new(&make(boxes))?;
     assert_eq!(interfaces.inside().len(), interfaces.outside().len());
     for material in 0..boxes.len() {
         let expected = owned(boxes, material);
@@ -119,7 +119,7 @@ fn a_solid_drawn_over_another_replaces_it_where_they_overlap() -> Result<(), Ass
     assert_materials(&boxes, false)?;
     assert_eq!(owned(&boxes, 1), 1.0);
     assert!(owned(&boxes, 0) < 1.0);
-    let interfaces = Interfaces::new(&make(&boxes)).unwrap();
+    let interfaces = Interfaces::new(&make(&boxes))?;
     assert!(interfaces.outside().contains(&Some(0)));
     assert!(interfaces.outside().iter().any(|&o| o.is_none()));
     Ok(())
@@ -431,9 +431,9 @@ fn the_surface_between_touching_boxes_is_their_shared_face() {
 #[test]
 fn the_surface_between_nested_boxes_encloses_the_inner_one() -> Result<(), AssertionError> {
     let boxes = [([0, 0, 0], [8, 8, 8]), ([2, 2, 2], [6, 6, 6])];
-    let interfaces = Interfaces::new(&make(&boxes)).unwrap();
-    let inner = interfaces.between(1, 0).unwrap();
-    let outer = interfaces.between(0, 1).unwrap();
+    let interfaces = Interfaces::new(&make(&boxes))?;
+    let inner = interfaces.between(1, 0)?;
+    let outer = interfaces.between(0, 1)?;
     Assert::default().eq_within_tols(inner.enclosed_volume(), &Quantity::new(1.0))?;
     Assert::default().eq_within_tols(outer.enclosed_volume(), &Quantity::new(-1.0))
 }

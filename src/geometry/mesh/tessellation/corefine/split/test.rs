@@ -38,7 +38,7 @@ fn disjoint_tessellations_are_unchanged() {
 fn overlapping_cubes_are_split_along_their_curve_and_stay_closed() -> Result<(), AssertionError> {
     let first = cuboid([0.0; 3], [1.0; 3]);
     let second = cuboid([0.5; 3], [1.5; 3]);
-    let [a, b] = first.corefine(&second).unwrap();
+    let [a, b] = first.corefine(&second)?;
     for (split, original) in [(&a, &first), (&b, &second)] {
         assert_closed(split);
         assert_same_volume(split, original)?;
@@ -53,7 +53,7 @@ fn cubes_sharing_a_face_are_split_where_the_faces_overlap_and_stay_closed()
 -> Result<(), AssertionError> {
     let first = cuboid([0.0; 3], [1.0; 3]);
     let second = cuboid([1.0, 0.25, 0.25], [2.0, 0.75, 0.75]);
-    let [a, b] = first.corefine(&second).unwrap();
+    let [a, b] = first.corefine(&second)?;
     for (split, original) in [(&a, &first), (&b, &second)] {
         assert_closed(split);
         assert_same_volume(split, original)?;
@@ -74,7 +74,7 @@ fn cubes_that_cross_through_vertices_and_edges_stay_closed() -> Result<(), Asser
     .enumerate()
     {
         println!("case {n}");
-        let [a, b] = first.corefine(&second).unwrap();
+        let [a, b] = first.corefine(&second)?;
         for (split, original) in [(&a, &first), (&b, &second)] {
             assert_closed(split);
             assert_same_volume(split, original)?;
@@ -86,10 +86,7 @@ fn cubes_that_cross_through_vertices_and_edges_stay_closed() -> Result<(), Asser
 #[test]
 fn the_new_vertices_lie_on_the_other_surface() -> Result<(), AssertionError> {
     let (first, second) = (solid([0.0; 3], [1.0; 3]), solid([0.5; 3], [1.5; 3]));
-    let [a, b] = first
-        .tessellation()
-        .corefine(second.tessellation())
-        .unwrap();
+    let [a, b] = first.tessellation().corefine(second.tessellation())?;
     for (split, original, against) in [(&a, &first, &second), (&b, &second, &first)] {
         let coordinates = split.mesh().coordinates();
         let old = original.tessellation().mesh().coordinates().len();
@@ -136,7 +133,7 @@ fn a_sphere_and_a_cube_split_into_closed_surfaces() -> Result<(), AssertionError
     use crate::geometry::mesh::test::sphere;
     let cube = cuboid([-0.3, -0.3, -0.2], [0.7, 0.6, 0.9]);
     let ball = sphere(12, 16, 0.8);
-    let [a, b] = ball.corefine(&cube).unwrap();
+    let [a, b] = ball.corefine(&cube)?;
     assert_closed(&a);
     assert_closed(&b);
     assert_same_volume(&a, &ball)?;
