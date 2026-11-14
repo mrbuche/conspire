@@ -7,6 +7,7 @@ use crate::{
     math::{Style, StyledError, assert::AssertionError, defeat_message},
 };
 use core::{
+    error::Error,
     fmt::{self, Debug, Display, Formatter},
     marker::PhantomData,
 };
@@ -100,4 +101,4 @@ impl<K: ElementKind> Display for ElementError<K> {
     }
 }
 
-impl<K: ElementKind> core::error::Error for ElementError<K> {}
+impl<K: ElementKind> Error for ElementError<K> {}

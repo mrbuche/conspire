@@ -4,6 +4,7 @@ use crate::{
     },
     units::{BOLTZMANN_CONSTANT, ROOM_TEMPERATURE},
 };
+use core::f64::consts::PI;
 
 #[test]
 fn monte_carlo() {
@@ -29,7 +30,7 @@ fn bias() {
     let kappa = 100.0;
     let link_length = 1.0;
     let model = ExtensibleFreelyRotatingChain {
-        link_angle: core::f64::consts::PI * 60.0 / 180.0,
+        link_angle: PI * 60.0 / 180.0,
         link_length,
         link_stiffness: kappa * BOLTZMANN_CONSTANT.value() * ROOM_TEMPERATURE.value()
             / (link_length * link_length),

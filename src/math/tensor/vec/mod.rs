@@ -3,14 +3,14 @@ use crate::math::{
     TensorRank1List, TensorVec,
 };
 use crate::units::Dimensionless;
-use alloc::{collections::VecDeque, vec};
+use alloc::{collections::VecDeque, vec::IntoIter};
 use core::{
     fmt::{Display, Formatter, Result},
     iter::Sum,
     mem::forget,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
     ptr::read,
-    slice,
+    slice::Iter,
 };
 
 /// A resizable collection of tensors.
@@ -254,7 +254,7 @@ where
     T: Tensor,
 {
     type Item = T;
-    type IntoIter = vec::IntoIter<Self::Item>;
+    type IntoIter = IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -265,7 +265,7 @@ where
     T: Tensor,
 {
     type Item = &'a T;
-    type IntoIter = slice::Iter<'a, T>;
+    type IntoIter = Iter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
