@@ -3,12 +3,13 @@ mod test;
 
 use crate::{
     geometry::{
-        Coordinate,
-        mesh::{Mesh, from::kuhn},
+        Coordinate, Coordinates,
+        mesh::{Connectivities, Connectivity, Mesh, from::kuhn, retain::subset},
         solid::{Partition, SolidOracle},
     },
-    math::Quantity,
+    math::{Quantity, Tensor, TensorVec},
 };
+use alloc::collections::BTreeSet;
 use core::array::from_fn;
 
 fn lattice_size(
@@ -91,5 +92,78 @@ impl Mesh<3> {
             &size,
             lower,
         ))
+    }
+    /// The mesh with its elements in one block per volume of the partition, labeled by its index.
+    ///
+    /// An element belongs to the volume owning its centroid, the mean of its nodes, and is dropped
+    /// where no volume does, as are the nodes only it had. A volume owning no element has no
+    /// block. Like [`Mesh::from_partition`] and [`Mesh::from_partition_tets`], the interface
+    /// between two blocks is a staircase, but the mesh may be any of a tree's, as long as it is
+    /// of a single block of one kind of primitive element.
+    pub fn label_by_partition<O: SolidOracle>(
+        &self,
+        partition: &Partition<O>,
+    ) -> Result<Self, &'static str> {
+        let mut blocks = self.iter();
+        let (Some(block), None) = (blocks.next(), blocks.next()) else {
+            return Err("only a mesh of a single block can be labeled");
+        };
+        if matches!(
+            block,
+            Connectivity::Polyhedral(_) | Connectivity::Polygonal(_)
+        ) {
+            return Err("polytopal elements have no centroid to be labeled by");
+        }
+        let coordinates = self.coordinates();
+        let owners: Vec<Option<usize>> = block
+            .iter()
+            .map(|element| {
+                let centroid = from_fn(|axis| {
+                    element
+                        .iter()
+                        .map(|&node| coordinates[node][axis].value())
+                        .sum::<f64>()
+                        / element.len() as f64
+                })
+                .into();
+                partition.owner(&centroid)
+            })
+            .collect();
+        let labels: Vec<usize> = owners
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if labels.is_empty() {
+            return Err("no volume owns any element");
+        }
+        let mut remap = vec![usize::MAX; coordinates.len()];
+        let mut kept_coordinates = Coordinates::new();
+        let mut id = |node: usize| {
+            if remap[node] == usize::MAX {
+                remap[node] = kept_coordinates.len();
+                kept_coordinates.push(coordinates[node].clone())
+            }
+            remap[node]
+        };
+        let connectivities: Vec<Connectivity> = labels
+            .iter()
+            .map(|&label| {
+                let kept: Vec<&[usize]> = block
+                    .iter()
+                    .zip(&owners)
+                    .filter(|&(_, &owner)| owner == Some(label))
+                    .map(|(element, _)| element)
+                    .collect();
+                subset(block, &kept, &mut id)
+            })
+            .collect();
+        Ok((
+            Connectivities::from((connectivities, labels)),
+            kept_coordinates,
+        )
+            .into())
     }
 }

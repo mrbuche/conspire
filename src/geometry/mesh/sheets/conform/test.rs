@@ -2,7 +2,7 @@ use crate::{
     geometry::{
         Coordinate,
         mesh::{
-            Connectivities, Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
+            Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
             test::{solid, sphere},
         },
         ntree::Balancing,
@@ -63,31 +63,9 @@ fn dual_ball(scale: f64) -> Mesh<3> {
     let (background, _) = sphere(24, 48, 0.25)
         .dual_background(Balancing::Strong(1), scale, None)
         .unwrap();
-    let coordinates = background.coordinates();
-    let mut blocks = [Vec::new(), Vec::new()];
-    background.iter().flatten().for_each(|element| {
-        let radius = (0..3)
-            .map(|axis| {
-                let middle = element
-                    .iter()
-                    .map(|&node| coordinates[node][axis].value())
-                    .sum::<f64>()
-                    / 8.0;
-                middle * middle
-            })
-            .sum::<f64>()
-            .sqrt();
-        blocks[usize::from(radius < 0.25)].push(from_fn(|node| element[node]))
-    });
-    let blocks: Vec<Connectivity> = blocks
-        .into_iter()
-        .map(|hexahedra: Vec<[usize; 8]>| Connectivity::Hexahedral(hexahedra.into()))
-        .collect();
-    (
-        Connectivities::from((blocks, vec![0, 1])),
-        coordinates.clone(),
-    )
-        .into()
+    background
+        .label_by_partition(&Partition::new(box_with_one_ball()))
+        .unwrap()
 }
 
 fn conformed_dual(scale: f64) -> (Mesh<3>, Vec<usize>) {
