@@ -5,7 +5,7 @@ use crate::{
             Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
             test::{solid, sphere},
         },
-        ntree::Balancing,
+        ntree::{Balancing, Pairing},
         solid::Partition,
     },
     math::{FxHashSet, Tensor},
@@ -152,6 +152,73 @@ fn a_material_without_a_surface_between_it_and_its_neighbor_is_refused() {
         &Coordinate::from([-0.5; 3]),
         &Coordinate::from([0.5; 3]),
         [12; 3],
+    )
+    .unwrap();
+    let interfaces = Interfaces::new(&box_with_one_ball()[..1]).unwrap();
+    assert!(mesh.conform(&interfaces).is_err());
+}
+
+fn conformed_tets(solids: fn() -> Vec<Watertight>, n: usize) -> (Mesh<3>, Vec<usize>) {
+    let mut mesh = Mesh::from_partition_tets(
+        &Partition::new(solids()),
+        &Coordinate::from([-0.5; 3]),
+        &Coordinate::from([0.5; 3]),
+        [n; 3],
+    )
+    .unwrap();
+    let originals = mesh.iter().map(Connectivity::number_of_elements).collect();
+    mesh.conform(&Interfaces::new(&solids()).unwrap()).unwrap();
+    (mesh, originals)
+}
+
+#[test]
+fn a_ball_in_a_box_of_tetrahedra_is_conformed_without_losing_quality_or_volume() {
+    let (mesh, originals) = conformed_tets(box_with_one_ball, 6);
+    assert_eq!(mesh.block_labels(), Some(&[0, 1][..]));
+    assert!(least_quality(&mesh) > 0.1);
+    assert!(sheet_quality(&mesh, &originals) > 0.1);
+    let volumes = volumes(&mesh);
+    assert!((volumes.iter().sum::<f64>() - 1.0).abs() < 1.0e-3);
+    assert!((volumes[1] / ball_volume(0.25) - 1.0).abs() < 0.05);
+}
+
+#[test]
+fn two_overlapping_balls_in_a_box_of_tetrahedra_are_conformed_along_the_triple_line() {
+    let (mesh, _) = conformed_tets(box_with_two_balls, 12);
+    assert_eq!(mesh.block_labels(), Some(&[0, 1, 2][..]));
+    assert!(least_quality(&mesh) > 0.03);
+    let volumes = volumes(&mesh);
+    assert!((volumes.iter().sum::<f64>() - 1.0).abs() < 1.0e-3);
+    assert!((volumes[2] / ball_volume(RADII[1]) - 1.0).abs() < 0.03);
+}
+
+#[test]
+fn a_ball_on_a_graded_tetrahedral_mesh_is_conformed_as_well_as_on_a_uniform_one() {
+    let solids = box_with_one_ball();
+    let (background, _) = Interfaces::new(&solids)
+        .unwrap()
+        .surface()
+        .octree_tet_background(Balancing::Strong(1), Pairing::Regular, 4.0, None)
+        .unwrap();
+    let mut mesh = background
+        .label_by_partition(&Partition::new(solids))
+        .unwrap();
+    let originals: Vec<usize> = mesh.iter().map(Connectivity::number_of_elements).collect();
+    mesh.conform(&Interfaces::new(&box_with_one_ball()).unwrap())
+        .unwrap();
+    assert_eq!(mesh.block_labels(), Some(&[0, 1][..]));
+    assert!(least_quality(&mesh) > 0.15);
+    assert!(sheet_quality(&mesh, &originals) > 0.15);
+    assert!((volumes(&mesh)[1] / ball_volume(0.25) - 1.0).abs() < 0.03);
+}
+
+#[test]
+fn a_tetrahedral_material_without_a_surface_between_it_and_its_neighbor_is_refused() {
+    let mut mesh = Mesh::from_partition_tets(
+        &Partition::new(box_with_one_ball()),
+        &Coordinate::from([-0.5; 3]),
+        &Coordinate::from([0.5; 3]),
+        [6; 3],
     )
     .unwrap();
     let interfaces = Interfaces::new(&box_with_one_ball()[..1]).unwrap();
