@@ -114,6 +114,24 @@ impl Mesh<3> {
     where
         I: IntoIterator<Item = ([usize; 3], usize)>,
     {
+        Self::from_lattice_tet_materials(
+            cells
+                .into_iter()
+                .map(|(cell, material)| (cell, [Some(material); 6])),
+            nel,
+            scale,
+            translate,
+        )
+    }
+    pub(crate) fn from_lattice_tet_materials<I>(
+        cells: I,
+        nel: [usize; 3],
+        scale: &Coordinate<3>,
+        translate: &Coordinate<3>,
+    ) -> Self
+    where
+        I: IntoIterator<Item = ([usize; 3], [Option<usize>; 6])>,
+    {
         let [nx, ny, _] = nel;
         let (nxp, nyp) = (nx + 1, ny + 1);
         let layer = nxp * nyp;
@@ -122,17 +140,22 @@ impl Mesh<3> {
         let (lower, _) = cells.size_hint();
         let mut connectivity = Vec::with_capacity(6 * lower);
         let mut materials = Vec::with_capacity(6 * lower);
-        cells.for_each(|([i, j, k], material)| {
+        cells.for_each(|([i, j, k], owners)| {
             let low = i + nxp * j + layer * k;
             let corners: [usize; 8] = from_fn(|corner| {
                 low + (0..3)
                     .map(|axis| ((corner >> axis) & 1) * steps[axis])
                     .sum::<usize>()
             });
-            kuhn(&corners).into_iter().for_each(|tet| {
-                connectivity.push(tet);
-                materials.push(material);
-            })
+            kuhn(&corners)
+                .into_iter()
+                .zip(owners)
+                .for_each(|(tet, owner)| {
+                    if let Some(material) = owner {
+                        connectivity.push(tet);
+                        materials.push(material);
+                    }
+                })
         });
         let coordinates = remap(&mut connectivity, nel, scale, translate);
         orient(&mut connectivity, &coordinates);

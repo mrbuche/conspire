@@ -74,3 +74,76 @@ fn a_degenerate_lattice_is_refused() {
         .is_err()
     );
 }
+
+fn tets(mesh: &Mesh<3>) -> Vec<usize> {
+    mesh.iter()
+        .map(|block| match block {
+            Connectivity::Tetrahedral(tets) => tets.iter().count(),
+            _ => panic!(),
+        })
+        .collect()
+}
+
+#[test]
+fn touching_boxes_share_the_nodes_between_them_as_tetrahedra() {
+    let partition = Partition::new(vec![
+        cuboid([0.0; 3], [1.0, 1.0, 1.0]),
+        cuboid([1.0, 0.0, 0.0], [2.0, 1.0, 1.0]),
+    ]);
+    let mesh = Mesh::from_partition_tets(
+        &partition,
+        &point([0.0; 3]),
+        &point([2.0, 1.0, 1.0]),
+        [4, 2, 2],
+    )
+    .unwrap();
+    assert_eq!(mesh.block_labels(), Some(&[0, 1][..]));
+    assert_eq!(tets(&mesh), [48, 48]);
+    assert_eq!(mesh.number_of_nodes(), 5 * 3 * 3);
+}
+
+#[test]
+fn a_later_volume_owns_the_tetrahedra_it_overlaps() {
+    let partition = Partition::new(vec![cuboid([0.0; 3], [4.0; 3]), cuboid([1.0; 3], [3.0; 3])]);
+    let mesh =
+        Mesh::from_partition_tets(&partition, &point([0.0; 3]), &point([4.0; 3]), [4; 3]).unwrap();
+    assert_eq!(tets(&mesh), [6 * 56, 6 * 8]);
+    assert_eq!(mesh.number_of_nodes(), 5 * 5 * 5);
+}
+
+#[test]
+fn tetrahedra_in_no_volume_are_dropped() {
+    let partition = Partition::new(vec![cuboid([0.0; 3], [2.0; 3])]);
+    let mesh =
+        Mesh::from_partition_tets(&partition, &point([0.0; 3]), &point([4.0; 3]), [4; 3]).unwrap();
+    assert_eq!(tets(&mesh), [48]);
+    assert_eq!(mesh.number_of_nodes(), 3 * 3 * 3);
+}
+
+#[test]
+fn a_volume_splits_a_cell_between_its_tetrahedra() {
+    let partition = Partition::new(vec![cuboid([0.0; 3], [1.55, 1.0, 1.0])]);
+    let (lower, upper) = (point([0.0; 3]), point([2.0, 1.0, 1.0]));
+    let mesh = Mesh::from_partition_tets(&partition, &lower, &upper, [2, 1, 1]).unwrap();
+    assert_eq!(tets(&mesh), [10]);
+    let cells = Mesh::from_partition(&partition, &lower, &upper, [2, 1, 1]).unwrap();
+    assert_eq!(elements(&cells), [2]);
+}
+
+#[test]
+fn a_degenerate_tetrahedral_lattice_is_refused() {
+    let partition = Partition::new(vec![cuboid([0.0; 3], [1.0; 3])]);
+    assert!(
+        Mesh::from_partition_tets(&partition, &point([0.0; 3]), &point([1.0; 3]), [0, 1, 1])
+            .is_err()
+    );
+    assert!(
+        Mesh::from_partition_tets(
+            &partition,
+            &point([0.0; 3]),
+            &point([1.0, 0.0, 1.0]),
+            [1; 3]
+        )
+        .is_err()
+    );
+}
