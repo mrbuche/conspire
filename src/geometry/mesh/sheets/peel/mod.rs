@@ -61,8 +61,6 @@ impl Mesh<3> {
             _ => Err("only hexahedra or tetrahedra can be peeled"),
         }
     }
-    /// Peels the sheets of elements of `F`-node faces and `N` nodes, filling between the copies
-    /// of a face with the elements `layer` gives for the faces below and above it.
     fn peel_sheets<const F: usize, const N: usize>(
         &self,
         of_kind: fn(&Connectivity) -> bool,

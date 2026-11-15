@@ -1,7 +1,9 @@
-mod conform;
-mod peel;
 #[cfg(test)]
 mod test;
+
+mod conform;
+mod peel;
+mod tetrahedra;
 
 use crate::{
     geometry::mesh::{Connectivities, Connectivity, Mesh},
@@ -39,7 +41,18 @@ impl Mesh<3> {
     /// The nodes, the other hexahedra and the order of the blocks by label are kept, but the
     /// node, side and element sets are dropped when any hexahedron is relabeled. It fails where a
     /// block is not hexahedral or has no label.
+    ///
+    /// Tetrahedra have no four around an edge, so for them an edge is pinched where four or more
+    /// runs of labels surround it, and a node where a label has more than one island among the
+    /// tetrahedra around it, the tetrahedra of an island sharing faces. Around a pinched edge the
+    /// run of the lowest label takes the highest label beside it, as for hexahedra, and around a
+    /// pinched node the smallest island of a repeated label takes the label it shares the most
+    /// faces with, and the relabeling goes on until nothing is pinched. A mesh of tetrahedra
+    /// fails where a block is not tetrahedral or has no label, or the pinches are not resolved.
     pub fn resolve_pinches(&mut self) -> Result<usize, &'static str> {
+        if matches!(self.iter().next(), Some(Connectivity::Tetrahedral(_))) {
+            return self.resolve_tetrahedral_pinches();
+        }
         let labels = self.block_labels().ok_or("every block needs a label")?;
         let mut hexahedra = Vec::<[usize; 8]>::new();
         let mut owners = Vec::<usize>::new();
