@@ -1,3 +1,4 @@
+use super::prism_tets;
 use crate::{
     geometry::{
         Coordinates,
@@ -8,8 +9,12 @@ use crate::{
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
-    math::{FxHashMap, FxHashSet, Quantity, Scalar, Tensor, assert::AssertionError},
+    math::{
+        FxHashMap, FxHashSet, Quantity, Scalar, Tensor,
+        assert::{Assert, AssertionError},
+    },
 };
+use core::array::from_fn;
 
 fn core() -> Mesh<3> {
     let coordinates = Coordinates::from(vec![
@@ -25,7 +30,7 @@ fn core() -> Mesh<3> {
     let connectivities = vec![Connectivity::Hexahedral(
         vec![[0, 1, 2, 3, 4, 5, 6, 7]].into(),
     )];
-    Mesh::from((connectivities, coordinates))
+    (connectivities, coordinates).into()
 }
 
 #[test]
@@ -288,4 +293,84 @@ fn buffer_preserves_mirror_symmetry() {
         let mismatch = mirror_mismatch(&mesh, axis);
         assert!(mismatch < 1.0e-8, "axis {axis} mirror mismatch: {mismatch}");
     });
+}
+
+fn numberings() -> Vec<[usize; 6]> {
+    fn extend(prefix: &mut Vec<usize>, all: &mut Vec<[usize; 6]>) {
+        if prefix.len() == 6 {
+            all.push(from_fn(|i| prefix[i]));
+            return;
+        }
+        for node in 0..6 {
+            if !prefix.contains(&node) {
+                prefix.push(node);
+                extend(prefix, all);
+                prefix.pop();
+            }
+        }
+    }
+    let mut all = Vec::new();
+    extend(&mut Vec::new(), &mut all);
+    all
+}
+
+fn signed_volume(tet: [usize; 4], points: &[[f64; 3]; 6]) -> f64 {
+    let [a, b, c, d] = tet.map(|node| points[node]);
+    let [u, v, w]: [[f64; 3]; 3] = [b, c, d].map(|x| from_fn(|i| x[i] - a[i]));
+    (u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
+        + u[2] * (v[0] * w[1] - v[1] * w[0]))
+        / 6.0
+}
+
+#[test]
+fn a_prism_is_split_into_positive_tetrahedra_filling_it_whatever_its_numbering()
+-> Result<(), AssertionError> {
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ];
+    for numbering in numberings() {
+        let mut points = [[0.0; 3]; 6];
+        numbering
+            .iter()
+            .zip(corners)
+            .for_each(|(&node, corner)| points[node] = corner);
+        let base = [numbering[0], numbering[1], numbering[2]];
+        let top = [numbering[3], numbering[4], numbering[5]];
+        let tets = prism_tets(base, top);
+        let volumes = tets.map(|tet| signed_volume(tet, &points));
+        assert!(
+            volumes.iter().all(|&volume| volume > 1.0e-12),
+            "{numbering:?}"
+        );
+        Assert::within(1.0e-12).eq_within_tols(volumes.iter().sum::<f64>(), 0.5)?
+    }
+    Ok(())
+}
+
+#[test]
+fn a_prism_cuts_each_lateral_quadrilateral_through_its_lowest_node() {
+    for numbering in numberings() {
+        let base = [numbering[0], numbering[1], numbering[2]];
+        let top = [numbering[3], numbering[4], numbering[5]];
+        let tets = prism_tets(base, top);
+        let joined =
+            |a: usize, b: usize| tets.iter().any(|tet| tet.contains(&a) && tet.contains(&b));
+        for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+            let quadrilateral = [base[i], base[j], top[j], top[i]];
+            let lowest = *quadrilateral.iter().min().unwrap();
+            let at = quadrilateral
+                .iter()
+                .position(|&node| node == lowest)
+                .unwrap();
+            let opposite = quadrilateral[(at + 2) % 4];
+            let other = [quadrilateral[(at + 1) % 4], quadrilateral[(at + 3) % 4]];
+            assert!(joined(lowest, opposite), "{numbering:?}");
+            assert!(!joined(other[0], other[1]), "{numbering:?}");
+        }
+    }
 }
