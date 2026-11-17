@@ -22,7 +22,7 @@ fn assert_closed(tessellation: &Tessellation) {
     assert!(defects.non_manifold_edges.is_empty());
     assert!(defects.non_manifold_vertices.is_empty());
     assert!(defects.inconsistent_edges.is_empty());
-    assert!(!defects.inward);
+    assert!(defects.inward_shells.is_empty());
 }
 
 #[test]

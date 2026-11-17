@@ -29,7 +29,7 @@ pub use self::{
     },
     decomposition::{Bisection, Decomposition, DecompositionQuality},
     differential::laplace::Weighting,
-    fit::{Fitting, Freedom},
+    fit::Fitting,
     quality::metrics::Verdict,
     read::Input,
     remesh::{AnisotropicSizing, IsotropicSizing, Remeshing, RemeshingMetric},
@@ -37,10 +37,7 @@ pub use self::{
     tessellation::{
         Tessellation,
         corefine::{Constraint, Corefined, Crossing, Interfaces, Polyline, Region, Side},
-        cut::{
-            Class,
-            marching::{Finish, Marching, Placement},
-        },
+        cut::Class,
         watertight::{Defects, Watertight},
         write::Stl,
     },

@@ -7,7 +7,7 @@ use crate::{
     geometry::{
         Coordinate, Coordinates,
         mesh::{
-            Tessellation,
+            Tessellation, Watertight,
             differential::sizing::{Creases, Unresolved, sizing_field},
         },
         ntree::{node::cell::Cell, sizing::curvature::CurvatureSizing},
@@ -19,7 +19,6 @@ use core::{array::from_fn, f64::consts::FRAC_PI_4};
 
 const D: usize = 3;
 
-/// Parameters controlling octree refinement.
 pub struct Sizing<'a> {
     pub(crate) center: Coordinate<D>,
     pub(crate) coordinates: &'a Coordinates<D>,
@@ -41,6 +40,14 @@ impl<'a> Sizing<'a> {
         self.levels
     }
     pub fn new(
+        watertight: &'a Watertight,
+        scale: Scalar,
+        curvature: CurvatureSizing,
+        padding: u16,
+    ) -> Self {
+        Self::of(watertight.tessellation(), scale, curvature, padding)
+    }
+    pub(crate) fn of(
         tessellation: &'a Tessellation,
         scale: Scalar,
         curvature: CurvatureSizing,

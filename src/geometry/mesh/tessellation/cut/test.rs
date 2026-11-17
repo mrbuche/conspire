@@ -3,8 +3,8 @@ use crate::{
     geometry::{
         Coordinate, Coordinates,
         mesh::{
-            Connectivity, Dualization, Mesh, PolytopalConnectivity, Verdict,
-            tessellation::Tessellation,
+            Connectivity, Dualization, Mesh, PolytopalConnectivity, Verdict, Watertight,
+            tessellation::Tessellation, test::watertight,
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
@@ -12,7 +12,7 @@ use crate::{
 };
 
 fn cut(
-    tessellation: &Tessellation,
+    tessellation: &Watertight,
     balancing: Balancing,
     scale: f64,
 ) -> Result<Mesh<3>, &'static str> {
@@ -26,7 +26,7 @@ fn cut_uniform(tessellation: &Tessellation, spacing: f64) -> Result<Mesh<3>, &'s
 }
 
 fn cut_polyhedral(
-    tessellation: &Tessellation,
+    tessellation: &Watertight,
     balancing: Balancing,
     scale: f64,
 ) -> Result<Mesh<3>, &'static str> {
@@ -36,7 +36,7 @@ fn cut_polyhedral(
 
 #[test]
 fn a_tolerance_refines_the_dual_background() {
-    let sphere = crate::geometry::mesh::test::octahedron(3);
+    let sphere = watertight(crate::geometry::mesh::test::octahedron(3));
     let balancing = Balancing::Strong(1);
     let (coarse, _) = sphere.dual_background(balancing, 3.0, None).unwrap();
     let (fine, _) = sphere
@@ -52,7 +52,7 @@ fn a_tolerance_refines_the_dual_background() {
 
 #[test]
 fn a_tolerance_refines_the_octree_background() {
-    let sphere = crate::geometry::mesh::test::octahedron(3);
+    let sphere = watertight(crate::geometry::mesh::test::octahedron(3));
     let balancing = Balancing::Strong(1);
     let (coarse, _) = sphere.octree_background(balancing, 3.0, None).unwrap();
     let (fine, _) = sphere
@@ -113,7 +113,7 @@ pub(super) fn signed_volumes(
         .collect()
 }
 
-pub(super) fn dual(tessellation: &Tessellation, scale: f64) -> Mesh<3> {
+pub(super) fn dual(tessellation: &Watertight, scale: f64) -> Mesh<3> {
     let mut octree =
         Octree::<u16, usize>::from_features(tessellation, scale, CurvatureSizing::default(), 2)
             .unwrap();
@@ -139,7 +139,7 @@ fn midpoint(
     })
 }
 
-pub(super) fn sphere(refinements: usize) -> Tessellation {
+pub(super) fn sphere(refinements: usize) -> Watertight {
     let mut coordinates = vec![
         [1.0, 0.0, 0.0],
         [-1.0, 0.0, 0.0],
@@ -170,45 +170,10 @@ pub(super) fn sphere(refinements: usize) -> Tessellation {
             })
             .collect()
     });
-    (faces, coordinates).into()
+    watertight((faces, coordinates).into())
 }
 
-pub(super) fn star(refinements: usize, height: f64) -> Tessellation {
-    let base = sphere(refinements);
-    let coordinates_base = base.mesh().coordinates();
-    let mut coordinates: Vec<[f64; 3]> = coordinates_base
-        .iter()
-        .map(|point| [point[0].value(), point[1].value(), point[2].value()])
-        .collect();
-    let mut faces = Vec::new();
-    base.mesh()
-        .connectivities()
-        .iter()
-        .flatten()
-        .for_each(|triangle| {
-            let [a, b, c] = [triangle[0], triangle[1], triangle[2]];
-            let centroid: Vec<f64> = (0..3)
-                .map(|d| (coordinates[a][d] + coordinates[b][d] + coordinates[c][d]) / 3.0)
-                .collect();
-            let norm = centroid
-                .iter()
-                .map(|value| value * value)
-                .sum::<f64>()
-                .sqrt();
-            coordinates.push([
-                centroid[0] / norm * height,
-                centroid[1] / norm * height,
-                centroid[2] / norm * height,
-            ]);
-            let apex = coordinates.len() - 1;
-            faces.push([a, b, apex]);
-            faces.push([b, c, apex]);
-            faces.push([c, a, apex]);
-        });
-    (faces, coordinates).into()
-}
-
-pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
+pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Watertight {
     let [x0, y0, z0] = minimum;
     let [x1, y1, z1] = maximum;
     let coordinates = vec![
@@ -233,7 +198,7 @@ pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation 
         .iter()
         .flat_map(|&[a, b, c, d]| [[a, b, c], [a, c, d]])
         .collect();
-    (faces, coordinates).into()
+    watertight((faces, coordinates).into())
 }
 
 pub(super) fn hexahedron(minimum: [f64; 3], maximum: [f64; 3]) -> Mesh<3> {
@@ -388,7 +353,7 @@ fn cut_uniform_thin_plate() {
     assert!(mesh.is_ok(), "{}", mesh.err().unwrap_or(""));
 }
 
-fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Tessellation {
+fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Watertight {
     let plain = box_surface(minimum, maximum);
     let axis = [1.0 / 3.0_f64.sqrt(); 3];
     let (sin, cos) = angle.sin_cos();
@@ -411,7 +376,7 @@ fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Tessellation
         .iter()
         .map(|p| rotate([p[0].value(), p[1].value(), p[2].value()]))
         .collect();
-    (triangles, coordinates).into()
+    watertight((triangles, coordinates).into())
 }
 
 fn corners_landed_on(tessellation: &Tessellation, mesh: &Mesh<3>) -> usize {
@@ -600,7 +565,7 @@ fn classify_agrees_between_the_hex_and_tet_lattices() {
     assert!(found.contains(&Class::Outside))
 }
 
-fn check_octree_tet_background(tessellation: &Tessellation, graded: bool) {
+fn check_octree_tet_background(tessellation: &Watertight, graded: bool) {
     let (mesh, classes) = tessellation
         .octree_tet_background(Balancing::Strong(1), Pairing::Regular, 1.0, None)
         .unwrap();

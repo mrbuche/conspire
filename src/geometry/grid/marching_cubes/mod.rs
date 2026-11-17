@@ -3,7 +3,6 @@ mod test;
 
 mod cell;
 mod lut;
-pub(crate) mod separated;
 mod switch;
 mod tables;
 
@@ -66,8 +65,6 @@ pub enum Method {
     Lewiner,
     /// Original Lorensen tables.
     Lorensen,
-    /// Separated-face variant.
-    Separated,
 }
 
 /// Direction of the field across the isosurface.
@@ -158,18 +155,6 @@ impl MarchingCubes {
         }
         let data = volume.data();
         let level = self.resolve(volume)?;
-        if self.method == Method::Separated {
-            if self.step != 1 {
-                return Err("The separated method takes every sample.");
-            }
-            return separated::extract(
-                volume,
-                mask,
-                level,
-                self.gradient,
-                from_fn(|axis| self.spacing[axis].value()),
-            );
-        }
         let [nz, ny, nx] = nel;
         let at = |z: usize, y: usize, x: usize| data[volume.flat([z, y, x])];
         let masked =
