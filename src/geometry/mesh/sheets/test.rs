@@ -1,4 +1,4 @@
-use crate::geometry::mesh::{Connectivity, Mesh};
+use crate::geometry::mesh::{Connectivities, Connectivity, Mesh};
 
 pub(super) fn lattice(nel: [usize; 3], labels: impl Fn([usize; 3]) -> usize) -> Mesh<3> {
     let cells = (0..nel[2])
@@ -79,15 +79,19 @@ fn random_labels_are_relabeled_until_nothing_is_pinched() {
 
 #[test]
 fn blocks_without_labels_or_hexahedra_are_refused() {
-    let mut unlabeled: Mesh<3> = (
+    let mut unlabeled = Mesh::<3>::from((
         vec![Connectivity::Hexahedral(
             vec![[0, 1, 2, 3, 4, 5, 6, 7]].into(),
         )],
         vec![[0.0; 3]; 8].into(),
-    )
-        .into();
+    ));
     assert!(unlabeled.resolve_pinches().is_err());
-    let mut tetrahedra =
-        Mesh::from_lattice_tets([([0, 0, 0], 0)], [1; 3], &[1.0; 3].into(), &[0.0; 3].into());
-    assert!(tetrahedra.resolve_pinches().is_err());
+    let mut wedges = Mesh::<3>::from((
+        Connectivities::from((
+            vec![Connectivity::Wedge(vec![[0, 1, 2, 3, 4, 5]].into())],
+            vec![0],
+        )),
+        vec![[0.0; 3]; 6].into(),
+    ));
+    assert!(wedges.resolve_pinches().is_err());
 }

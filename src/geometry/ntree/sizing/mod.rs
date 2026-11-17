@@ -7,7 +7,7 @@ use crate::{
     geometry::{
         Coordinate, Coordinates,
         mesh::{
-            Watertight,
+            Tessellation, Watertight,
             differential::sizing::{Creases, Unresolved, sizing_field},
         },
         ntree::{node::cell::Cell, sizing::curvature::CurvatureSizing},
@@ -46,12 +46,21 @@ impl<'a> Sizing<'a> {
         curvature: CurvatureSizing,
         padding: u16,
     ) -> Self {
+        Self::of(watertight.tessellation(), scale, curvature, padding)
+    }
+    /// Sizes from a surface without checking it, for the combined surface of the interfaces
+    /// between solids that were each checked to be [`Watertight`].
+    pub(crate) fn of(
+        tessellation: &'a Tessellation,
+        scale: Scalar,
+        curvature: CurvatureSizing,
+        padding: u16,
+    ) -> Self {
         let CurvatureSizing {
             tolerance,
             gradation,
             floor_fraction,
         } = curvature;
-        let tessellation = watertight.tessellation();
         let sdf = tessellation.shape_diameter_function(FRAC_PI_4, 3, 10);
         let coordinates = tessellation.mesh().coordinates();
         if coordinates.is_empty() {

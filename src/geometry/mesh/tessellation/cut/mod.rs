@@ -17,7 +17,7 @@ use crate::{
     geometry::{
         Coordinate,
         mesh::{
-            Dualization, Mesh, Watertight,
+            Dualization, Interfaces, Mesh, Watertight,
             tessellation::{D, Tessellation, cut::geometry::contained},
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing, Sizing},
@@ -269,23 +269,66 @@ impl Watertight {
         curvature: CurvatureSizing,
         cells: Cells,
     ) -> Result<Mesh<D>, &'static str> {
-        let sizing = Sizing::new(self, scale, curvature, PADDING);
-        if sizing.fits::<u16>() {
-            let mut octree = Octree::<u16, NonZeroU32>::refine(&sizing)?;
-            octree.equilibrate(balancing, pairing)?;
-            Ok(match cells {
-                Cells::Dual => octree.dualize(),
-                Cells::Polyhedral => Mesh::from(octree),
-                Cells::Tetrahedral => Mesh::tetrahedra_from(octree),
-            })
-        } else {
-            let mut octree = Octree::<u32, NonZeroU32>::refine(&sizing)?;
-            octree.equilibrate(balancing, pairing)?;
-            Ok(match cells {
-                Cells::Dual => octree.dualize(),
-                Cells::Polyhedral => Mesh::from(octree),
-                Cells::Tetrahedral => Mesh::tetrahedra_from(octree),
-            })
+        refined(
+            &Sizing::new(self, scale, curvature, PADDING),
+            balancing,
+            pairing,
+            cells,
+        )
+    }
+}
+
+impl Interfaces {
+    /// Builds an octree fitted to the surfaces between the solids and meshes it as tetrahedra,
+    /// with each one classified against them.
+    ///
+    /// The counterpart of [`Watertight::octree_tet_background`] for several materials. Every
+    /// solid was required to be [`Watertight`] to make these interfaces, which is what sizing the
+    /// octree needs, but the surface between them is not one solid: a shell inside another is
+    /// wound outward, and where three materials meet an edge has three faces. So it is sized from
+    /// the combined surface without checking that again.
+    pub fn octree_tet_background(
+        &self,
+        balancing: Balancing,
+        pairing: Pairing,
+        scale: Scalar,
+        tolerance: Option<Quantity<Length>>,
+    ) -> Result<(Mesh<D>, Vec<Class>), &'static str> {
+        if !matches!(balancing, Balancing::Strong(1)) {
+            return Err("tetrahedra require Strong(1) balancing");
         }
+        let curvature = CurvatureSizing {
+            tolerance,
+            ..Default::default()
+        };
+        let sizing = Sizing::of(self.surface(), scale, curvature, PADDING);
+        let mesh = refined(&sizing, balancing, pairing, Cells::Tetrahedral)?;
+        let classes = self.surface().classify(&mesh);
+        Ok((mesh, classes))
+    }
+}
+
+fn refined(
+    sizing: &Sizing,
+    balancing: Balancing,
+    pairing: Pairing,
+    cells: Cells,
+) -> Result<Mesh<D>, &'static str> {
+    if sizing.fits::<u16>() {
+        let mut octree = Octree::<u16, NonZeroU32>::refine(sizing)?;
+        octree.equilibrate(balancing, pairing)?;
+        Ok(match cells {
+            Cells::Dual => octree.dualize(),
+            Cells::Polyhedral => Mesh::from(octree),
+            Cells::Tetrahedral => Mesh::tetrahedra_from(octree),
+        })
+    } else {
+        let mut octree = Octree::<u32, NonZeroU32>::refine(sizing)?;
+        octree.equilibrate(balancing, pairing)?;
+        Ok(match cells {
+            Cells::Dual => octree.dualize(),
+            Cells::Polyhedral => Mesh::from(octree),
+            Cells::Tetrahedral => Mesh::tetrahedra_from(octree),
+        })
     }
 }
