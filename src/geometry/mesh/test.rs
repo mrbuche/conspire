@@ -53,6 +53,10 @@ pub fn cuboid(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
     (CONNECTIVITY.to_vec(), coordinates).into()
 }
 
+pub fn watertight(tessellation: Tessellation) -> Watertight {
+    Watertight::new(tessellation).unwrap()
+}
+
 pub fn solid(minimum: [f64; 3], maximum: [f64; 3]) -> Watertight {
     Watertight::new(cuboid(minimum, maximum)).unwrap()
 }

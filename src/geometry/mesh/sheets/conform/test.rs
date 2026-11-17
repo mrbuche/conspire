@@ -3,7 +3,7 @@ use crate::{
         Coordinate,
         mesh::{
             Connectivity, Interfaces, Mesh, Tessellation, Verdict, Watertight,
-            test::{solid, sphere},
+            test::{solid, sphere, watertight},
         },
         ntree::{Balancing, Pairing},
         solid::Partition,
@@ -60,7 +60,7 @@ fn conformed(solids: fn() -> Vec<Watertight>, n: usize) -> (Mesh<3>, Vec<usize>)
 }
 
 fn dual_ball(scale: f64) -> Mesh<3> {
-    let (background, _) = sphere(24, 48, 0.25)
+    let (background, _) = watertight(sphere(24, 48, 0.25))
         .dual_background(Balancing::Strong(1), scale, None)
         .unwrap();
     background
@@ -197,7 +197,6 @@ fn a_ball_on_a_graded_tetrahedral_mesh_is_conformed_as_well_as_on_a_uniform_one(
     let solids = box_with_one_ball();
     let (background, _) = Interfaces::new(&solids)
         .unwrap()
-        .surface()
         .octree_tet_background(Balancing::Strong(1), Pairing::Regular, 4.0, None)
         .unwrap();
     let mut mesh = background

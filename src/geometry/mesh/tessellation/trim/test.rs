@@ -1,8 +1,8 @@
 use crate::{
     geometry::{
         mesh::{
-            Connectivity, Dualization, Fitting, Mesh, Verdict,
-            tessellation::{D, Tessellation},
+            Connectivity, Dualization, Fitting, Mesh, Verdict, Watertight, tessellation::D,
+            test::watertight,
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
@@ -50,7 +50,7 @@ fn trims_a_lattice_tet_background() {
     check_trimmed(background, &mesh);
 }
 
-fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Tessellation {
+fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Watertight {
     let mut coordinates = Vec::new();
     (0..around).for_each(|i| {
         let theta = TAU * i as Scalar / around as Scalar;
@@ -75,7 +75,7 @@ fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Tessellati
             })
         })
         .collect();
-    (faces, coordinates).into()
+    watertight((faces, coordinates).into())
 }
 
 #[test]

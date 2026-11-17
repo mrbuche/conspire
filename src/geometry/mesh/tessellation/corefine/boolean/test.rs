@@ -17,7 +17,7 @@ fn volume(surface: Result<Tessellation, &'static str>, touching: bool) -> Quanti
             let defects = surface.defects();
             if touching {
                 assert!(defects.boundary_edges.is_empty(), "{defects:?}");
-                assert!(defects.self_intersections.is_empty() && !defects.inward);
+                assert!(defects.self_intersections.is_empty() && defects.inward_shells.is_empty());
             } else {
                 assert!(defects.is_empty(), "{defects:?}");
             }

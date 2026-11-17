@@ -3,7 +3,7 @@ use super::super::test::{box_surface, hexahedron, signed_volumes, sphere};
 use crate::math::{FxHashMap, FxHashSet};
 use crate::{
     geometry::{
-        mesh::{Connectivity, Mesh, tessellation::Tessellation},
+        mesh::{Connectivity, Mesh, Watertight, tessellation::Tessellation},
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
     math::CrossProduct,
@@ -134,7 +134,7 @@ fn tessellation_volume(tessellation: &Tessellation) -> f64 {
         .sum()
 }
 
-fn generic_cut(tessellation: &Tessellation, scale: f64) -> f64 {
+fn generic_cut(tessellation: &Watertight, scale: f64) -> f64 {
     let mut octree =
         Octree::<u16, usize>::from_features(tessellation, scale, CurvatureSizing::default(), 2)
             .unwrap();

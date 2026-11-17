@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod test;
 
+mod shell;
+
 use super::{D, NORMALIZED_DIRECTIONS, Tessellation};
 use crate::{
     geometry::{
@@ -10,6 +12,7 @@ use crate::{
     math::{CrossProduct, Quantity, Tensor},
     units::{Length, Volume},
 };
+use core::ops::Deref;
 
 /// What keeps a tessellation from bounding a volume that points can be inside or outside of.
 #[derive(Debug)]
@@ -24,8 +27,9 @@ pub struct Defects {
     pub inconsistent_edges: Vec<[usize; 2]>,
     /// Pairs of faces that cross without sharing a vertex.
     pub self_intersections: Vec<[usize; 2]>,
-    /// Whether the faces enclose no positive volume, so they are oriented inward.
-    pub inward: bool,
+    /// The lowest face of every shell oriented against its nesting, so inward where it should be
+    /// outward or the reverse for a cavity.
+    pub inward_shells: Vec<usize>,
 }
 
 impl Defects {
@@ -35,7 +39,7 @@ impl Defects {
             && self.non_manifold_vertices.is_empty()
             && self.inconsistent_edges.is_empty()
             && self.self_intersections.is_empty()
-            && !self.inward
+            && self.inward_shells.is_empty()
     }
 }
 
@@ -50,7 +54,7 @@ impl Tessellation {
             non_manifold_vertices: mesh.non_manifold_vertices(),
             inconsistent_edges: mesh.inconsistent_edges(),
             self_intersections: mesh.self_intersections(),
-            inward: self.enclosed_volume() <= Quantity::default(),
+            inward_shells: self.inward_shells(),
         }
     }
     /// The volume enclosed by the faces, positive when they are oriented outward.
@@ -87,6 +91,13 @@ impl Watertight {
     }
     pub fn into_inner(self) -> Tessellation {
         self.0
+    }
+}
+
+impl Deref for Watertight {
+    type Target = Tessellation;
+    fn deref(&self) -> &Tessellation {
+        &self.0
     }
 }
 

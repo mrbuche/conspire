@@ -264,7 +264,6 @@ fn a_graded_tetrahedral_background_of_the_interfaces_is_labeled_into_a_box_and_a
     let solids = box_with_a_ball();
     let interfaces = Interfaces::new(&solids).unwrap();
     let (background, _) = interfaces
-        .surface()
         .octree_tet_background(Balancing::Strong(1), Pairing::Regular, 8.0, None)
         .unwrap();
     let mesh = background

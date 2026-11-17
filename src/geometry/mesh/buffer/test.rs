@@ -3,7 +3,7 @@ use crate::{
     geometry::{
         Coordinates,
         mesh::{
-            Connectivity, Dualization, Fitting, Mesh, Tessellation, Verdict,
+            Connectivity, Dualization, Fitting, Mesh, Tessellation, Verdict, Watertight,
             tessellation::from::test::tessellation,
             test::{octahedron, sphere},
         },
@@ -274,7 +274,7 @@ fn mirror_mismatch(mesh: &Mesh<3>, axis: usize) -> Scalar {
 fn buffer_preserves_mirror_symmetry() {
     let target = octahedron(2);
     let mut octree = Octree::<u16, usize>::from_features(
-        &target,
+        &Watertight::new(octahedron(2)).unwrap(),
         5.0,
         CurvatureSizing {
             tolerance: None,
