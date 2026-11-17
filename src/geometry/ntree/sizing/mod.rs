@@ -19,7 +19,6 @@ use core::{array::from_fn, f64::consts::FRAC_PI_4};
 
 const D: usize = 3;
 
-/// Parameters controlling octree refinement.
 pub struct Sizing<'a> {
     pub(crate) center: Coordinate<D>,
     pub(crate) coordinates: &'a Coordinates<D>,
@@ -48,8 +47,6 @@ impl<'a> Sizing<'a> {
     ) -> Self {
         Self::of(watertight.tessellation(), scale, curvature, padding)
     }
-    /// Sizes from a surface without checking it, for the combined surface of the interfaces
-    /// between solids that were each checked to be [`Watertight`].
     pub(crate) fn of(
         tessellation: &'a Tessellation,
         scale: Scalar,
