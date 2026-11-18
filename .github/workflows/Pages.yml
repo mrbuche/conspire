@@ -26,7 +26,8 @@ jobs:
         run: |
           cargo rustdoc --release --features all -- --html-in-header .github/katex.html
           mkdir -p ../_site/ && cp -r target/doc/. ../_site/
-          echo '<meta http-equiv="refresh" content="0; url=conspire/index.html">' > ../_site/index.html
+          mkdir -p ../_site/latest/ && cp -r target/doc/conspire/. ../_site/latest/
+          echo '<meta http-equiv="refresh" content="0; url=latest/index.html">' > ../_site/index.html
       - name: Upload
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
