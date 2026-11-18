@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "fem"))]
 pub mod test;
 
 use super::steady::temperature;

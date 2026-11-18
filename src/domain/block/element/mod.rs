@@ -13,6 +13,10 @@ use core::{
     marker::PhantomData,
 };
 
+#[cfg_attr(
+    not(any(feature = "cbm", feature = "fem", feature = "vem")),
+    allow(dead_code)
+)]
 pub trait Elements
 where
     Self: Debug,
@@ -28,6 +32,10 @@ where
 ///
 /// An item is an element, or whatever else contributes to a set of nodes. Every [`Items`] is
 /// [`Elements`], and the traits that assemble over the items extend this one with their kernels.
+#[cfg_attr(
+    not(any(feature = "cbm", feature = "fem", feature = "vem")),
+    allow(dead_code)
+)]
 pub trait Items
 where
     Self: Debug,

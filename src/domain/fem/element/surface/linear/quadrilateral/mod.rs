@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "fem"))]
 mod test;
 
 use crate::{

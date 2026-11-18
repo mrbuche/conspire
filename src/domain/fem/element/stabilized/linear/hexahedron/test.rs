@@ -443,6 +443,7 @@ mod elastic {
     }
 }
 
+#[cfg(feature = "fem")]
 mod block {
     use super::{FullHexahedron, Hexahedron};
     use crate::{

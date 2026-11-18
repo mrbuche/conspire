@@ -6,14 +6,17 @@ mod test;
 pub(crate) mod block;
 #[cfg(feature = "cbm")]
 pub mod cbm;
+#[cfg(feature = "fem")]
 pub mod decomposition;
 mod error;
-#[cfg(feature = "fem")]
+#[cfg(any(feature = "elements", feature = "fem"))]
 pub mod fem;
+#[cfg(any(feature = "cbm", feature = "fem", feature = "vem"))]
 mod model;
 pub(crate) mod time_scale;
 #[cfg(feature = "vem")]
 pub mod vem;
 
 pub use error::{AtItems, ElementModelError, ForEachAtItems, ItemError, Locate, Source};
+#[cfg(any(feature = "cbm", feature = "fem", feature = "vem"))]
 pub use model::*;
