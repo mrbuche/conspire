@@ -61,7 +61,7 @@ impl Mesh<3> {
         ))
     }
     /// Tetrahedra on a uniform lattice between `lower` and `upper`, six to each cell as
-    /// [`Mesh::from_lattice_tets`] has them, one block per volume of the partition, labeled by its
+    /// the lattice tetrahedra have them, one block per volume of the partition, labeled by its
     /// index.
     ///
     /// A tetrahedron belongs to the volume owning its centroid and is dropped where no volume
