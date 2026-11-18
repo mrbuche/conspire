@@ -2,7 +2,7 @@
 mod test;
 
 use super::peel::DoublePeeled;
-use crate::geometry::mesh::{Interfaces, Mesh, Tessellation};
+use crate::geometry::mesh::{Interfaces, Mesh, Tessellation, fit::SWEEPS};
 
 impl Mesh<3> {
     /// Deforms the mesh so that the faces between its blocks lie on the surfaces between the
@@ -35,7 +35,7 @@ impl Mesh<3> {
             .zip(sheets)
             .map(|(target, (_, faces))| (target, faces.iter().map(|face| face.to_vec()).collect()))
             .collect();
-        mesh.fit_patches(&free, &patches)?;
+        mesh.fit_patches(&free, &patches, SWEEPS)?;
         *self = mesh;
         Ok(())
     }

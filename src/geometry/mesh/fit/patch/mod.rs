@@ -2,8 +2,8 @@
 mod test;
 
 use super::{
-    CornerTable, Oracle, STAGNATION, SWEEPS, TOLERANCE, WINDOW,
-    sweep::{Sweep, schedule, sizes},
+    CornerTable, Oracle, STAGNATION, TOLERANCE, WINDOW,
+    sweep::{Elements, Sweep, schedule, sizes},
 };
 use crate::{
     geometry::mesh::{
@@ -24,8 +24,13 @@ impl Mesh<3> {
         &mut self,
         nodes: &[usize],
         patches: &[(&Tessellation, Vec<Vec<usize>>)],
+        sweeps: usize,
     ) -> Result<(), &'static str> {
-        let mut elements: Vec<(&'static CornerTable, Vec<usize>)> = Vec::new();
+        let mut elements = Elements {
+            corners: Vec::new(),
+            nodes: Vec::new(),
+            offsets: vec![0],
+        };
         for block in self.iter() {
             let corners: &'static CornerTable = match block {
                 Connectivity::Hexahedral(_) => &hexahedron::CORNERS,
@@ -34,7 +39,11 @@ impl Mesh<3> {
                 Connectivity::Wedge(_) => &wedge::CORNERS,
                 _ => return Err("fit requires hexahedra, tetrahedra, pyramids or wedges"),
             };
-            elements.extend(block.iter().map(|element| (corners, element.to_vec())));
+            block.iter().for_each(|element| {
+                elements.corners.push(corners);
+                elements.nodes.extend_from_slice(element);
+                elements.offsets.push(elements.nodes.len())
+            });
         }
         let oracles: Vec<Oracle> = patches
             .iter()
@@ -82,7 +91,7 @@ impl Mesh<3> {
         let mut epsilon: Scalar = 1.0;
         let mut previous = Quantity::<Length>::new(Scalar::INFINITY);
         let mut window = VecDeque::<Quantity<Length>>::with_capacity(WINDOW);
-        for sweep in 0..SWEEPS {
+        for sweep in 0..sweeps {
             let (lengths, scales) = sizes(&neighbors, &elements, coordinates);
             let mut state = Sweep {
                 element_chunk,
@@ -104,7 +113,7 @@ impl Mesh<3> {
                 state.epsilon = epsilon;
             }
             previous = quality;
-            let (shift, value, settled) = state.minimize(coordinates);
+            let (shift, value, settled) = state.minimize(coordinates)?;
             let stagnant = window.len() == WINDOW
                 && window.iter().fold(value, |high, &entry| high.max(entry))
                     - window.iter().fold(value, |low, &entry| low.min(entry))

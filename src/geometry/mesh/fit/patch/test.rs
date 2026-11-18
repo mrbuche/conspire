@@ -60,7 +60,7 @@ fn top_after_fitting_to(patch: usize) -> f64 {
     } else {
         [(&low, vec![]), (&high, top)]
     };
-    mesh.fit_patches(&[4, 5, 6, 7], &patches).unwrap();
+    mesh.fit_patches(&[4, 5, 6, 7], &patches, 50).unwrap();
     (4..8)
         .map(|node| mesh.coordinates()[node][2].value())
         .sum::<f64>()

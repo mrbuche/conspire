@@ -6,6 +6,7 @@ mod buffer;
 mod connectivity;
 mod decomposition;
 pub(crate) mod differential;
+mod error;
 mod fit;
 mod from;
 mod into;
@@ -29,6 +30,7 @@ pub use self::{
     },
     decomposition::{Bisection, Decomposition, DecompositionQuality},
     differential::laplace::Weighting,
+    error::MeshError,
     fit::Fitting,
     quality::metrics::Verdict,
     read::Input,

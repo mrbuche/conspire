@@ -8,32 +8,67 @@ use crate::{
         mesh::quality::metrics::{chi, regularized},
     },
     math::{
-        ContractWith, CrossProduct, Quantity, Reference, Scalar, Tensor, TensorRank1,
-        TensorRank1List, TensorRank1Vec,
+        CrossProduct, Quantity, Reference, Scalar, Tensor, TensorRank1, TensorRank1List,
+        TensorRank1Vec,
+        optimize::{Armijo, LimitedMemoryBFGS, Tolerances},
     },
     units::{Area, Dimensionless, Length, ReciprocalLength},
 };
-use core::array::from_fn;
+use core::{array::from_fn, cell::RefCell};
 use std::thread::scope;
 
 type EdgeList = TensorRank1List<3, Reference, 3>;
 type Slope = TensorRank1<3, Reference, ReciprocalLength>;
 type Gradient = TensorRank1Vec<3, Reference, Dimensionless>;
 
-const ARMIJO: Scalar = 1.0e-4;
 const BACKTRACKS: usize = 32;
 const BALANCE: Scalar = 2.5e3;
 const CONVERGENCE: Scalar = 1.0e-5;
-const CURVATURE_FLOOR: Scalar = 1.0e-12;
 const EPSILON_FLOOR: Scalar = 1.0e-12;
 const HISTORY: usize = 8;
 const ITERATIONS: usize = 100;
 const RELAXATION: Scalar = 0.1;
 const WEIGHT_FLOOR: Quantity = Dimensionless::of(0.3);
 
+fn solver(typical: Quantity<Length>, residual: Scalar) -> LimitedMemoryBFGS<Armijo, Length> {
+    LimitedMemoryBFGS {
+        abs_tol: Tolerances {
+            constraint: 0.0,
+            residual,
+        },
+        history: HISTORY,
+        line_search: Armijo {
+            control: 1.0e-4,
+            cut_back: 0.5,
+            max_steps: BACKTRACKS,
+        },
+        max_steps: ITERATIONS,
+        rel_tol: None,
+        typical,
+    }
+}
+
+pub(super) struct Elements {
+    pub(super) corners: Vec<&'static CornerTable>,
+    pub(super) nodes: Vec<usize>,
+    pub(super) offsets: Vec<usize>,
+}
+
+impl Elements {
+    pub(super) fn len(&self) -> usize {
+        self.corners.len()
+    }
+    fn get(&self, index: usize) -> (&'static CornerTable, &[usize]) {
+        (
+            self.corners[index],
+            &self.nodes[self.offsets[index]..self.offsets[index + 1]],
+        )
+    }
+}
+
 pub(super) struct Sweep<'a> {
     pub(super) element_chunk: usize,
-    pub(super) elements: &'a [(&'static CornerTable, Vec<usize>)],
+    pub(super) elements: &'a Elements,
     pub(super) epsilon: Scalar,
     pub(super) lengths: Vec<Quantity<Length>>,
     pub(super) node_chunk: usize,
@@ -52,7 +87,7 @@ impl Sweep<'_> {
             .iter()
             .map(|&element| {
                 let scale = self.scales[element].value();
-                let (corners, nodes) = &self.elements[element];
+                let (corners, nodes) = self.elements.get(element);
                 (
                     self.scales[element]
                         * energy(corners, nodes, coordinates, scale.powi(3) * self.epsilon),
@@ -73,7 +108,7 @@ impl Sweep<'_> {
                         chunk
                             .iter()
                             .map(|&element| {
-                                let (corners, nodes) = &self.elements[element];
+                                let (corners, nodes) = self.elements.get(element);
                                 self.scales[element]
                                     * energy(
                                         corners,
@@ -118,14 +153,14 @@ impl Sweep<'_> {
         })
     }
     fn derivative(&self, coordinates: &Coordinates<3>) -> Gradient {
-        let mut gradient = scope(|scope| {
+        let partials = scope(|scope| {
             self.tracked
                 .chunks(self.element_chunk)
                 .map(|chunk| {
                     scope.spawn(move || {
                         let mut partial = self.empty();
                         chunk.iter().for_each(|&element| {
-                            let (corners, nodes) = &self.elements[element];
+                            let (corners, nodes) = self.elements.get(element);
                             let local = scatter(
                                 corners,
                                 nodes,
@@ -144,28 +179,34 @@ impl Sweep<'_> {
                 .collect::<Vec<_>>()
                 .into_iter()
                 .map(|handle| handle.join().unwrap())
-                .fold(self.empty(), |mut sum, partial| {
-                    sum += &partial;
-                    sum
-                })
+                .collect::<Vec<_>>()
         });
+        let mut gradient = self.empty();
         scope(|scope| {
+            let partials = &partials;
             gradient
                 .as_mut_slice()
                 .chunks_mut(self.node_chunk)
                 .zip(self.nodes.chunks(self.node_chunk))
-                .for_each(|(entries, nodes)| {
+                .enumerate()
+                .for_each(|(block, (entries, nodes))| {
                     scope.spawn(move || {
-                        entries.iter_mut().zip(nodes).for_each(|(entry, &node)| {
-                            self.node_faces[node].iter().for_each(|&face| {
-                                let (point, normal, distance) = &self.targets[face];
-                                let weight = weight(*distance, self.lengths[node]);
-                                let deviation = (&coordinates[node] - point) * normal;
-                                let factor =
-                                    2.0 * BALANCE / self.lengths[node] * weight * deviation;
-                                *entry += normal * factor.value()
-                            })
-                        });
+                        entries.iter_mut().zip(nodes).enumerate().for_each(
+                            |(offset, (entry, &node))| {
+                                let index = block * self.node_chunk + offset;
+                                partials
+                                    .iter()
+                                    .for_each(|partial| *entry += &partial[index]);
+                                self.node_faces[node].iter().for_each(|&face| {
+                                    let (point, normal, distance) = &self.targets[face];
+                                    let weight = weight(*distance, self.lengths[node]);
+                                    let deviation = (&coordinates[node] - point) * normal;
+                                    let factor =
+                                        2.0 * BALANCE / self.lengths[node] * weight * deviation;
+                                    *entry += normal * factor.value()
+                                })
+                            },
+                        );
                     });
                 });
         });
@@ -179,92 +220,59 @@ impl Sweep<'_> {
     pub(super) fn minimize(
         &self,
         coordinates: &mut Coordinates<3>,
-    ) -> (Scalar, Quantity<Length>, bool) {
+    ) -> Result<(Scalar, Quantity<Length>, bool), &'static str> {
         let typical = self
             .nodes
             .iter()
             .map(|&node| self.lengths[node])
             .sum::<Quantity<Length>>()
             / self.nodes.len().max(1) as Scalar;
-        let mut x: Coordinates<3> = self
+        let initial: Coordinates<3> = self
             .nodes
             .iter()
             .map(|&node| coordinates[node].clone())
             .collect();
-        let anchor = x.clone();
-        let mut history = Vec::<(Coordinates<3>, Gradient)>::new();
-        let mut gradient = self.derivative(coordinates);
-        let mut value = self.objective(coordinates);
-        let mut settled = false;
-        for iteration in 0..ITERATIONS {
-            let magnitude = gradient.norm().value();
-            if magnitude / x.norm().value().max(1.0) < CONVERGENCE {
-                settled = iteration == 0;
-                break;
-            }
-            let d = direction(&gradient, &history, typical / magnitude);
-            let slope = gradient.contract_with(&d);
-            if slope >= Quantity::default() {
-                history.clear();
-                continue;
-            }
-            let mut step = 1.0;
-            let mut accepted = None;
-            for _ in 0..BACKTRACKS {
-                self.nodes
-                    .iter()
-                    .enumerate()
-                    .for_each(|(index, &node)| coordinates[node] = &x[index] + &d[index] * step);
-                let trial = self.objective(coordinates);
-                if trial <= value + ARMIJO * step * slope {
-                    accepted = Some(trial);
-                    break;
-                }
-                step *= 0.5;
-            }
-            let Some(trial) = accepted else {
-                self.nodes
-                    .iter()
-                    .enumerate()
-                    .for_each(|(index, &node)| coordinates[node] = x[index].clone());
-                if history.is_empty() {
-                    break;
-                }
-                history.clear();
-                continue;
-            };
-            let s: Coordinates<3> = d.iter().map(|entry| entry * step).collect();
-            x += &s;
-            let updated = self.derivative(coordinates);
-            let y: Gradient = updated
+        let residual = CONVERGENCE * initial.norm().value().max(1.0);
+        let shared = RefCell::new(coordinates);
+        let assign = |x: &Coordinates<3>| {
+            let mut coordinates = shared.borrow_mut();
+            self.nodes
                 .iter()
-                .zip(gradient.iter())
-                .map(|(new, old)| new - old)
-                .collect();
-            if s.contract_with(&y) > s.norm() * (CURVATURE_FLOOR * y.norm().value()) {
-                if history.len() == HISTORY {
-                    history.remove(0);
-                }
-                history.push((s, y));
-            }
-            gradient = updated;
-            value = trial;
-        }
+                .zip(x.iter())
+                .for_each(|(&node, entry)| coordinates[node] = entry.clone())
+        };
+        let descent = solver(typical, residual)
+            .descend(
+                |x| {
+                    assign(x);
+                    Ok(self.objective(&shared.borrow()))
+                },
+                |x| {
+                    assign(x);
+                    Ok(self.derivative(&shared.borrow()))
+                },
+                initial.clone(),
+                Vec::new(),
+            )
+            .map_err(|_| "could not minimize the fit energy")?;
+        assign(&descent.solution);
         let shift = self
             .nodes
             .iter()
-            .enumerate()
-            .map(|(index, &node)| {
-                ((&x[index] - &anchor[index]).norm() / self.lengths[node]).value()
-            })
+            .zip(descent.solution.iter().zip(&initial))
+            .map(|(&node, (end, start))| ((end - start).norm() / self.lengths[node]).value())
             .fold(0.0, Scalar::max);
-        (shift, value, settled)
+        Ok((
+            shift,
+            descent.value,
+            descent.converged && descent.steps == 0,
+        ))
     }
 }
 
 pub(super) fn sizes(
     neighbors: &[Vec<usize>],
-    elements: &[(&'static CornerTable, Vec<usize>)],
+    elements: &Elements,
     coordinates: &Coordinates<3>,
 ) -> (Vec<Quantity<Length>>, Vec<Quantity<Length>>) {
     let lengths: Vec<Quantity<Length>> = (0..coordinates.len())
@@ -276,9 +284,9 @@ pub(super) fn sizes(
                 / neighbors[node].len().max(1) as Scalar
         })
         .collect();
-    let scales = elements
-        .iter()
-        .map(|(_, element)| {
+    let scales = (0..elements.len())
+        .map(|index| {
+            let (_, element) = elements.get(index);
             element
                 .iter()
                 .map(|&node| lengths[node])
@@ -304,34 +312,6 @@ pub(super) fn schedule(
     };
     let epsilon_1999 = (1.0e-18 + (0.2 * worst).powi(2)).sqrt();
     epsilon_2021.min(epsilon_1999)
-}
-
-fn direction(
-    gradient: &Gradient,
-    history: &[(Coordinates<3>, Gradient)],
-    fallback: Quantity<Length>,
-) -> Coordinates<3> {
-    let mut q = gradient.clone();
-    let mut alphas = vec![0.0; history.len()];
-    let mut rhos = vec![Quantity::<ReciprocalLength>::default(); history.len()];
-    history.iter().enumerate().rev().for_each(|(k, (s, y))| {
-        rhos[k] = 1.0 / y.contract_with(s);
-        alphas[k] = (s.contract_with(&q) * rhos[k]).value();
-        q.iter_mut()
-            .zip(y.iter())
-            .for_each(|(qi, yi)| *qi -= yi * alphas[k]);
-    });
-    let mut q: Coordinates<3> = q * history
-        .last()
-        .map_or(fallback, |(s, y)| s.contract_with(y) / y.norm_squared());
-    history.iter().enumerate().for_each(|(k, (s, y))| {
-        let beta = (y.contract_with(&q) * rhos[k]).value();
-        q.iter_mut()
-            .zip(s.iter())
-            .for_each(|(qi, si)| *qi += si * (alphas[k] - beta));
-    });
-    q *= -1.0;
-    q
 }
 
 fn edges(

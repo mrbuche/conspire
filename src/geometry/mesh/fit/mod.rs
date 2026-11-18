@@ -16,8 +16,9 @@ type Target = (Coordinate<3>, Direction<3>, Quantity<Area>);
 
 type CornerTable = [(usize, [usize; 3])];
 
+const SNAP_SWEEPS: usize = 6;
 const STAGNATION: Scalar = 5.0e-4;
-const SWEEPS: usize = 50;
+pub(in crate::geometry::mesh) const SWEEPS: usize = 50;
 const TOLERANCE: Scalar = 1.0e-3;
 const WINDOW: usize = 3;
 
@@ -39,7 +40,11 @@ impl Mesh<3> {
         target: &Tessellation,
         fitting: Fitting,
     ) -> Result<(), &'static str> {
-        self.fit(free, target)?;
+        let sweeps = match fitting {
+            Fitting::Soft => SWEEPS,
+            Fitting::Snap => SNAP_SWEEPS,
+        };
+        self.fit_patches(free, &[(target, self.exterior_faces())], sweeps)?;
         if let Fitting::Snap = fitting {
             self.project(target, boundary)?;
             let pinned: FxHashSet<usize> = boundary.iter().copied().collect();
@@ -75,6 +80,6 @@ impl Mesh<3> {
         nodes: &[usize],
         target: &Tessellation,
     ) -> Result<(), &'static str> {
-        self.fit_patches(nodes, &[(target, self.exterior_faces())])
+        self.fit_patches(nodes, &[(target, self.exterior_faces())], SWEEPS)
     }
 }
