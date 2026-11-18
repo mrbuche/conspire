@@ -3,8 +3,8 @@ use crate::{
     math::{Quantity, Tensor},
     units::VolumetricHeatCapacity,
     vem::{
-        NodalReferenceCoordinates,
-        block::{Block, element::thermal::capacity::LumpedHeatCapacityVirtualElement},
+        NodalReferenceCoordinates, block::Block,
+        element::thermal::capacity::LumpedHeatCapacityVirtualElement,
     },
 };
 

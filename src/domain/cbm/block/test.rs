@@ -1,5 +1,4 @@
-use super::{Block, node::Weighting};
-use crate::math::EPSILON;
+use super::Block;
 use crate::{
     cbm::SolidElements,
     constitutive::solid::elastic::{
@@ -25,6 +24,7 @@ use crate::{
     },
     units::{Length, Stress},
 };
+use crate::{cbm::node::Weighting, math::EPSILON};
 
 fn two_tetrahedra_reference() -> (PrimitiveConnectivity<3, 4>, NodalReferenceCoordinates<3>) {
     let connectivity = PrimitiveConnectivity::from(vec![[0, 1, 2, 3], [1, 4, 2, 3]]);

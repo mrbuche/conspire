@@ -349,6 +349,6 @@ where
                 )
             }
         }
-        .map_err(|error| ConstitutiveError::upstream(error, self))
+        .map_err(ConstitutiveError::from)
     }
 }

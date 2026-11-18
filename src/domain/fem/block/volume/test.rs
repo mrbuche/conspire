@@ -1,9 +1,6 @@
 use crate::{
     constitutive::solid::hyperelastic::NeoHookean,
-    fem::{
-        Blocks, Model, NodalReferenceCoordinates,
-        block::{Block, element::linear::Hexahedron},
-    },
+    fem::{Blocks, Model, NodalReferenceCoordinates, block::Block, element::linear::Hexahedron},
     math::{
         Quantity,
         assert::{Assert, AssertionError},

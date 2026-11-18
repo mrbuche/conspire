@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test;
 
-use super::{Block, node::Weighting};
+use super::Block;
+use crate::cbm::node::Weighting;
 use crate::{
     domain::NodalReferenceCoordinates,
     geometry::mesh::PrimitiveConnectivity,

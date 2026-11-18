@@ -3,10 +3,7 @@ use crate::{
     math::{Quantity, Scalar, Tensor},
     mechanics::ReferenceCoordinate,
     units::{Density, Mass},
-    vem::{
-        NodalReferenceCoordinates,
-        block::{Block, element::VirtualElement},
-    },
+    vem::{NodalReferenceCoordinates, block::Block, element::VirtualElement},
 };
 
 pub use crate::domain::density::{DensityField, NoDensity};

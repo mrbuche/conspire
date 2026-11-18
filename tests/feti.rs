@@ -8,8 +8,9 @@ use conspire::{
     },
     fem::{
         Minimize, Model, NodalCoordinates, NodalReferenceCoordinates,
-        block::{Block, element::linear::Hexahedron},
+        block::Block,
         boundary::{BoundaryConditions as Conditions, Constrain, ConstrainAt, Displacement, Solid},
+        element::linear::Hexahedron,
         solid::NodalForcesSolid,
     },
     geometry::{

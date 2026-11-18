@@ -8,15 +8,14 @@ use crate::{
     units::Time,
     vem::{
         NodalCoordinates, NodalReferenceCoordinates,
-        block::{
-            Block, Densities,
-            element::{
-                VirtualElementError, mass::LumpedMassVirtualElement,
-                solid::elastic::ElasticVirtualElement, time_scale::fastest_time_scale,
-            },
+        block::{Block, Densities},
+        element::{
+            VirtualElementError, mass::LumpedMassVirtualElement,
+            solid::elastic::ElasticVirtualElement, time_scale::fastest_time_scale,
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> TimeScaleElements<3> for Block<C, F, R>
 where
@@ -49,6 +48,6 @@ where
                     )
                 },
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

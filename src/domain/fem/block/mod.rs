@@ -4,7 +4,6 @@ pub(crate) mod test;
 mod density;
 pub(crate) mod diffusion;
 pub mod electrical;
-pub mod element;
 pub mod mass;
 pub mod multiphysics;
 pub mod solid;
@@ -17,7 +16,7 @@ use crate::{
     domain::block::{element::Items, trimmed_type_name},
     fem::{
         NodalReferenceCoordinates,
-        block::element::{
+        element::{
             ElementNodalReferenceCoordinates, FiniteElement,
             planar::PlanarElementNodalReferenceCoordinates,
         },

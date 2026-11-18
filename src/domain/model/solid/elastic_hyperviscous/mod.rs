@@ -1,0 +1,177 @@
+use crate::{
+    domain::{
+        Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
+        NodalVelocities, NodalVelocitiesHistory,
+        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, NodalState, PowerAt},
+        solid::{NodalDampingsSolid, NodalForcesSolid, viscoelastic::ViscoelasticElements},
+    },
+    math::{
+        Quantity,
+        integrate::{ImplicitDaeMinimize, IntegrationError},
+        optimize::Optimization,
+    },
+    mechanics::Times,
+    units::{Power, Time},
+};
+
+pub trait ElasticHyperviscousElements<const D: usize>
+where
+    Self: ViscoelasticElements<D>,
+{
+    fn viscous_dissipation(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError>;
+    fn dissipation_potential(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError>;
+}
+
+impl<B, const D: usize> ElasticHyperviscousElements<D> for Model<B, D>
+where
+    B: ElasticHyperviscousElements<D>,
+{
+    fn viscous_dissipation(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError> {
+        self.blocks
+            .viscous_dissipation(nodal_coordinates, nodal_velocities)
+    }
+    fn dissipation_potential(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError> {
+        self.blocks
+            .dissipation_potential(nodal_coordinates, nodal_velocities)
+    }
+}
+
+impl<B1, B2, const D: usize> ElasticHyperviscousElements<D> for Blocks<B1, B2>
+where
+    B1: ElasticHyperviscousElements<D>,
+    B2: ElasticHyperviscousElements<D>,
+{
+    fn viscous_dissipation(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError> {
+        Ok(self
+            .0
+            .viscous_dissipation(nodal_coordinates, nodal_velocities)?
+            + self
+                .1
+                .viscous_dissipation(nodal_coordinates, nodal_velocities)?)
+    }
+    fn dissipation_potential(
+        &self,
+        nodal_coordinates: &NodalCoordinates<D>,
+        nodal_velocities: &NodalVelocities<D>,
+    ) -> Result<Quantity<Power>, ElementModelError> {
+        Ok(self
+            .0
+            .dissipation_potential(nodal_coordinates, nodal_velocities)?
+            + self
+                .1
+                .dissipation_potential(nodal_coordinates, nodal_velocities)?)
+    }
+}
+
+pub trait Minimize<const D: usize> {
+    fn minimize(
+        &self,
+        boundary_conditions: &impl ConstrainAt<<NodalVelocities<D> as NodalState>::Layout>,
+        applied_loads: &(
+             impl LoadAt<NodalCoordinates<D>, NodalForcesSolid<D>>
+             + LoadStiffnessAt<NodalCoordinates<D>, NodalDampingsSolid<D>>
+             + PowerAt<NodalCoordinates<D>, NodalVelocities<D>, Quantity<Power>>
+         ),
+        integrator: impl ImplicitDaeMinimize<
+            Quantity<Power>,
+            NodalForcesSolid<D>,
+            NodalDampingsSolid<D>,
+            NodalCoordinates<D>,
+            NodalCoordinatesHistory<D>,
+            NodalVelocitiesHistory<D>,
+        >,
+        time: &[Quantity<Time>],
+        solver: impl Optimization<
+            Quantity<Power>,
+            NodalForcesSolid<D>,
+            NodalDampingsSolid<D>,
+            NodalVelocities<D>,
+        >,
+    ) -> Result<(Times, NodalCoordinatesHistory<D>, NodalVelocitiesHistory<D>), IntegrationError>;
+}
+
+impl<B, const D: usize> Minimize<D> for Model<B, D>
+where
+    B: ElasticHyperviscousElements<D>,
+{
+    fn minimize(
+        &self,
+        boundary_conditions: &impl ConstrainAt<<NodalVelocities<D> as NodalState>::Layout>,
+        applied_loads: &(
+             impl LoadAt<NodalCoordinates<D>, NodalForcesSolid<D>>
+             + LoadStiffnessAt<NodalCoordinates<D>, NodalDampingsSolid<D>>
+             + PowerAt<NodalCoordinates<D>, NodalVelocities<D>, Quantity<Power>>
+         ),
+        integrator: impl ImplicitDaeMinimize<
+            Quantity<Power>,
+            NodalForcesSolid<D>,
+            NodalDampingsSolid<D>,
+            NodalCoordinates<D>,
+            NodalCoordinatesHistory<D>,
+            NodalVelocitiesHistory<D>,
+        >,
+        time: &[Quantity<Time>],
+        solver: impl Optimization<
+            Quantity<Power>,
+            NodalForcesSolid<D>,
+            NodalDampingsSolid<D>,
+            NodalVelocities<D>,
+        >,
+    ) -> Result<(Times, NodalCoordinatesHistory<D>, NodalVelocitiesHistory<D>), IntegrationError>
+    {
+        let initial = *time
+            .first()
+            .ok_or(IntegrationError::LengthTimeLessThanTwo)?;
+        let sparse = self.sparse_solver(&boundary_conditions.constraint_at(initial), D, true);
+        integrator.integrate(
+            |time: Quantity<Time>,
+             nodal_coordinates: &NodalCoordinates<D>,
+             nodal_velocities: &NodalVelocities<D>| {
+                Ok(
+                    self.dissipation_potential(nodal_coordinates, nodal_velocities)?
+                        + applied_loads.power_at(time, nodal_coordinates, nodal_velocities)?,
+                )
+            },
+            |time: Quantity<Time>,
+             nodal_coordinates: &NodalCoordinates<D>,
+             nodal_velocities: &NodalVelocities<D>| {
+                let mut nodal_forces = self.nodal_forces(nodal_coordinates, nodal_velocities)?;
+                applied_loads.subtract_at(time, nodal_coordinates, &mut nodal_forces)?;
+                Ok(nodal_forces)
+            },
+            |time: Quantity<Time>,
+             nodal_coordinates: &NodalCoordinates<D>,
+             nodal_velocities: &NodalVelocities<D>| {
+                let mut nodal_dampings =
+                    self.nodal_dampings(nodal_coordinates, nodal_velocities)?;
+                applied_loads.add_stiffness_at(time, nodal_coordinates, &mut nodal_dampings)?;
+                Ok(nodal_dampings)
+            },
+            solver,
+            time,
+            self.coordinates().clone().into(),
+            |time: Quantity<Time>| boundary_conditions.constraint_at(time),
+            Some(sparse),
+        )
+    }
+}

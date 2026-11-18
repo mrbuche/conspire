@@ -1,10 +1,8 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{
-            Block, Densities, ElementDensities,
-            element::{FiniteElement, linear::Tetrahedron},
-        },
+        block::{Block, Densities, ElementDensities},
+        element::{FiniteElement, linear::Tetrahedron},
     },
     math::{
         Quantity,

@@ -7,8 +7,7 @@ use crate::{
     domain::decomposition::Decomposition,
     domain::decomposition::feti::{Feti, Formulation, SolveError, dual_primal::BoundaryConditions},
     fem::{
-        NodalCoordinates, NodalReferenceCoordinates,
-        block::{Block, element::linear::Tetrahedron},
+        NodalCoordinates, NodalReferenceCoordinates, block::Block, element::linear::Tetrahedron,
     },
     math::{Tensor, Vector},
 };

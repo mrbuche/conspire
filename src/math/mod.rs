@@ -17,6 +17,7 @@ pub mod interpolate;
 pub mod optimize;
 
 /// Random number generation.
+#[cfg(feature = "std")]
 pub mod random;
 
 /// Sparse data types.
@@ -26,20 +27,21 @@ pub mod sparse;
 pub mod special;
 
 mod graph;
+#[cfg(feature = "std")]
 mod labels;
 mod matrix;
 mod simd;
-mod style;
 mod tensor;
 
-pub(crate) use style::{Style, StyledError, defeat_message, styled_error};
-
-pub use crate::hash::{FxHashMap, FxHashSet, FxHasher};
+pub use crate::hash::FxHasher;
+#[cfg(feature = "std")]
+pub use crate::hash::{FxHashMap, FxHashSet};
 pub use graph::{Graph, Incidence};
+#[cfg(feature = "std")]
 pub use labels::Labels;
 pub use matrix::{
     Matrix,
-    square::{LdlDecomposition, LuDecomposition, SquareMatrix},
+    square::{LdlDecomposition, LuDecomposition, SquareMatrix, SquareMatrixError},
     vector::Vector,
 };
 pub use tensor::{

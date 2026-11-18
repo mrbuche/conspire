@@ -1,21 +1,21 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::diffusion::{Diffusion, Diffusive},
     domain::diffusion::{DiffusionElements, NodalFields, NodalForces, NodalStiffnesses},
     fem::{
         ElementModelError,
-        block::{
-            Block,
-            element::{
-                FiniteElementError,
-                diffusion::{
-                    DiffusionFiniteElement, DiffusiveFiniteElement, ElementGradients,
-                    ElementNodalFields,
-                },
+        block::Block,
+        element::{
+            FiniteElementError,
+            diffusion::{
+                DiffusionFiniteElement, DiffusiveFiniteElement, ElementGradients,
+                ElementNodalFields,
             },
         },
     },
     math::Quantity,
 };
+use core::any::type_name;
 
 pub trait DiffusiveElements<L, C, F, const G: usize, const M: usize, const N: usize, const P: usize>
 where
@@ -77,8 +77,8 @@ where
                     &self.nodal_fields_element(element_connectivity, nodal_fields),
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items::<Quantity<L::Energy>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_forces_into(
         &self,
@@ -99,7 +99,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -126,6 +126,6 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

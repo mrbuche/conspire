@@ -1,13 +1,13 @@
-use super::super::{
-    Block,
-    node::solid::{elastic::ElasticElement, hyperelastic::HyperelasticElement},
-};
+use super::super::Block;
+use crate::cbm::node::solid::{elastic::ElasticElement, hyperelastic::HyperelasticElement};
+use crate::domain::AtItems;
 use crate::{
     constitutive::{ConstitutiveError, solid::hyperelastic::Hyperelastic},
     domain::{ElementModelError, NodalCoordinates, solid::NodalStiffnessesSolidSymmetric},
     math::{HessianAccumulate, Quantity},
     units::Energy,
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::hyperelastic::HyperelasticElements;
 
@@ -22,8 +22,8 @@ where
         self.nodes
             .iter()
             .map(|node| node.helmholtz_free_energy(&self.constitutive_model, nodal_coordinates))
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_symmetric_into(
         &self,
@@ -47,6 +47,6 @@ where
                     });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

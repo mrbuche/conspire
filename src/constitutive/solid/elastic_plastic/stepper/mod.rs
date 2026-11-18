@@ -3,6 +3,7 @@ mod test;
 
 use super::StepError;
 use crate::{
+    constitutive::ConstitutiveError,
     math::{Quantity, integrate::StepController},
     mechanics::Scalar,
     units::Time,
@@ -45,7 +46,7 @@ pub enum Outcome {
 }
 
 impl<'a> Stepper<'a> {
-    pub fn new(times: &'a [Quantity<Time>]) -> Result<Self, String> {
+    pub fn new(times: &'a [Quantity<Time>]) -> Result<Self, ConstitutiveError> {
         match (times.first(), times.last()) {
             (Some(&start), Some(&end)) if times.len() >= 2 && start < end => Ok(Self {
                 times,
@@ -56,7 +57,7 @@ impl<'a> Stepper<'a> {
                 direction: StepController::new(0.9, 2.0, DT_CUT, 5.0),
                 overshoot: StepController::new(0.9, 1.0, DT_CUT, 5.0),
             }),
-            _ => Err("The times must be at least two and increasing.".to_string()),
+            _ => Err(ConstitutiveError::InvalidTimes),
         }
     }
     /// Whether the last breakpoint has been reached.
@@ -84,7 +85,7 @@ impl<'a> Stepper<'a> {
         step: &Step,
         error: StepError,
         abs_tol: Quantity,
-    ) -> Result<Outcome, String> {
+    ) -> Result<Outcome, ConstitutiveError> {
         let scale = self
             .direction
             .scale(error.direction, abs_tol)
@@ -103,7 +104,7 @@ impl<'a> Stepper<'a> {
                 report: step.landing || self.times.len() == 2,
             })
         } else if step.size <= self.floor {
-            Err("The adaptive step fell below the floor.".to_string())
+            Err(ConstitutiveError::StepBelowFloor)
         } else {
             self.size = step.size * scale;
             Ok(Outcome::Rejected)

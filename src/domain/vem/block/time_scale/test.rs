@@ -1,12 +1,12 @@
 use crate::{
     constitutive::solid::hyperelastic::NeoHookean,
     fem::{
-        self, NodalCoordinates, NodalReferenceCoordinates, block::element::linear::Tetrahedron,
+        self, NodalCoordinates, NodalReferenceCoordinates, element::linear::Tetrahedron,
         solid::time_scale::TimeScaleElements,
     },
     math::Quantity,
     units::{Density, Stress},
-    vem::block::{Block, element::Element},
+    vem::{block::Block, element::Element},
 };
 
 const DENSITY: Quantity<Density> = Density::kilograms_per_cubic_meter(7.8e3);
@@ -25,7 +25,7 @@ fn virtual_time_scale(nodes: &[[f64; 3]], faces: Vec<Vec<usize>>) -> f64 {
         vec![(0..faces.len()).collect()],
         faces,
         &reference,
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ))
     .with_density(DENSITY)
     .fastest_time_scale(&reference, &NodalCoordinates::from(nodes.to_vec()))

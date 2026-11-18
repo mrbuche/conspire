@@ -10,9 +10,10 @@ use crate::{
     },
     math::Tensor,
     mechanics::{
-        DeformationGradient, test::get_deformation_gradient, test::get_deformation_gradient_rate,
+        DeformationGradient,
+        test::{get_deformation_gradient, get_deformation_gradient_rate},
     },
-    vem::block::{Block, element::Element},
+    vem::{block::Block, element::Element},
 };
 
 const D: usize = 21;
@@ -96,7 +97,7 @@ macro_rules! setup_block {
                 get_element_face_connectivity(),
                 get_face_node_connectivity(),
                 &get_reference_coordinates_block(),
-                crate::vem::block::element::DEFAULT_STABILIZATION,
+                crate::vem::element::DEFAULT_STABILIZATION,
             ))
         }
         fn get_block_transformed() -> Block<$constitutive_model_type, Element> {
@@ -105,7 +106,7 @@ macro_rules! setup_block {
                 get_element_face_connectivity(),
                 get_face_node_connectivity(),
                 &get_reference_coordinates_transformed_block(),
-                crate::vem::block::element::DEFAULT_STABILIZATION,
+                crate::vem::element::DEFAULT_STABILIZATION,
             ))
         }
     };

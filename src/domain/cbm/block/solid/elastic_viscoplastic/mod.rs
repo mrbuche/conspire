@@ -1,4 +1,6 @@
-use super::super::{Block, node::solid::elastic_viscoplastic::ElasticViscoplasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::elastic_viscoplastic::ElasticViscoplasticElement;
+use crate::domain::AtItems;
 use crate::{
     constitutive::{ConstitutiveError, solid::elastic_viscoplastic::ElasticViscoplastic},
     domain::{
@@ -7,6 +9,7 @@ use crate::{
     },
     math::{Differentiable, Tensor},
 };
+use core::any::type_name;
 
 pub use crate::domain::block::solid::viscoplastic::{
     ViscoplasticEvolution, ViscoplasticStateVariables,
@@ -44,7 +47,7 @@ where
                 .for_each(|(force, &neighbor)| nodal_forces[neighbor] += force);
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -72,7 +75,7 @@ where
                 });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn state_variables_evolution(
         &self,
@@ -89,7 +92,7 @@ where
                     state_variables_node,
                 )
             })
-            .collect::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

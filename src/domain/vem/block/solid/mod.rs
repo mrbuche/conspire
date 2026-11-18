@@ -12,10 +12,7 @@ use crate::{
     constitutive::solid::Solid,
     domain::solid::SolidElements,
     mechanics::{DeformationGradientRates, DeformationGradients},
-    vem::{
-        NodalCoordinates, NodalVelocities,
-        block::{Block, element::solid::SolidVirtualElement},
-    },
+    vem::{NodalCoordinates, NodalVelocities, block::Block, element::solid::SolidVirtualElement},
 };
 
 pub type NodalDampingsSolid = crate::domain::solid::NodalDampingsSolid<3>;

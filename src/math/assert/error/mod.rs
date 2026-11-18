@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod test;
 
-use crate::math::{TensorError, defeat_message};
+use crate::math::TensorError;
 use core::fmt::{self, Debug, Formatter};
+
+#[cfg(feature = "std")]
 use std::io::Error as ErrorIO;
 
 /// An error produced by a failed assertion, comparing two values.
@@ -12,12 +14,7 @@ pub struct AssertionError {
 
 impl Debug for AssertionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}\n\x1b[0;2;31m{}\x1b[0m\n",
-            self.message,
-            defeat_message()
-        )
+        writeln!(f, "{}", self.message)
     }
 }
 
@@ -43,6 +40,7 @@ impl From<TensorError> for AssertionError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<ErrorIO> for AssertionError {
     fn from(error: ErrorIO) -> Self {
         Self {
