@@ -2,12 +2,10 @@ use crate::{
     constitutive::solid::elastic::Elastic,
     fem::{
         ElementModelError, NodalCoordinates, NodalReferenceCoordinates,
-        block::{
-            Block, Densities,
-            element::{
-                FiniteElementError, mass::LumpedMassFiniteElement,
-                solid::elastic::ElasticFiniteElement, time_scale::fastest_time_scale,
-            },
+        block::{Block, Densities},
+        element::{
+            FiniteElementError, mass::LumpedMassFiniteElement,
+            solid::elastic::ElasticFiniteElement, time_scale::fastest_time_scale,
         },
         solid::time_scale::TimeScaleElements,
     },

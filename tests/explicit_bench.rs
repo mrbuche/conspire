@@ -12,8 +12,9 @@ use conspire::{
     fem::{
         Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
         NodalVelocities,
-        block::{Block, element::linear::Hexahedron},
+        block::Block,
         boundary::{BoundaryConditions, Solid},
+        element::linear::Hexahedron,
         solid::{
             ElasticExplicitDynamics, Execution, Lumped, NodalForcesSolid, Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},

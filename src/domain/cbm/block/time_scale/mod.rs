@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test;
 
-use super::{Block, density::Densities, node::mass::NodalMass};
+use super::{Block, density::Densities};
+use crate::cbm::node::mass::NodalMass;
 use crate::{
     constitutive::{ConstitutiveError, solid::elastic::Elastic},
     domain::{

@@ -8,7 +8,8 @@ pub mod hyperelastic_viscoplastic;
 pub mod hyperviscoelastic;
 pub mod viscoelastic;
 
-use super::{Block, node::solid::SolidElement};
+use super::Block;
+use crate::cbm::node::solid::SolidElement;
 use crate::{
     domain::{NodalCoordinates, NodalVelocities},
     mechanics::{DeformationGradient, DeformationGradientRate},

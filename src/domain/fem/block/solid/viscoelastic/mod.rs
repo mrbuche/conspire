@@ -2,10 +2,8 @@ use crate::{
     constitutive::solid::viscoelastic::Viscoelastic,
     fem::{
         ElementModelError, NodalCoordinates, NodalVelocities,
-        block::{
-            Block,
-            element::{FiniteElementError, solid::viscoelastic::ViscoelasticFiniteElement},
-        },
+        block::Block,
+        element::{FiniteElementError, solid::viscoelastic::ViscoelasticFiniteElement},
         solid::{
             NodalDampingsSolid, NodalForcesSolid, NodalStiffnessesSolid,
             viscoelastic::ViscoelasticElements,

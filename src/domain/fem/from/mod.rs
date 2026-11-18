@@ -5,12 +5,10 @@ use crate::{
     domain::from::FromConnectivities,
     fem::{
         ElasticViscoplasticAndElastic, Model, NodalReferenceCoordinates,
-        block::{
-            Block,
-            element::{
-                ElementNodalReferenceCoordinates, FiniteElement,
-                planar::PlanarElementNodalReferenceCoordinates,
-            },
+        block::Block,
+        element::{
+            ElementNodalReferenceCoordinates, FiniteElement,
+            planar::PlanarElementNodalReferenceCoordinates,
         },
         nodal_coordinates,
     },

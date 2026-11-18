@@ -3,7 +3,8 @@ use crate::{
     constitutive::solid::elastic_hyperviscous::ElasticHyperviscous,
     fem::{
         ElementModelError, NodalCoordinates, NodalVelocities,
-        block::{Block, element::solid::elastic_hyperviscous::ElasticHyperviscousFiniteElement},
+        block::Block,
+        element::solid::elastic_hyperviscous::ElasticHyperviscousFiniteElement,
         solid::{
             elastic_hyperviscous::ElasticHyperviscousElements, viscoelastic::ViscoelasticElements,
         },

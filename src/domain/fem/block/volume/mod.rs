@@ -3,10 +3,7 @@ mod test;
 
 use crate::{
     domain::volume::NodalVolumeElements,
-    fem::{
-        NodalReferenceCoordinates,
-        block::{Block, element::FiniteElement},
-    },
+    fem::{NodalReferenceCoordinates, block::Block, element::FiniteElement},
     math::{Quantity, Tensor},
     mechanics::ReferenceCoordinate,
     units::Volume,

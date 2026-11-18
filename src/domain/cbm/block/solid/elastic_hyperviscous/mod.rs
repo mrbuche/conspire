@@ -1,4 +1,5 @@
-use super::super::{Block, node::solid::elastic_hyperviscous::ElasticHyperviscousElement};
+use super::super::Block;
+use crate::cbm::node::solid::elastic_hyperviscous::ElasticHyperviscousElement;
 use crate::domain::AtItems;
 use crate::{
     constitutive::solid::elastic_hyperviscous::ElasticHyperviscous,

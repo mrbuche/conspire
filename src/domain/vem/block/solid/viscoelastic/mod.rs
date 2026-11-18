@@ -5,9 +5,9 @@ use crate::{
         NodalCoordinates, NodalVelocities,
         block::{
             Block,
-            element::{VirtualElementError, solid::viscoelastic::ViscoelasticVirtualElement},
             solid::{NodalDampingsSolid, NodalForcesSolid, NodalStiffnessesSolid},
         },
+        element::{VirtualElementError, solid::viscoelastic::ViscoelasticVirtualElement},
     },
 };
 use core::any::type_name;

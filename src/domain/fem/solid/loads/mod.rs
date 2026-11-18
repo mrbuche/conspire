@@ -12,7 +12,7 @@ use crate::{
     },
     fem::{
         NodalCoordinates, NodalReferenceCoordinates,
-        block::element::{
+        element::{
             ElementNodalCoordinates, ElementNodalReferenceCoordinates,
             surface::{
                 SurfaceFiniteElement,

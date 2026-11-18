@@ -13,9 +13,9 @@ use crate::{
         NodalCoordinates,
         block::{
             Block,
-            element::{VirtualElementError, solid::elastic_plastic::ElasticPlasticVirtualElement},
             solid::{NodalForcesSolid, NodalStiffnessesSolid},
         },
+        element::{VirtualElementError, solid::elastic_plastic::ElasticPlasticVirtualElement},
     },
 };
 use core::any::type_name;

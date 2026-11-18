@@ -1,4 +1,5 @@
-use super::super::{Block, node::solid::elastic_viscoplastic::ElasticViscoplasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::elastic_viscoplastic::ElasticViscoplasticElement;
 use crate::domain::AtItems;
 use crate::{
     constitutive::{ConstitutiveError, solid::elastic_viscoplastic::ElasticViscoplastic},

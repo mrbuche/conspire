@@ -6,15 +6,13 @@ use crate::{
     domain::solid::elastic::ElasticItems,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError,
-                planar::PlanarElasticFiniteElement,
-                solid::{
-                    ElementNodalForcesSolid, ElementNodalStiffnessesSolid,
-                    elastic::ElasticFiniteElement,
-                },
+        block::Block,
+        element::{
+            FiniteElementError,
+            planar::PlanarElasticFiniteElement,
+            solid::{
+                ElementNodalForcesSolid, ElementNodalStiffnessesSolid,
+                elastic::ElasticFiniteElement,
             },
         },
         solid::{NodalForcesSolid, NodalStiffnessesSolid, elastic::ElasticElements},

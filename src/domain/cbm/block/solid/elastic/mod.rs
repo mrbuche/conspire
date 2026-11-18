@@ -1,4 +1,5 @@
-use super::super::{Block, node::solid::elastic::ElasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::elastic::ElasticElement;
 use crate::domain::ItemError;
 use crate::{
     constitutive::solid::elastic::Elastic,

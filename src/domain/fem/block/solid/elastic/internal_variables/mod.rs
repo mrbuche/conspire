@@ -6,12 +6,8 @@ use crate::{
     constitutive::solid::elastic::internal_variables::ElasticIV,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError, solid::elastic::internal_variables::ElasticIVFiniteElement,
-            },
-        },
+        block::Block,
+        element::{FiniteElementError, solid::elastic::internal_variables::ElasticIVFiniteElement},
         solid::{
             NodalForcesSolid, NodalStiffnessesSolid,
             elastic::internal_variables::{ElasticIVElements, InternalVariablesField},

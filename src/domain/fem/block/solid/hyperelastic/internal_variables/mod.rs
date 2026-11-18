@@ -3,9 +3,8 @@ use crate::{
     constitutive::solid::hyperelastic::internal_variables::HyperelasticIV,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block, element::solid::hyperelastic::internal_variables::HyperelasticIVFiniteElement,
-        },
+        block::Block,
+        element::solid::hyperelastic::internal_variables::HyperelasticIVFiniteElement,
         solid::{
             elastic::internal_variables::{ElasticIVElements, InternalVariablesField},
             hyperelastic::internal_variables::HyperelasticIVElements,

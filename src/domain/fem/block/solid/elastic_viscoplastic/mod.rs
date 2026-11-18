@@ -6,14 +6,10 @@ use crate::{
     },
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError,
-                solid::{
-                    SolidFiniteElement, elastic_viscoplastic::ElasticViscoplasticFiniteElement,
-                },
-            },
+        block::Block,
+        element::{
+            FiniteElementError,
+            solid::{SolidFiniteElement, elastic_viscoplastic::ElasticViscoplasticFiniteElement},
         },
         solid::{
             NodalForcesSolid, NodalStiffnessesSolid,

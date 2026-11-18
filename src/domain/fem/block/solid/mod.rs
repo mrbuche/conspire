@@ -10,10 +10,7 @@ pub mod viscoelastic;
 
 use crate::{
     constitutive::solid::Solid,
-    fem::{
-        NodalCoordinates, NodalVelocities,
-        block::{Block, element::solid::SolidFiniteElement},
-    },
+    fem::{NodalCoordinates, NodalVelocities, block::Block, element::solid::SolidFiniteElement},
     mechanics::{DeformationGradientList, DeformationGradientRateList},
 };
 

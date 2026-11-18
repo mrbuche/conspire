@@ -20,7 +20,7 @@ use conspire::{
         optimize::{Direct, NewtonRaphson, Tolerances},
     },
     units::Stress,
-    vem::block::{Block, element::Element},
+    vem::{block::Block, element::Element},
 };
 
 type VemBlock = Block<NeoHookean, Element>;
@@ -104,7 +104,7 @@ fn problem(nel: [usize; 3]) -> (Model<VemBlock, 3>, impl Constrain<Solid<3>>) {
             .iter()
             .map(|coordinate| coordinate.clone().with_unit())
             .collect(),
-        conspire::vem::block::element::DEFAULT_STABILIZATION,
+        conspire::vem::element::DEFAULT_STABILIZATION,
     ));
     let start = NodalReferenceCoordinates::from(
         reference
@@ -136,7 +136,7 @@ fn the_polyhedral_block_is_stress_free_at_its_reference_configuration() {
             .iter()
             .map(|coordinate| coordinate.clone().with_unit())
             .collect(),
-        conspire::vem::block::element::DEFAULT_STABILIZATION,
+        conspire::vem::element::DEFAULT_STABILIZATION,
     ));
     let start = NodalReferenceCoordinates::from(
         coordinates

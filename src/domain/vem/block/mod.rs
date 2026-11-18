@@ -2,7 +2,6 @@ mod density;
 mod diffusion;
 #[cfg(test)]
 mod electrical;
-pub mod element;
 mod mass;
 pub mod solid;
 #[cfg(test)]
@@ -15,7 +14,7 @@ use crate::{
     domain::block::{element::Items, trimmed_type_name},
     geometry::mesh::PolytopalConnectivity,
     math::{Scalar, TensorRank1Vec},
-    vem::{NodalReferenceCoordinates, block::element::VirtualElement},
+    vem::{NodalReferenceCoordinates, element::VirtualElement},
 };
 use core::fmt::{self, Debug, Formatter};
 

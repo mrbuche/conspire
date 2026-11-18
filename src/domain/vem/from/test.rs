@@ -8,10 +8,7 @@ use crate::{
     },
     math::{Tensor, assert::AssertionError},
     units::Stress,
-    vem::{
-        NodalCoordinates,
-        block::{Block, element::Element},
-    },
+    vem::{NodalCoordinates, block::Block, element::Element},
 };
 
 fn constitutive_model() -> NeoHookean {
@@ -80,7 +77,7 @@ fn polyhedral_block_nodal_forces() -> Result<(), AssertionError> {
         elements_faces(),
         faces_nodes(),
         &nodal_coordinates(coordinates()),
-        crate::vem::block::element::DEFAULT_STABILIZATION,
+        crate::vem::element::DEFAULT_STABILIZATION,
     ));
     Assert::eq(
         &block.nodal_forces(&deformed_coordinates())?,

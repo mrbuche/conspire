@@ -1,7 +1,6 @@
 use crate::{
     constitutive::solid::hyperelastic::NeoHookean,
-    domain::solid::dynamics::test::fixed_dofs,
-    domain::solid::hyperelastic::HyperelasticElements,
+    domain::solid::{dynamics::test::fixed_dofs, hyperelastic::HyperelasticElements},
     math::{
         Quantity, Tensor,
         assert::{Assert, AssertionError},
@@ -13,10 +12,8 @@ use crate::{
         ElasticExplicitDynamics, ElasticImplicitDynamics, Execution, Lumped, MassChoice, Model,
         NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
         Unchecked,
-        block::{
-            Block,
-            element::{DEFAULT_STABILIZATION, Element},
-        },
+        block::Block,
+        element::{DEFAULT_STABILIZATION, Element},
     },
 };
 

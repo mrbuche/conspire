@@ -16,14 +16,12 @@ use conspire::{
     },
     fem::{
         Model,
-        block::{
-            Block, element::linear::Tetrahedron as LinearTetrahedron, solid::SolidElements,
-            thermal::ThermalElements,
-        },
+        block::{Block, solid::SolidElements, thermal::ThermalElements},
         boundary::{
             BoundaryConditions, Constrain, ConstrainAt, Displacement, Enforcement, Field, Rows,
             Solid, SolidRate, Temperature, Velocity,
         },
+        element::linear::Tetrahedron as LinearTetrahedron,
     },
     geometry::{
         Coordinates,

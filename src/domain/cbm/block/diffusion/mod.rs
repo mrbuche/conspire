@@ -1,7 +1,5 @@
-use super::{
-    Block,
-    node::{Node, diffusion::DiffusionNode},
-};
+use super::Block;
+use crate::cbm::node::{Node, diffusion::DiffusionNode};
 use crate::domain::AtItems;
 use crate::{
     constitutive::{

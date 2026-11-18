@@ -9,13 +9,13 @@ use crate::{
         Blocks, ElasticViscoplasticAndElastic, Minimize, Model, NodalCoordinates, Root,
         block::{
             Block,
-            element::{
-                linear::{Hexahedron, Tetrahedron, Wedge},
-                planar::{Quadrilateral, Triangle},
-            },
             test::{displacement_conditions_2, displacement_conditions_3},
         },
         boundary::{BoundaryConditions, ConstrainAt, Displacement, Enforcement, Loads, Solid},
+        element::{
+            linear::{Hexahedron, Tetrahedron, Wedge},
+            planar::{Quadrilateral, Triangle},
+        },
         nodal_coordinates,
         solid::{NodalForcesSolid, elastic::ElasticElements, elastic_viscoplastic::RootRkmkDae},
     },

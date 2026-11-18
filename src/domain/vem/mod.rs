@@ -1,6 +1,7 @@
 //! Virtual element methods.
 
 pub mod block;
+pub mod element;
 pub mod volume {
     pub use crate::domain::volume::{NodalVolumeElements, NodalVolumes};
 }

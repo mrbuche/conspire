@@ -1,6 +1,5 @@
-use super::super::{
-    Block, node::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticElement,
-};
+use super::super::Block;
+use crate::cbm::node::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticElement;
 use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_viscoplastic::HyperelasticViscoplastic,

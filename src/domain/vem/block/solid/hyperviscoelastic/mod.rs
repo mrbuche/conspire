@@ -11,8 +11,8 @@ use crate::{
     math::Quantity,
     units::Energy,
     vem::{
-        NodalCoordinates,
-        block::{Block, element::solid::hyperviscoelastic::HyperviscoelasticVirtualElement},
+        NodalCoordinates, block::Block,
+        element::solid::hyperviscoelastic::HyperviscoelasticVirtualElement,
     },
 };
 use core::any::type_name;

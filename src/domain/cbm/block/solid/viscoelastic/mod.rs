@@ -1,4 +1,5 @@
-use super::super::{Block, node::solid::viscoelastic::ViscoelasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::viscoelastic::ViscoelasticElement;
 use crate::{
     constitutive::{ConstitutiveError, solid::viscoelastic::Viscoelastic},
     domain::{

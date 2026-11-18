@@ -1,6 +1,7 @@
 //! Continuum bond methods.
 
 pub mod block;
+pub mod node;
 pub mod volume {
     pub use crate::domain::volume::{NodalVolumeElements, NodalVolumes};
 }
@@ -80,4 +81,4 @@ pub use crate::domain::{
         viscoelastic::ViscoelasticElements,
     },
 };
-pub use block::node::Weighting;
+pub use node::Weighting;

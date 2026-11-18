@@ -5,12 +5,10 @@ use crate::{
     constitutive::solid::hyperelastic::Hyperelastic,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                FiniteElementError, planar::PlanarHyperelasticFiniteElement,
-                solid::hyperelastic::HyperelasticFiniteElement,
-            },
+        block::Block,
+        element::{
+            FiniteElementError, planar::PlanarHyperelasticFiniteElement,
+            solid::hyperelastic::HyperelasticFiniteElement,
         },
         solid::{
             NodalStiffnessesSolidSymmetric, elastic::ElasticElements,

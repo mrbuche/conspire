@@ -4,7 +4,7 @@ pub mod conduction;
 pub(crate) mod test;
 mod time_scale;
 
-use crate::vem::block::{Block, element::thermal::ElementNodalTemperatures};
+use crate::vem::{block::Block, element::thermal::ElementNodalTemperatures};
 
 pub use crate::domain::thermal::NodalTemperatures;
 

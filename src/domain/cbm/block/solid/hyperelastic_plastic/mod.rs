@@ -1,4 +1,5 @@
-use super::super::{Block, node::solid::hyperelastic_plastic::HyperelasticPlasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::hyperelastic_plastic::HyperelasticPlasticElement;
 use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_plastic::HyperelasticPlastic,

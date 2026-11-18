@@ -6,8 +6,8 @@ use crate::{
         diffusion::{DiffusionElements, NodalFields, NodalForces, NodalStiffnesses},
     },
     math::{Quantity, Tensor},
-    vem::block::{
-        Block,
+    vem::{
+        block::Block,
         element::{VirtualElementError, diffusion::DiffusionVirtualElement},
     },
 };

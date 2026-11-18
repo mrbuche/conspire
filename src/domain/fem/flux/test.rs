@@ -7,9 +7,10 @@ use crate::{
     domain::ElementModel,
     fem::{
         Model,
-        block::{Block, element::linear::Hexahedron},
+        block::Block,
         boundary::{ConservativeAt, Field, Loads},
         diffusion::{NodalFields, NodalForces},
+        element::linear::Hexahedron,
     },
     geometry::mesh::{Connectivity, Mesh, SideSet},
     math::{

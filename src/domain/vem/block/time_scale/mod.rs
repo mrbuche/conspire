@@ -8,12 +8,10 @@ use crate::{
     units::Time,
     vem::{
         NodalCoordinates, NodalReferenceCoordinates,
-        block::{
-            Block, Densities,
-            element::{
-                VirtualElementError, mass::LumpedMassVirtualElement,
-                solid::elastic::ElasticVirtualElement, time_scale::fastest_time_scale,
-            },
+        block::{Block, Densities},
+        element::{
+            VirtualElementError, mass::LumpedMassVirtualElement,
+            solid::elastic::ElasticVirtualElement, time_scale::fastest_time_scale,
         },
     },
 };

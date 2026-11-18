@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod test;
 
-use super::super::{Block, node::solid::elastic_plastic::ElasticPlasticElement};
+use super::super::Block;
+use crate::cbm::node::solid::elastic_plastic::ElasticPlasticElement;
 use crate::domain::AtItems;
 use crate::{
     constitutive::{

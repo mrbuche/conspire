@@ -11,10 +11,10 @@ use crate::{
         NodalCoordinates,
         block::{
             Block,
-            element::{
-                VirtualElementError, solid::elastic_viscoplastic::ElasticViscoplasticVirtualElement,
-            },
             solid::{NodalForcesSolid, NodalStiffnessesSolid},
+        },
+        element::{
+            VirtualElementError, solid::elastic_viscoplastic::ElasticViscoplasticVirtualElement,
         },
     },
 };

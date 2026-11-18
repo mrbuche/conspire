@@ -1,11 +1,8 @@
 use crate::{
     fem::{
         Blocks, Model, NodalReferenceCoordinates,
-        block::{
-            Block, ElementDensities,
-            element::{ElementNodalReferenceCoordinates, FiniteElement, linear::Tetrahedron},
-            mass::NodalLumpedMasses,
-        },
+        block::{Block, ElementDensities, mass::NodalLumpedMasses},
+        element::{ElementNodalReferenceCoordinates, FiniteElement, linear::Tetrahedron},
     },
     math::{
         Quantity, Tensor,
