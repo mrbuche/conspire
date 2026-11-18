@@ -3,6 +3,7 @@ mod triangle;
 
 pub use self::{quadrilateral::Quadrilateral, triangle::Triangle};
 
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -144,8 +145,7 @@ where
             .map(|deformation_gradient| {
                 constitutive_model.first_piola_kirchhoff_stress(deformation_gradient)
             })
-            .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
         Ok(first_piola_kirchhoff_stresses
             .iter()
             .zip(
@@ -185,8 +185,7 @@ where
             .map(|deformation_gradient| {
                 constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_tangent_stiffnesses
                     .iter()
                     .zip(
@@ -268,7 +267,7 @@ where
                         * integration_weight,
                 )
             })
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .sum_at_points()
+            .map_err(Into::into)
     }
 }

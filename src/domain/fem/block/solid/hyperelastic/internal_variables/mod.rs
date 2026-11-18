@@ -1,10 +1,10 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic::internal_variables::HyperelasticIV,
     fem::{
         ElementModelError, NodalCoordinates,
         block::{
-            Block, element::FiniteElementError,
-            element::solid::hyperelastic::internal_variables::HyperelasticIVFiniteElement,
+            Block, element::solid::hyperelastic::internal_variables::HyperelasticIVFiniteElement,
         },
         solid::{
             elastic::internal_variables::{ElasticIVElements, InternalVariablesField},
@@ -16,6 +16,7 @@ use crate::{
     },
     units::{Dimensionless, Energy, UnitDiv},
 };
+use core::any::type_name;
 use core::ops::{Div, Mul};
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, V, E, R, H>
@@ -49,7 +50,7 @@ where
                     internal_variables_element,
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

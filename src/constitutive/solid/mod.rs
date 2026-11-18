@@ -53,7 +53,7 @@ where
     ) -> Result<Scalar, ConstitutiveError> {
         match deformation_gradient.jacobian() {
             Err(DeformationError::InvalidJacobian(jacobian)) => {
-                Err(ConstitutiveError::invalid_jacobian(jacobian, self))
+                Err(ConstitutiveError::InvalidJacobian(jacobian))
             }
             Ok(jacobian) => Ok(jacobian),
         }

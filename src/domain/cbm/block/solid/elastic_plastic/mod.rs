@@ -2,6 +2,7 @@
 mod test;
 
 use super::super::{Block, node::solid::elastic_plastic::ElasticPlasticElement};
+use crate::domain::AtItems;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -16,6 +17,7 @@ use crate::{
         optimize::{Direct, NewtonRaphson, ResidualMerit},
     },
 };
+use core::any::type_name;
 
 pub use crate::domain::{
     block::solid::plastic::PlasticStateVariablesField,
@@ -66,7 +68,7 @@ where
                     });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_elastic_stiffnesses_into(
         &self,
@@ -94,7 +96,7 @@ where
                 });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn updated_state(
         &self,
@@ -113,8 +115,8 @@ where
                     local_solver,
                 )
             })
-            .collect::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn step_error(
         &self,
@@ -136,6 +138,6 @@ where
                 )
                 .map(|error| worst.max(error))
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test;
 
-use crate::math::{TensorError, defeat_message};
+use crate::math::TensorError;
 use core::fmt::{self, Debug, Formatter};
 use std::io::Error as ErrorIO;
 
@@ -12,12 +12,7 @@ pub struct AssertionError {
 
 impl Debug for AssertionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}\n\x1b[0;2;31m{}\x1b[0m\n",
-            self.message,
-            defeat_message()
-        )
+        writeln!(f, "{}", self.message)
     }
 }
 

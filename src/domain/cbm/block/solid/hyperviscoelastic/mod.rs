@@ -1,10 +1,12 @@
 use super::super::{Block, node::solid::hyperviscoelastic::HyperviscoelasticElement};
+use crate::domain::AtItems;
 use crate::{
-    constitutive::{ConstitutiveError, solid::hyperviscoelastic::Hyperviscoelastic},
+    constitutive::solid::hyperviscoelastic::Hyperviscoelastic,
     domain::{ElementModelError, NodalCoordinates},
     math::Quantity,
     units::Energy,
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::hyperviscoelastic::HyperviscoelasticElements;
 
@@ -19,7 +21,7 @@ where
         self.nodes
             .iter()
             .map(|node| node.helmholtz_free_energy(&self.constitutive_model, nodal_coordinates))
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

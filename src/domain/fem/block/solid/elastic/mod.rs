@@ -1,5 +1,6 @@
 pub mod internal_variables;
 
+use crate::domain::ItemError;
 use crate::{
     constitutive::solid::elastic::Elastic,
     domain::solid::elastic::ElasticItems,
@@ -19,6 +20,7 @@ use crate::{
         solid::{NodalForcesSolid, NodalStiffnessesSolid, elastic::ElasticElements},
     },
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, R, H> ElasticItems<3>
     for Block<C, F, G, M, N, P, R, H>
@@ -41,7 +43,9 @@ where
                     &self.connectivity().iter().as_slice()[item],
                 ),
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
     fn stiffnesses_of(
         &self,
@@ -56,7 +60,9 @@ where
                     &self.connectivity().iter().as_slice()[item],
                 ),
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
 }
 
@@ -85,7 +91,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -113,6 +119,6 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

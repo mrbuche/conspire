@@ -18,10 +18,7 @@ mod maximum_extensibility {
         let model = ARRUDABOYCE;
         assert_eq!(
             model.cauchy_stress(&deformation_gradient),
-            Err(ConstitutiveError::Custom(
-                "Maximum extensibility reached.".to_string(),
-                format!("{:?}", model),
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         )
     }
     #[test]
@@ -31,10 +28,7 @@ mod maximum_extensibility {
         let model = ARRUDABOYCE;
         assert_eq!(
             model.cauchy_tangent_stiffness(&deformation_gradient),
-            Err(ConstitutiveError::Custom(
-                "Maximum extensibility reached.".to_string(),
-                format!("{:?}", model),
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         )
     }
     #[test]
@@ -44,10 +38,7 @@ mod maximum_extensibility {
         let model = ARRUDABOYCE;
         assert_eq!(
             model.helmholtz_free_energy_density(&deformation_gradient),
-            Err(ConstitutiveError::Custom(
-                "Maximum extensibility reached.".to_string(),
-                format!("{:?}", model),
-            ))
+            Err(ConstitutiveError::MaximumExtensibility)
         )
     }
 }

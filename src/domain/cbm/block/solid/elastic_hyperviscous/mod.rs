@@ -1,10 +1,12 @@
 use super::super::{Block, node::solid::elastic_hyperviscous::ElasticHyperviscousElement};
+use crate::domain::AtItems;
 use crate::{
-    constitutive::{ConstitutiveError, solid::elastic_hyperviscous::ElasticHyperviscous},
+    constitutive::solid::elastic_hyperviscous::ElasticHyperviscous,
     domain::{ElementModelError, NodalCoordinates, NodalVelocities},
     math::Quantity,
     units::Power,
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::elastic_hyperviscous::ElasticHyperviscousElements;
 
@@ -26,8 +28,8 @@ where
                     nodal_velocities,
                 )
             })
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn dissipation_potential(
         &self,
@@ -43,7 +45,7 @@ where
                     nodal_velocities,
                 )
             })
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

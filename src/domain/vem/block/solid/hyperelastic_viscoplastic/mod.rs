@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic_viscoplastic::HyperelasticViscoplastic,
     domain::{
@@ -14,13 +15,11 @@ use crate::{
         NodalCoordinates,
         block::{
             Block,
-            element::{
-                VirtualElementError,
-                solid::hyperelastic_viscoplastic::HyperelasticViscoplasticVirtualElement,
-            },
+            element::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticVirtualElement,
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R, Y> HyperelasticViscoplasticElements<ViscoplasticStateVariables<1, Y>, 3>
     for Block<C, F, R>
@@ -46,7 +45,7 @@ where
                     state_variables_element,
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

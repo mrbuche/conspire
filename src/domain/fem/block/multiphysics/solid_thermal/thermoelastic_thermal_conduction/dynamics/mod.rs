@@ -20,6 +20,7 @@ use crate::{
     math::{Quantity, Tensor},
     units::Time,
 };
+use core::any::type_name;
 
 impl<C, F, R, H, const G: usize, const M: usize, const N: usize, const P: usize>
     ThermoelasticThermalConductionTimeScaleElements for Block<C, F, G, M, N, P, R, H>
@@ -66,6 +67,6 @@ where
                     ))
                 },
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

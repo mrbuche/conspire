@@ -62,8 +62,7 @@ where
             .map(|deformation_gradient| {
                 constitutive_model.first_piola_kirchhoff_stress(deformation_gradient)
             })
-            .collect::<Result<FirstPiolaKirchhoffStresses, _>>()
-            .map_err(|error| self.upstream(error))?
+            .collect::<Result<FirstPiolaKirchhoffStresses, _>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -98,8 +97,7 @@ where
                     center_force += &nodal_forces[3];
                     Ok::<(), FiniteElementError>(())
                 },
-            )
-            .map_err(|error| self.upstream(error))?;
+            )?;
         self.faces_nodes()
             .iter()
             .zip(faces_forces.iter())
@@ -128,8 +126,7 @@ where
             .map(|deformation_gradient| {
                 constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()
-            .map_err(|error| self.upstream(error))?
+            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -205,8 +202,7 @@ where
                         * (stabilization * inverse_num_nodes * inverse_num_nodes);
                     Ok::<(), FiniteElementError>(())
                 },
-            )
-            .map_err(|error| self.upstream(error))?;
+            )?;
         self.faces_nodes()
             .iter()
             .zip(

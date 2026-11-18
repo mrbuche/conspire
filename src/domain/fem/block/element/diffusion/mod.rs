@@ -1,3 +1,4 @@
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -85,8 +86,8 @@ where
                     constitutive_model.potential(gradient)? * integration_weight,
                 )
             })
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .sum_at_points()
+            .map_err(Into::into)
     }
     fn nodal_forces(
         &self,
@@ -97,8 +98,7 @@ where
             .gradients(nodal_fields)
             .iter()
             .map(|gradient| constitutive_model.flux(gradient))
-            .collect::<Result<DiffusionFluxes<C, G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<DiffusionFluxes<C, G>>()?;
         Ok(fluxes
             .iter()
             .zip(
@@ -123,8 +123,7 @@ where
             .gradients(nodal_fields)
             .iter()
             .map(|gradient| constitutive_model.tangent(gradient))
-            .collect::<Result<DiffusionTangents<C, G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<DiffusionTangents<C, G>>()?;
         Ok(tangents
             .iter()
             .zip(

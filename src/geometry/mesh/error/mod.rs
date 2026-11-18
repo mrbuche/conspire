@@ -1,4 +1,11 @@
-use crate::math::{Scalar, Style, StyledError, styled_error};
+#[cfg(test)]
+mod test;
+
+use crate::math::Scalar;
+use core::{
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 /// Possible errors for meshes.
 pub enum MeshError {
@@ -9,23 +16,31 @@ pub enum MeshError {
     SurfaceFit,
 }
 
-impl StyledError for MeshError {
-    fn message(&self, style: &Style) -> String {
-        let h = style.headline;
+impl Display for MeshError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Budget { theta, sweeps } => format!(
-                "{h}The scaled Jacobian pass used all {sweeps} sweeps without reaching {theta:.2}."
+            Self::Budget { theta, sweeps } => write!(
+                f,
+                "The scaled Jacobian pass used all {sweeps} sweeps without reaching {theta:.2}."
             ),
-            Self::HexahedraRequired => {
-                format!("{h}The mesh must consist of hexahedra, tetrahedra, pyramids or wedges.")
-            }
-            Self::Minimization => format!("{h}Could not minimize the energy."),
-            Self::Stall { theta, sweeps } => format!(
-                "{h}The scaled Jacobian pass stalled after {sweeps} sweeps short of {theta:.2}."
+            Self::HexahedraRequired => write!(
+                f,
+                "The mesh must consist of hexahedra, tetrahedra, pyramids or wedges."
             ),
-            Self::SurfaceFit => format!("{h}Could not fit the surface."),
+            Self::Minimization => write!(f, "Could not minimize the energy."),
+            Self::Stall { theta, sweeps } => write!(
+                f,
+                "The scaled Jacobian pass stalled after {sweeps} sweeps short of {theta:.2}."
+            ),
+            Self::SurfaceFit => write!(f, "Could not fit the surface."),
         }
     }
 }
 
-styled_error!(MeshError);
+impl Debug for MeshError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl Error for MeshError {}

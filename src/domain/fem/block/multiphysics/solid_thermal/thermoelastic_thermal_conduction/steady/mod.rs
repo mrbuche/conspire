@@ -22,6 +22,7 @@ use crate::{
     },
     math::TensorTuple,
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, R, H>
     ThermoelasticThermalConductionElements for Block<C, F, G, M, N, P, R, H>
@@ -50,7 +51,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_reference_temperatures_into(&self, nodal_temperatures: &mut NodalTemperatures) {
         let reference_temperature = self
@@ -98,6 +99,6 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

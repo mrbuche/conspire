@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::{
         fluid::viscoplastic::ViscoplasticStateVariables as PointStateVariables,
@@ -26,6 +27,7 @@ use crate::{
     mechanics::DeformationGradient,
     units::Time,
 };
+use core::any::type_name;
 use core::array::from_fn;
 
 pub use crate::domain::block::solid::viscoplastic::{
@@ -68,7 +70,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -99,7 +101,7 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn state_variables_evolution(
         &self,
@@ -117,8 +119,8 @@ where
                     element_state_variables,
                 )
             })
-            .collect::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }
 
@@ -200,7 +202,7 @@ where
                     })
                     .collect::<Vec<_>>()
             })
-            .collect::<Result<_, String>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

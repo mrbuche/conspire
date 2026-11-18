@@ -46,8 +46,7 @@ where
                     state_variables,
                 )
             })
-            .sum::<Result<Quantity<Energy>, _>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Energy>, _>>()?;
         let polyhedron_energy = self
             .deformation_gradients(nodal_coordinates)
             .iter()
@@ -60,8 +59,7 @@ where
                         * integration_weight)
                 },
             )
-            .sum::<Result<Quantity<Energy>, ConstitutiveError>>()
-            .map_err(|error| self.upstream(error))?;
+            .sum::<Result<Quantity<Energy>, ConstitutiveError>>()?;
         Ok(polyhedron_energy * (1.0 - self.stabilization())
             + tetrahedra_energy * self.stabilization())
     }

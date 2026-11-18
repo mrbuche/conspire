@@ -1,3 +1,4 @@
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::solid::elastic_viscoplastic::ElasticViscoplastic,
     domain::block::element::solid::elastic_viscoplastic::ElasticViscoplasticElement,
@@ -77,8 +78,7 @@ where
                 constitutive_model
                     .first_piola_kirchhoff_stress(deformation_gradient, deformation_gradient_p)
             })
-            .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
         Ok(first_piola_kirchhoff_stresses
             .iter()
             .zip(
@@ -115,8 +115,7 @@ where
                     deformation_gradient_p,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_tangent_stiffnesses
             .iter()
             .zip(
@@ -161,7 +160,7 @@ where
             .map(|(deformation_gradient, state_variable)| {
                 constitutive_model.state_variables_evolution(deformation_gradient, state_variable)
             })
-            .collect::<Result<ViscoplasticEvolution<G, Y>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .collect_at_points::<ViscoplasticEvolution<G, Y>>()
+            .map_err(Into::into)
     }
 }

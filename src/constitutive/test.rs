@@ -1,4 +1,4 @@
-use super::Scalar;
+use crate::math::Scalar;
 
 #[test]
 fn size() {

@@ -76,8 +76,7 @@ where
                 constitutive_model
                     .first_piola_kirchhoff_stress(deformation_gradient, deformation_gradient_p)
             })
-            .collect::<Result<FirstPiolaKirchhoffStresses, _>>()
-            .map_err(|error| self.upstream(error))?
+            .collect::<Result<FirstPiolaKirchhoffStresses, _>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -115,8 +114,7 @@ where
                     center_force += &nodal_forces[3];
                     Ok::<(), FiniteElementError>(())
                 },
-            )
-            .map_err(|error| self.upstream(error))?;
+            )?;
         self.faces_nodes()
             .iter()
             .zip(faces_forces.iter())
@@ -151,8 +149,7 @@ where
                     deformation_gradient_p,
                 )
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()
-            .map_err(|error| self.upstream(error))?
+            .collect::<Result<FirstPiolaKirchhoffTangentStiffnesses, _>>()?
             .iter()
             .zip(
                 self.gradient_vectors()
@@ -231,8 +228,7 @@ where
                         * (stabilization * inverse_num_nodes * inverse_num_nodes);
                     Ok::<(), FiniteElementError>(())
                 },
-            )
-            .map_err(|error| self.upstream(error))?;
+            )?;
         self.faces_nodes()
             .iter()
             .zip(
@@ -284,6 +280,6 @@ where
                 constitutive_model.state_variables_evolution(deformation_gradient, state_variable)
             })
             .collect::<Result<ViscoplasticEvolution<1, Y>, _>>()
-            .map_err(|error| self.upstream(error))
+            .map_err(Into::into)
     }
 }

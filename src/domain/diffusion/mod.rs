@@ -93,15 +93,26 @@ where
         &self,
         nodal_fields: &NodalFields<L>,
     ) -> Result<Quantity<L::Energy>, ElementModelError> {
-        Ok(self.0.potential(nodal_fields)? + self.1.potential(nodal_fields)?)
+        Ok(self
+            .0
+            .potential(nodal_fields)
+            .map_err(|error| error.in_block(0))?
+            + self
+                .1
+                .potential(nodal_fields)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?)
     }
     fn nodal_forces_into(
         &self,
         nodal_fields: &NodalFields<L>,
         nodal_forces: &mut NodalForces<L>,
     ) -> Result<(), ElementModelError> {
-        self.0.nodal_forces_into(nodal_fields, nodal_forces)?;
-        self.1.nodal_forces_into(nodal_fields, nodal_forces)
+        self.0
+            .nodal_forces_into(nodal_fields, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
+        self.1
+            .nodal_forces_into(nodal_fields, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -109,9 +120,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnesses<L>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_fields, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_fields, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_fields, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }
 

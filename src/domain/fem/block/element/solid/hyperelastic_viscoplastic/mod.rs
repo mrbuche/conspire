@@ -1,3 +1,4 @@
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{ConstitutiveError, solid::hyperelastic_viscoplastic::HyperelasticViscoplastic},
     domain::block::element::solid::hyperelastic_viscoplastic::HyperelasticViscoplasticElement,
@@ -66,7 +67,7 @@ where
                     )
                 },
             )
-            .sum::<Result<_, ConstitutiveError>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .sum_at_points()
+            .map_err(Into::into)
     }
 }

@@ -1,5 +1,6 @@
 pub use crate::domain::block::element::solid::elastic_hyperviscous::ElasticHyperviscousElement;
 
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::{ConstitutiveError, solid::elastic_hyperviscous::ElasticHyperviscous},
     fem::block::element::{
@@ -134,8 +135,8 @@ where
                 )
             },
         )
-        .sum::<Result<_, ConstitutiveError>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))
+        .sum_at_points()
+        .map_err(Into::into)
 }
 
 fn dissipation_potential<
@@ -174,6 +175,6 @@ where
                 )
             },
         )
-        .sum::<Result<_, ConstitutiveError>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))
+        .sum_at_points()
+        .map_err(Into::into)
 }

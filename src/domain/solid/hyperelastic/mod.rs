@@ -64,8 +64,14 @@ where
         &self,
         nodal_coordinates: &NodalCoordinates<D>,
     ) -> Result<Quantity<Energy>, ElementModelError> {
-        Ok(self.0.helmholtz_free_energy(nodal_coordinates)?
-            + self.1.helmholtz_free_energy(nodal_coordinates)?)
+        Ok(self
+            .0
+            .helmholtz_free_energy(nodal_coordinates)
+            .map_err(|error| error.in_block(0))?
+            + self
+                .1
+                .helmholtz_free_energy(nodal_coordinates)
+                .map_err(|error| error.in_block(self.0.number_of_blocks()))?)
     }
     fn nodal_stiffnesses_symmetric_into(
         &self,
@@ -73,9 +79,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolidSymmetric<D>,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_symmetric_into(nodal_coordinates, nodal_stiffnesses)?;
+            .nodal_stiffnesses_symmetric_into(nodal_coordinates, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_symmetric_into(nodal_coordinates, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }
 

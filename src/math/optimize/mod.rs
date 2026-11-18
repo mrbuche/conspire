@@ -12,6 +12,7 @@ mod tolerance;
 pub(crate) use constraint::Rows;
 use constraint::UNSUPPORTED;
 pub use constraint::{EqualityConstraint, EqualityConstraints, Prescription};
+use core::fmt;
 use globalization::BacktrackingLineSearch;
 pub use globalization::{
     Armijo, Error, Goldstein, LineSearchError, NoSearch, ObjectiveMerit, Residual, ResidualMerit,
@@ -33,11 +34,10 @@ pub(crate) use nonlinear::{converged, limit_decrement};
 
 use crate::{
     math::{
-        Quantity, Scalar, Style, StyledError, Tensor, Vector,
+        Quantity, Scalar, Tensor, Vector,
         assert::AssertionError,
         matrix::square::SquareMatrixError,
         sparse::{CscMatrix, SparseError, SparseSolver},
-        styled_error,
     },
     units::{UnitDiv, UnitMul},
 };
@@ -190,31 +190,39 @@ impl From<String> for OptimizationError {
     }
 }
 
-impl StyledError for OptimizationError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl fmt::Display for OptimizationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Intermediate(message) => message.to_string(),
-            Self::MaximumStepsReached(steps, solver) => format!(
-                "{h}Maximum number of steps ({steps}) reached.{c}\n\
+            Self::Intermediate(message) => write!(f, "{}", message),
+            Self::MaximumStepsReached(steps, solver) => write!(
+                f,
+                "Maximum number of steps ({steps}) reached.\n\
                 In solver: {solver}."
             ),
-            Self::NotMinimum(solution, solver) => format!(
-                "{h}The obtained solution is not a minimum.{c}\n\
+            Self::NotMinimum(solution, solver) => write!(
+                f,
+                "The obtained solution is not a minimum.\n\
                 For solution: {solution}.\n\
                 In solver: {solver}."
             ),
-            Self::SingularMatrix => format!("{h}Matrix is singular."),
-            Self::UnsymmetricMatrix => format!("{h}Matrix is not symmetric."),
-            Self::Upstream(error, solver) => format!(
-                "{error}{c}\n\
+            Self::SingularMatrix => write!(f, "Matrix is singular."),
+            Self::UnsymmetricMatrix => write!(f, "Matrix is not symmetric."),
+            Self::Upstream(error, solver) => write!(
+                f,
+                "{error}\n\
                 In solver: {solver}."
             ),
         }
     }
 }
 
-styled_error!(OptimizationError);
+impl fmt::Debug for OptimizationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl core::error::Error for OptimizationError {}
 
 impl From<OptimizationError> for String {
     fn from(error: OptimizationError) -> Self {

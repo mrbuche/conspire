@@ -1,6 +1,4 @@
-use super::{
-    ElasticPlastic, SIZE, Unknowns, basis, failure, increment, linearization::Linearization,
-};
+use super::{ElasticPlastic, SIZE, Unknowns, basis, increment, linearization::Linearization};
 use crate::{
     constitutive::ConstitutiveError,
     math::{
@@ -33,10 +31,7 @@ impl Iterate {
         strain_n: Scalar,
         x: &Unknowns,
     ) -> Result<Self, ConstitutiveError> {
-        let plastic = increment(x)
-            .expm()
-            .map_err(|error| failure(model, &error))?
-            * f_p_n;
+        let plastic = increment(x).expm()? * f_p_n;
         let deviatoric: MandelStressElastic = model.mandel_stress(f, &plastic)?.deviatoric();
         let magnitude = model.equivalent_stress(&deviatoric)?;
         let unit = model.flow_direction(&deviatoric)?;
@@ -77,10 +72,7 @@ impl<'a, C: ElasticPlastic> Sensitivities<'a, C> {
         x: &Unknowns,
         iterate: &'a Iterate,
     ) -> Result<Self, ConstitutiveError> {
-        let slopes = increment(x)
-            .dexpm()
-            .map_err(|error| failure(model, &error))?
-            .contract_second_with_first(f_p_n);
+        let slopes = increment(x).dexpm()?.contract_second_with_first(f_p_n);
         Ok(Self {
             model,
             linearization: Linearization::new(model, f, &iterate.plastic)?,

@@ -2,6 +2,7 @@ pub mod internal_variables;
 
 pub use crate::domain::block::element::solid::elastic::ElasticElement;
 
+use crate::domain::block::element::AtPoints;
 use crate::{
     constitutive::solid::elastic::Elastic,
     fem::block::element::{
@@ -144,8 +145,7 @@ where
             .map(|deformation_gradient| {
                 constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
             })
-            .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))?;
+            .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
         Ok(first_piola_kirchhoff_tangent_stiffnesses
             .iter()
             .zip(
@@ -223,8 +223,7 @@ where
         .map(|deformation_gradient| {
             constitutive_model.first_piola_kirchhoff_stress(deformation_gradient)
         })
-        .collect::<Result<FirstPiolaKirchhoffStressList<G>, _>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))?;
+        .collect_at_points::<FirstPiolaKirchhoffStressList<G>>()?;
     Ok(first_piola_kirchhoff_stresses
         .iter()
         .zip(gradient_vectors.iter().zip(element.integration_weights()))
@@ -265,8 +264,7 @@ where
         .map(|deformation_gradient| {
             constitutive_model.first_piola_kirchhoff_tangent_stiffness(deformation_gradient)
         })
-        .collect::<Result<FirstPiolaKirchhoffTangentStiffnessList<G>, _>>()
-        .map_err(|error| FiniteElementError::upstream(error, element))?;
+        .collect_at_points::<FirstPiolaKirchhoffTangentStiffnessList<G>>()?;
     Ok(first_piola_kirchhoff_tangent_stiffnesses
         .iter()
         .zip(gradient_vectors.iter().zip(element.integration_weights()))

@@ -1,8 +1,9 @@
+use crate::domain::block::element::AtPoints;
 use crate::units::{Dimensionless, UnitDiv};
 use core::ops::{Div, Mul};
 
 use crate::{
-    constitutive::{ConstitutiveError, solid::hyperelastic::internal_variables::HyperelasticIV},
+    constitutive::solid::hyperelastic::internal_variables::HyperelasticIV,
     fem::block::element::{
         Element, ElementNodalCoordinates, FiniteElement, FiniteElementError,
         solid::{
@@ -76,7 +77,7 @@ where
                     )? * integration_weight)
                 },
             )
-            .sum::<Result<Quantity<Energy>, ConstitutiveError>>()
-            .map_err(|error| FiniteElementError::upstream(error, self))
+            .sum_at_points::<Quantity<Energy>>()
+            .map_err(Into::into)
     }
 }

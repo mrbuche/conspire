@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::elastic_hyperviscous::ElasticHyperviscous,
     domain::{
@@ -10,14 +11,10 @@ use crate::{
     units::Power,
     vem::{
         NodalCoordinates, NodalVelocities,
-        block::{
-            Block,
-            element::{
-                VirtualElementError, solid::elastic_hyperviscous::ElasticHyperviscousVirtualElement,
-            },
-        },
+        block::{Block, element::solid::elastic_hyperviscous::ElasticHyperviscousVirtualElement},
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> ElasticHyperviscousElements<3> for Block<C, F, R>
 where
@@ -40,8 +37,8 @@ where
                     &Self::element_coordinates(nodal_velocities, nodes),
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn dissipation_potential(
         &self,
@@ -58,7 +55,7 @@ where
                     &Self::element_coordinates(nodal_velocities, nodes),
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

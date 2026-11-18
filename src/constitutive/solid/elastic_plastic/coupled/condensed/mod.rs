@@ -1,5 +1,5 @@
 use super::{
-    ElasticPlastic, SIZE, failure,
+    ElasticPlastic, SIZE,
     monolithic::{Monolithic, evaluate, local_jacobian, monolithic_local_residual},
     reference,
     sensitivities::{Iterate, Sensitivities},
@@ -70,12 +70,8 @@ pub(crate) fn solve<C: ElasticPlastic>(
         if converged(local_solver, &residual, SIZE, &mut scales) {
             return Ok(Some(Converged { x, iterate }));
         } else if steps == local_solver.max_steps {
-            return Err(failure(
-                model,
-                &format!(
-                    "The coupled return mapping did not converge in {} steps.",
-                    local_solver.max_steps
-                ),
+            return Err(ConstitutiveError::ReturnMapDidNotConverge(
+                local_solver.max_steps,
             ));
         }
         steps += 1;
@@ -88,8 +84,7 @@ pub(crate) fn solve<C: ElasticPlastic>(
         let mut decrement = k_vv
             .into_iter()
             .collect::<SquareMatrix>()
-            .solve_lu(&residual)
-            .map_err(|error| failure(model, &error))?;
+            .solve_lu(&residual)?;
         limit_decrement(local_solver, &mut [(&mut decrement, SIZE)]);
         (0..SIZE).for_each(|i| x[i] -= decrement[i]);
         iterate = Iterate::new(model, f, f_p_n, strain_n, &x)?;
@@ -146,11 +141,7 @@ pub(crate) fn condensed<C: ElasticPlastic>(
         tangent_vv: k_vv,
         ..
     } = evaluate(model, f, f_p_n, &x, &iterate)?;
-    let lu = k_vv
-        .into_iter()
-        .collect::<SquareMatrix>()
-        .factorize_lu()
-        .map_err(|error| failure(model, &error))?;
+    let lu = k_vv.into_iter().collect::<SquareMatrix>().factorize_lu()?;
     let solved: Vec<Vector> = (0..9)
         .map(|column| {
             lu.solve(

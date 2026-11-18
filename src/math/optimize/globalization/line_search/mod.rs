@@ -16,9 +16,10 @@ pub use residual::Residual;
 pub use wolfe::Wolfe;
 
 use crate::{
-    math::{Quantity, Scalar, Style, StyledError, styled_error},
+    math::{Quantity, Scalar},
     units::{Dimensionless, UnitMul},
 };
+use core::fmt;
 use core::fmt::{Debug, Display};
 
 /// Line searches that judge a step by a merit built from the objective.
@@ -175,28 +176,37 @@ pub enum LineSearchError<W = Dimensionless> {
     NotDescentDirection(String),
 }
 
-impl<W> StyledError for LineSearchError<W> {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl<W> fmt::Display for LineSearchError<W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidStartingPoint(line_search) => format!(
-                "{h}Starting point is invalid.{c}\n\
+            Self::InvalidStartingPoint(line_search) => write!(
+                f,
+                "Starting point is invalid.\n\
                 In line search: {line_search}."
             ),
-            Self::MaximumStepsReached(line_search, steps) => format!(
-                "{h}Maximum number of steps ({steps}) reached.{c}\n\
+            Self::MaximumStepsReached(line_search, steps) => write!(
+                f,
+                "Maximum number of steps ({steps}) reached.\n\
                 In line search: {line_search}."
             ),
-            Self::NegativeStepSize(line_search, step_size) => format!(
-                "{h}Negative step size ({step_size}) encountered.{c}\n\
+            Self::NegativeStepSize(line_search, step_size) => write!(
+                f,
+                "Negative step size ({step_size}) encountered.\n\
                 In line search: {line_search}."
             ),
-            Self::NotDescentDirection(line_search) => format!(
-                "{h}Direction is not a descent direction.{c}\n\
+            Self::NotDescentDirection(line_search) => write!(
+                f,
+                "Direction is not a descent direction.\n\
                 In line search: {line_search}."
             ),
         }
     }
 }
 
-styled_error!(<W> LineSearchError<W>);
+impl<W> fmt::Debug for LineSearchError<W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl<W> core::error::Error for LineSearchError<W> {}

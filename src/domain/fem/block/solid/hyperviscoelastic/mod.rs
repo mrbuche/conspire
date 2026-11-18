@@ -1,11 +1,9 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperviscoelastic::Hyperviscoelastic,
     fem::{
         ElementModelError, NodalCoordinates,
-        block::{
-            Block, element::FiniteElementError,
-            element::solid::hyperviscoelastic::HyperviscoelasticFiniteElement,
-        },
+        block::{Block, element::solid::hyperviscoelastic::HyperviscoelasticFiniteElement},
         solid::{
             elastic_hyperviscous::ElasticHyperviscousElements,
             hyperviscoelastic::HyperviscoelasticElements,
@@ -14,6 +12,7 @@ use crate::{
     math::Quantity,
     units::Energy,
 };
+use core::any::type_name;
 
 impl<C, F, const G: usize, const M: usize, const N: usize, const P: usize, R, H>
     HyperviscoelasticElements<3> for Block<C, F, G, M, N, P, R, H>
@@ -35,7 +34,7 @@ where
                     &Self::element_coordinates(nodal_coordinates, nodes),
                 )
             })
-            .sum::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

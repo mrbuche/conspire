@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperviscoelastic::Hyperviscoelastic,
     domain::{
@@ -11,14 +12,10 @@ use crate::{
     units::Energy,
     vem::{
         NodalCoordinates,
-        block::{
-            Block,
-            element::{
-                VirtualElementError, solid::hyperviscoelastic::HyperviscoelasticVirtualElement,
-            },
-        },
+        block::{Block, element::solid::hyperviscoelastic::HyperviscoelasticVirtualElement},
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> HyperviscoelasticElements<3> for Block<C, F, R>
 where
@@ -39,7 +36,7 @@ where
                     &Self::element_coordinates(nodal_coordinates, nodes),
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

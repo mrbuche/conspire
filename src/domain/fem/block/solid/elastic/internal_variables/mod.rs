@@ -1,3 +1,5 @@
+use crate::domain::AtItems;
+use core::any::type_name;
 use core::ops::{Div, Mul};
 
 use crate::{
@@ -63,8 +65,8 @@ where
                     step,
                 )
             })
-            .collect::<Result<InternalVariablesField<G, V>, _>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items::<InternalVariablesField<G, V>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn internal_variables_root(
         &self,
@@ -84,8 +86,8 @@ where
                     internal_variables_element,
                 )
             })
-            .collect::<Result<InternalVariablesField<G, V>, _>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items::<InternalVariablesField<G, V>>()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_forces_into(
         &self,
@@ -109,7 +111,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_forces_eliminated_into(
         &self,
@@ -133,7 +135,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -164,6 +166,6 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

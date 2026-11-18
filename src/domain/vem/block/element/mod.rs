@@ -22,7 +22,7 @@ use crate::{
     vem::{NodalCoordinates, NodalReferenceCoordinates, NodalVelocities},
 };
 
-use core::fmt::{self, Debug, Display, Formatter};
+use core::fmt::{self, Debug, Formatter};
 
 pub type ElementNodalCoordinates = NodalCoordinates;
 pub type ElementNodalVelocities = NodalVelocities;
@@ -43,12 +43,6 @@ pub struct Element {
     stabilization: Scalar,
     tetrahedra: Vec<Tetrahedron<1>>,
     tetrahedra_nodes: Vec<[usize; 3]>,
-}
-
-impl Element {
-    pub(crate) fn upstream(&self, error: impl Display) -> VirtualElementError {
-        VirtualElementError::upstream(error, self)
-    }
 }
 
 pub trait VirtualElement
@@ -282,3 +276,9 @@ impl ElementKind for VirtualElementKind {
 }
 
 pub type VirtualElementError = ElementError<VirtualElementKind>;
+
+impl From<crate::fem::block::element::FiniteElementError> for VirtualElementError {
+    fn from(error: crate::fem::block::element::FiniteElementError) -> Self {
+        Self::new(error.point, error.source)
+    }
+}

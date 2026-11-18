@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::{
         ConstitutiveError,
@@ -23,6 +24,7 @@ use crate::{
         sparse::CscMatrix,
     },
 };
+use core::any::type_name;
 use core::array::from_fn;
 
 pub use crate::domain::block::solid::plastic::PlasticStateVariablesField;
@@ -75,7 +77,7 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_elastic_stiffnesses_into(
         &self,
@@ -106,7 +108,7 @@ where
                     });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn updated_state(
         &self,
@@ -126,8 +128,8 @@ where
                     local_solver,
                 )
             })
-            .collect::<Result<_, FiniteElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn step_error(
         &self,
@@ -154,7 +156,7 @@ where
                         .map(|error| worst.max(error))
                 },
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn monolithic_system(&self, num_nodes: usize) -> Option<MonolithicSystem> {
         let size = coupled::SIZE * G;
@@ -267,7 +269,7 @@ where
                 });
                 Ok::<(), FiniteElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn monolithic_state(
         &self,
@@ -283,7 +285,6 @@ where
                     .map(|g| {
                         let offset = size * index + coupled::SIZE * g;
                         coupled::monolithic_state(
-                            self.constitutive_model(),
                             &state_variables_element[g],
                             &Vector::from(
                                 local.as_slice()[offset..offset + coupled::SIZE].to_vec(),
@@ -295,7 +296,7 @@ where
             })
             .collect::<Result<_, _>>()
             .map_err(|error| {
-                ElementModelError::upstream(FiniteElementError::upstream(error, self), self)
+                ElementModelError::new(type_name::<Self>(), FiniteElementError::from(error))
             })
     }
 }

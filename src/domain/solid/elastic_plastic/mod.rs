@@ -2,7 +2,7 @@ use crate::{
     constitutive::solid::elastic_plastic::{Outcome, StepError, Stepper},
     domain::{
         ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
-        NodalState,
+        NodalState, Source,
         block::{element::Elements, solver_from_neighbors},
         boundary::{ConstrainAt, LoadAt, LoadStiffnessAt},
         solid::{NodalForcesSolid, NodalStiffnessesSolid},
@@ -75,7 +75,10 @@ impl MonolithicSystem {
 const MONOLITHIC_UNSUPPORTED: &str = "The monolithic solve is not supported for this domain.";
 
 fn monolithic_unsupported() -> ElementModelError {
-    ElementModelError::Upstream(MONOLITHIC_UNSUPPORTED.to_string(), String::new())
+    ElementModelError::new(
+        "the elastic-plastic model",
+        Source::Unsupported(MONOLITHIC_UNSUPPORTED),
+    )
 }
 
 /// Assembly for rate-independent elastic-plastic solids, with the local unknowns of the

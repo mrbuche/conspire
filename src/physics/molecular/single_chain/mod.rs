@@ -23,9 +23,14 @@ pub use thermodynamics::{
 };
 pub use ufjc::ArbitraryPotentialFreelyJointedChain;
 
-use crate::math::{Quantity, Scalar, Style, StyledError, assert::AssertionError, styled_error};
-use crate::units::Length;
-use core::fmt::{Debug, Display};
+use crate::{
+    math::{Quantity, Scalar, assert::AssertionError},
+    units::Length,
+};
+use core::{
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 pub trait SingleChain
 where
@@ -82,26 +87,33 @@ impl From<SingleChainError> for AssertionError {
 
 impl From<SingleChainError> for String {
     fn from(error: SingleChainError) -> Self {
-        error.message(&Style::detect())
+        error.to_string()
     }
 }
 
-impl StyledError for SingleChainError {
-    fn message(&self, style: &Style) -> String {
-        let (h, c) = (style.headline, style.frame);
+impl Display for SingleChainError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::MaximumExtensibility(maximum_nondimensional_extension, single_chain_model) => {
-                format!(
-                    "{h}Maximum extensibility ({maximum_nondimensional_extension}) reached.{c}\n\
+                write!(
+                    f,
+                    "Maximum extensibility ({maximum_nondimensional_extension}) reached.\n\
                     In single-chain model: {single_chain_model}."
                 )
             }
-            Self::Upstream(error, single_chain_model) => format!(
-                "{error}{c}\n\
+            Self::Upstream(error, single_chain_model) => write!(
+                f,
+                "{error}\n\
                 In single-chain model: {single_chain_model}."
             ),
         }
     }
 }
 
-styled_error!(SingleChainError);
+impl Debug for SingleChainError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl Error for SingleChainError {}

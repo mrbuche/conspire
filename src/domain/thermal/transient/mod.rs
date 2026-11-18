@@ -92,7 +92,7 @@ where
         let mut unbalanced_heating = self.nodal_forces(nodal_temperatures)?;
         applied_loads
             .subtract_at(time, nodal_temperatures, &mut unbalanced_heating)
-            .map_err(|error| ElementModelError::upstream(error, "the applied loads"))?;
+            .map_err(|error| ElementModelError::new("the applied loads", error))?;
         Ok(capacities.nodal_temperature_rates(&unbalanced_heating))
     }
     fn integrate<C>(

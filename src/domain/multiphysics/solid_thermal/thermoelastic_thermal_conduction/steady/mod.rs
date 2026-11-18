@@ -104,9 +104,11 @@ where
         nodal_forces: &mut NodalForcesSolidThermal,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_forces_into(nodal_coordinates, nodal_temperatures, nodal_forces)?;
+            .nodal_forces_into(nodal_coordinates, nodal_temperatures, nodal_forces)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_forces_into(nodal_coordinates, nodal_temperatures, nodal_forces)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
     fn nodal_reference_temperatures_into(&self, nodal_temperatures: &mut NodalTemperatures) {
         self.0.nodal_reference_temperatures_into(nodal_temperatures);
@@ -119,9 +121,11 @@ where
         nodal_stiffnesses: &mut NodalStiffnessesSolidThermal,
     ) -> Result<(), ElementModelError> {
         self.0
-            .nodal_stiffnesses_into(nodal_coordinates, nodal_temperatures, nodal_stiffnesses)?;
+            .nodal_stiffnesses_into(nodal_coordinates, nodal_temperatures, nodal_stiffnesses)
+            .map_err(|error| error.in_block(0))?;
         self.1
             .nodal_stiffnesses_into(nodal_coordinates, nodal_temperatures, nodal_stiffnesses)
+            .map_err(|error| error.in_block(self.0.number_of_blocks()))
     }
 }
 

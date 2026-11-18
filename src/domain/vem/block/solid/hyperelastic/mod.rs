@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::hyperelastic::Hyperelastic,
     domain::{ElementModelError, solid::hyperelastic::HyperelasticElements},
@@ -12,6 +13,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> HyperelasticElements<3> for Block<C, F, R>
 where
@@ -31,8 +33,8 @@ where
                     &Self::element_coordinates(nodal_coordinates, nodes),
                 )
             })
-            .sum::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .sum_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_symmetric_into(
         &self,
@@ -62,6 +64,6 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

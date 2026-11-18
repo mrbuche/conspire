@@ -6,6 +6,7 @@ use crate::{
         solid::{NodalDampingsSolid, NodalForcesSolid, NodalStiffnessesSolid},
     },
 };
+use core::any::type_name;
 
 pub use crate::domain::solid::viscoelastic::ViscoelasticElements;
 
@@ -32,7 +33,7 @@ where
                 .for_each(|(force, &neighbor)| nodal_forces[neighbor] += force);
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -59,7 +60,7 @@ where
                 });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_dampings_into(
         &self,
@@ -86,6 +87,6 @@ where
                 });
                 Ok::<(), ConstitutiveError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }

@@ -1,3 +1,4 @@
+use crate::domain::ItemError;
 use crate::{
     constitutive::solid::elastic::Elastic,
     domain::{ElementModelError, solid::elastic::ElasticItems},
@@ -12,6 +13,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 
 impl<C, F, R> ElasticItems<3> for Block<C, F, R>
 where
@@ -30,7 +32,9 @@ where
                 self.constitutive_model(),
                 &Self::element_coordinates(nodal_coordinates, &self.elements_nodes()[item]),
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
     fn stiffnesses_of(
         &self,
@@ -42,6 +46,8 @@ where
                 self.constitutive_model(),
                 &Self::element_coordinates(nodal_coordinates, &self.elements_nodes()[item]),
             )
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| {
+                ElementModelError::new(type_name::<Self>(), ItemError::new(item, error))
+            })
     }
 }

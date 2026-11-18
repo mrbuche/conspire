@@ -1,3 +1,4 @@
+use crate::domain::AtItems;
 use crate::{
     constitutive::solid::elastic_viscoplastic::ElasticViscoplastic,
     domain::{
@@ -17,6 +18,7 @@ use crate::{
         },
     },
 };
+use core::any::type_name;
 use core::array::from_fn;
 
 impl<C, F, R, Y> ElasticViscoplasticElements<ViscoplasticStateVariables<1, Y>, 3> for Block<C, F, R>
@@ -53,7 +55,7 @@ where
                     .for_each(|(nodal_force, &node)| nodal_forces[node] += nodal_force);
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn nodal_stiffnesses_into(
         &self,
@@ -84,7 +86,7 @@ where
                     });
                 Ok::<(), VirtualElementError>(())
             })
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
     fn state_variables_evolution(
         &self,
@@ -102,7 +104,7 @@ where
                     element_state_variables,
                 )
             })
-            .collect::<Result<_, VirtualElementError>>()
-            .map_err(|error| ElementModelError::upstream(error, self))
+            .collect_at_items()
+            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
     }
 }
