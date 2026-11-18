@@ -331,6 +331,7 @@ mod dynamics {
                 ThermoelasticThermalConductionDynamics,
                 time_scale::ThermoelasticThermalConductionTimeScaleElements,
             },
+            solid::{Checked, Lumped, Unchecked},
         },
         math::{
             Quantity, Tensor,
@@ -342,7 +343,7 @@ mod dynamics {
         },
         units::{Density, Time, VolumetricHeatCapacity},
     };
-    use std::f64::consts::FRAC_PI_2;
+    use core::f64::consts::FRAC_PI_2;
     const DENSITY: Quantity<Density> = Density::kilograms_per_cubic_meter(7.8e3);
     const HEAT_CAPACITY: f64 = 3.0e6;
     const STRETCH_RATE: f64 = 0.01;
@@ -418,13 +419,14 @@ mod dynamics {
     ) -> (NodalCoordinates<3>, NodalTemperatures) {
         let (_, coordinates, _, _, temperatures, _) = model()
             .integrate(
+                Unchecked,
+                Lumped,
+                Lumped,
                 &DormandPrinceFixedStep::default(),
                 &time(),
                 (NodalCoordinates::from(COORDINATES), velocities),
                 uniform_temperatures(),
                 &(),
-                &model().nodal_lumped_masses(),
-                &model().nodal_lumped_heat_capacities(),
                 &conditions(equality_constraint),
             )
             .unwrap();
@@ -435,17 +437,15 @@ mod dynamics {
     }
     #[test]
     fn stretching_cools_at_the_adiabatic_rate() -> Result<(), AssertionError> {
-        let (accelerations, rates) = model()
-            .nodal_rates(
-                &NodalCoordinates::from(COORDINATES),
-                &stretching(),
-                &uniform_temperatures(),
-                crate::units::Time::seconds(0.0),
-                &(),
-                &model().nodal_lumped_masses(),
-                &model().nodal_lumped_heat_capacities(),
-            )
-            .unwrap();
+        let (accelerations, rates) = model().nodal_rates(
+            &NodalCoordinates::from(COORDINATES),
+            &stretching(),
+            &uniform_temperatures(),
+            crate::units::Time::seconds(0.0),
+            &(),
+            &model().nodal_lumped_masses(),
+            &model().nodal_lumped_heat_capacities(),
+        )?;
         let expected = -9.0
             * COEFFICIENT_OF_THERMAL_EXPANSION.value()
             * BULK_MODULUS.value()
@@ -496,18 +496,17 @@ mod dynamics {
             .prescribe_nodes_with(Displacement::<2>, 0..3, |time| {
                 Length::meters(0.1 * time.value())
             });
-        let (_, coordinates, _, _, temperatures, _) = model()
-            .integrate(
-                &DormandPrinceFixedStep::default(),
-                &time(),
-                (NodalCoordinates::from(COORDINATES), translating()),
-                uniform_temperatures(),
-                &(),
-                &model().nodal_lumped_masses(),
-                &model().nodal_lumped_heat_capacities(),
-                &conditions,
-            )
-            .unwrap();
+        let (_, coordinates, _, _, temperatures, _) = model().integrate(
+            Unchecked,
+            Lumped,
+            Lumped,
+            &DormandPrinceFixedStep::default(),
+            &time(),
+            (NodalCoordinates::from(COORDINATES), translating()),
+            uniform_temperatures(),
+            &(),
+            &conditions,
+        )?;
         temperatures[temperatures.len() - 1]
             .iter()
             .try_for_each(|temperature| {
@@ -529,13 +528,14 @@ mod dynamics {
     #[test]
     fn constraints_held_by_multipliers_are_not_supported_by_the_explicit_integration() {
         let result = model().integrate(
+            Unchecked,
+            Lumped,
+            Lumped,
             &DormandPrinceFixedStep::default(),
             &time(),
             (NodalCoordinates::from(COORDINATES), translating()),
             uniform_temperatures(),
             &(),
-            &model().nodal_lumped_masses(),
-            &model().nodal_lumped_heat_capacities(),
             &conditions(vec![EqualityConstraint::Multipliers(vec![(
                 0,
                 crate::math::optimize::Prescription::Initial,
@@ -568,13 +568,14 @@ mod dynamics {
     fn linear_constraints_are_rejected() {
         use crate::math::{Matrix, Vector};
         let result = model().integrate(
+            Unchecked,
+            Lumped,
+            Lumped,
             &DormandPrinceFixedStep::default(),
             &time(),
             (NodalCoordinates::from(COORDINATES), stretching()),
             uniform_temperatures(),
             &(),
-            &model().nodal_lumped_masses(),
-            &model().nodal_lumped_heat_capacities(),
             &conditions(vec![EqualityConstraint::Linear(
                 Matrix::zero(1, 20),
                 Vector::zero(1),
@@ -587,16 +588,15 @@ mod dynamics {
         safety: f64,
         interval: usize,
     ) -> Result<(NodalCoordinates<3>, NodalTemperatures), IntegrationError> {
-        let (_, coordinates, _, _, temperatures, _) = model().integrate_bounded(
+        let (_, coordinates, _, _, temperatures, _) = model().integrate(
+            Checked { safety, interval },
+            Lumped,
+            Lumped,
             &DormandPrinceFixedStep::default(),
-            safety,
-            interval,
             time,
             (NodalCoordinates::from(COORDINATES), stretching()),
             uniform_temperatures(),
             &(),
-            &model().nodal_lumped_masses(),
-            &model().nodal_lumped_heat_capacities(),
             &conditions(vec![EqualityConstraint::None]),
         )?;
         Ok((
@@ -606,7 +606,7 @@ mod dynamics {
     }
     #[test]
     fn a_stable_step_agrees_with_the_unbounded_integration() -> Result<(), AssertionError> {
-        let (coordinates, temperatures) = integrate_bounded(&time(), 0.9, 1).unwrap();
+        let (coordinates, temperatures) = integrate_bounded(&time(), 0.9, 1)?;
         let (expected_coordinates, expected_temperatures) =
             integrate(stretching(), vec![EqualityConstraint::None]);
         Assert::default().eq_within_tols(&coordinates, &expected_coordinates)?;
@@ -739,16 +739,18 @@ mod dynamics {
             .map(|step| Time::seconds(0.05 * step as f64))
             .collect::<Vec<_>>();
         let (times, _, velocities, ..) = model
-            .integrate_bounded(
+            .integrate(
+                Checked {
+                    safety: 0.5,
+                    interval: 1,
+                },
+                Lumped,
+                Lumped,
                 &DormandPrinceFixedStep::default(),
-                0.5,
-                1,
                 &time,
                 (NodalCoordinates::from(bar_coordinates()), bar_velocities()),
                 (0..nodes).map(|_| REFERENCE_TEMPERATURE).collect(),
                 &(),
-                &model.nodal_lumped_masses(),
-                &model.nodal_lumped_heat_capacities(),
                 &conditions(vec![bar_constraint()]),
             )
             .unwrap();
@@ -877,7 +879,10 @@ mod dynamics {
     mod implicit {
         use super::*;
         use crate::{
-            fem::multiphysics::solid_thermal::thermoelastic_thermal_conduction::dynamics::implicit::ThermoelasticThermalConductionImplicitDynamics,
+            fem::{
+                multiphysics::solid_thermal::thermoelastic_thermal_conduction::dynamics::implicit::ThermoelasticThermalConductionImplicitDynamics,
+                solid::Lumped,
+            },
             math::{
                 integrate::Newmark,
                 optimize::{NewtonRaphson, Tolerances},
@@ -902,14 +907,14 @@ mod dynamics {
             let (_, coordinates, _, _, temperatures, _) =
                 ThermoelasticThermalConductionImplicitDynamics::integrate(
                     &model,
+                    Lumped,
+                    Lumped,
                     &Newmark::default(),
                     solver(),
                     time,
                     (NodalCoordinates::from(COORDINATES), velocities),
                     uniform_temperatures(),
                     &(),
-                    &model.nodal_lumped_masses(),
-                    &model.nodal_lumped_heat_capacities(),
                     &conditions(equality_constraint),
                 )?;
             Ok((
@@ -937,17 +942,16 @@ mod dynamics {
             let (_, coordinates, _, _, temperatures, _) =
                 ThermoelasticThermalConductionImplicitDynamics::integrate(
                     &model,
+                    Lumped,
+                    Lumped,
                     &Newmark::default(),
                     solver(),
                     &time(),
                     (NodalCoordinates::from(COORDINATES), translating()),
                     uniform_temperatures(),
                     &(),
-                    &model.nodal_lumped_masses(),
-                    &model.nodal_lumped_heat_capacities(),
                     &conditions,
-                )
-                .unwrap();
+                )?;
             temperatures[temperatures.len() - 1]
                 .iter()
                 .try_for_each(|temperature| {
@@ -992,17 +996,16 @@ mod dynamics {
             let (_, coordinates, _, _, temperatures, _) =
                 ThermoelasticThermalConductionImplicitDynamics::integrate(
                     &model,
+                    Lumped,
+                    Lumped,
                     &Newmark::default(),
                     solver(),
                     &time(),
                     (NodalCoordinates::from(COORDINATES), translating()),
                     uniform_temperatures(),
                     &(),
-                    &model.nodal_lumped_masses(),
-                    &model.nodal_lumped_heat_capacities(),
                     &conditions,
-                )
-                .unwrap();
+                )?;
             temperatures[temperatures.len() - 1]
                 .iter()
                 .try_for_each(|temperature| {
@@ -1188,6 +1191,7 @@ mod quasistatic {
                 thermal::{NodalTemperatures, conduction::NodalForcesThermal},
             },
             multiphysics::solid_thermal::thermoelastic_thermal_conduction::quasistatic::ThermoelasticThermalConductionQuasistatic,
+            solid::Lumped,
         },
         math::{
             Quantity, Tensor,
@@ -1285,6 +1289,7 @@ mod quasistatic {
         let (elapsed, _, _, temperatures, _) =
             ThermoelasticThermalConductionQuasistatic::integrate(
                 &model,
+                Lumped,
                 &BackwardEuler::default(),
                 solver(25),
                 &times(4),
@@ -1296,7 +1301,6 @@ mod quasistatic {
                         .collect(),
                 ),
                 &super::source(heating(&model)),
-                &model.nodal_lumped_heat_capacities(),
                 &conditions,
             )
             .unwrap();
@@ -1329,6 +1333,7 @@ mod quasistatic {
         let (elapsed, _, _, temperatures, _) =
             ThermoelasticThermalConductionQuasistatic::integrate(
                 &model,
+                Lumped,
                 &BackwardEuler::default(),
                 solver(25),
                 &times(4),
@@ -1340,7 +1345,6 @@ mod quasistatic {
                         .collect(),
                 ),
                 &super::source(heating(&model)),
-                &model.nodal_lumped_heat_capacities(),
                 &conditions,
             )
             .unwrap();
@@ -1374,6 +1378,7 @@ mod quasistatic {
         let (_, coordinates, _, temperatures, _) =
             ThermoelasticThermalConductionQuasistatic::integrate(
                 &model,
+                Lumped,
                 &BackwardEuler::default(),
                 solver,
                 &times(steps),
@@ -1385,7 +1390,6 @@ mod quasistatic {
                         .collect(),
                 ),
                 &super::source(heating(&model)),
-                &model.nodal_lumped_heat_capacities(),
                 &conditions(vec![constraint]),
             )?;
         Ok((

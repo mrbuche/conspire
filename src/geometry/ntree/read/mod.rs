@@ -6,10 +6,12 @@ use std::{io::Error as ErrorIO, path::Path};
 
 use self::htg::ReadHtg;
 
+/// Orthotree input file.
 pub enum Input<P>
 where
     P: AsRef<Path>,
 {
+    /// HTG file.
     Htg(P),
 }
 

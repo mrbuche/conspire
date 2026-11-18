@@ -2,10 +2,8 @@
 mod test;
 
 use super::{SquareMatrix, SquareMatrixError};
-use crate::{
-    ABS_TOL, REL_TOL,
-    math::{Scalar, Tensor, Vector, simd},
-};
+use crate::math::{ABS_TOL, REL_TOL};
+use crate::math::{Scalar, Tensor, Vector, simd};
 
 impl SquareMatrix {
     /// Factorize the matrix using the LU decomposition.

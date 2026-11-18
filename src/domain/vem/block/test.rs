@@ -115,8 +115,8 @@ crate::domain::block::test::test_block_elastic_and_hyperelastic!(Element);
 
 mod block_viscous {
     use super::*;
+    use crate::math::EPSILON;
     use crate::{
-        EPSILON,
         domain::block::test::{
             test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
             test_finite_element_block_with_hyperviscoelastic_constitutive_model,

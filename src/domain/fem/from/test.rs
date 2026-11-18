@@ -6,14 +6,14 @@ use crate::{
         solid::{elastic::AlmansiHamelEulerian, hyperelastic::NeoHookean},
     },
     fem::{
-        Blocks, ElasticViscoplasticAndElastic, Minimize, Model, NodalCoordinates,
-        NodalReferenceCoordinates, Root,
+        Blocks, ElasticViscoplasticAndElastic, Minimize, Model, NodalCoordinates, Root,
         block::{
             Block,
             element::{
                 linear::{Hexahedron, Tetrahedron, Wedge},
                 planar::{Quadrilateral, Triangle},
             },
+            test::{displacement_conditions_2, displacement_conditions_3},
         },
         boundary::{BoundaryConditions, ConstrainAt, Displacement, Enforcement, Loads, Solid},
         nodal_coordinates,
@@ -84,7 +84,7 @@ fn connectivity() -> Vec<[usize; 4]> {
 }
 
 fn coordinates() -> Coordinates<3> {
-    Coordinates::from([
+    [
         [0.5, -0.5, 0.5],
         [0.5, 0.5, 0.5],
         [-0.5, 0.5, 0.5],
@@ -99,11 +99,12 @@ fn coordinates() -> Coordinates<3> {
         [-0.5, 0.0, 0.0],
         [0.0, 0.5, 0.0],
         [0.5, 0.0, 0.0],
-    ])
+    ]
+    .into()
 }
 
 fn deformed_coordinates() -> NodalCoordinates<3> {
-    NodalCoordinates::from([
+    [
         [0.48419081, -0.52698494, 0.42026988],
         [0.43559430, 0.52696224, 0.54477963],
         [-0.56594965, 0.57076191, 0.51683869],
@@ -118,7 +119,8 @@ fn deformed_coordinates() -> NodalCoordinates<3> {
         [-0.57820738, 0.08325131, 0.03614415],
         [-0.04145077, 0.56406301, 0.09988905],
         [0.52149656, -0.08553510, -0.03187069],
-    ])
+    ]
+    .into()
 }
 
 fn constraint() -> (Matrix, Vector) {
@@ -245,7 +247,7 @@ fn split_blocks_nodal_forces() -> Result<(), AssertionError> {
 fn split_blocks_root() -> Result<(), AssertionError> {
     let (a, b) = constraint();
     let solution = single_block_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -253,7 +255,7 @@ fn split_blocks_root() -> Result<(), AssertionError> {
     )?;
     let (a, b) = constraint();
     let solution_split = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -312,7 +314,7 @@ fn heterogeneous_blocks_nodal_forces() -> Result<(), AssertionError> {
 
 fn viscoplastic_model() -> ElasticMultiplicativeViscoplastic<AlmansiHamelEulerian, ViscoplasticFlow>
 {
-    ElasticMultiplicativeViscoplastic::from((
+    (
         constitutive_model(),
         ViscoplasticFlow {
             yield_stress: Stress::pascals(1e12),
@@ -320,7 +322,8 @@ fn viscoplastic_model() -> ElasticMultiplicativeViscoplastic<AlmansiHamelEuleria
             rate_sensitivity: 0.25,
             reference_flow_rate: Rate::per_second(0.1),
         },
-    ))
+    )
+        .into()
 }
 
 fn conditions() -> impl ConstrainAt<Solid<3>> {
@@ -360,7 +363,7 @@ fn mixed_viscoplastic_elastic_root() -> Result<(), AssertionError> {
     )?;
     let (a, b) = constraint();
     let reference = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -400,14 +403,14 @@ fn mixed_viscoplastic_elastic_root_with_a_force() -> Result<(), AssertionError> 
     )?;
     let (a, b) = constraint();
     let reference = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &loads,
         NewtonRaphson::default(),
     )?;
     let unloaded = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -444,7 +447,7 @@ fn displacements_that_are_a_function_of_time_are_held_from_the_reference_in_ever
     )?;
     let (a, b) = constraint();
     let reference = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -476,7 +479,7 @@ fn paired_viscoplastic_blocks_root() -> Result<(), AssertionError> {
     )?;
     let (a, b) = constraint();
     let reference = split_blocks_model()?.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -639,7 +642,7 @@ fn heterogeneous_blocks_root() -> Result<(), AssertionError> {
     let (a, b) = constraint();
     let model = heterogeneous_model()?;
     let solution = model.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates()[node][component].value()
         }),
         &(),
@@ -701,13 +704,13 @@ fn planar_patch_root() -> Result<(), AssertionError> {
         })
     });
     let solution = planar_model()?.root(
-        &crate::fem::block::test::displacement_conditions_2(&a, &b, |node, component| {
+        &displacement_conditions_2(&a, &b, |node, component| {
             coordinates_2d()[node][component].value()
         }),
         &(),
         NewtonRaphson::default(),
     )?;
-    let expected: NodalCoordinates<2> = coordinates
+    let expected = coordinates
         .iter()
         .map(|coordinate| {
             [
@@ -740,13 +743,13 @@ fn planar_vs_wedge_root() -> Result<(), AssertionError> {
         row += 1;
     });
     let solution = planar_model()?.root(
-        &crate::fem::block::test::displacement_conditions_2(&a, &b, |node, component| {
+        &displacement_conditions_2(&a, &b, |node, component| {
             coordinates_2d()[node][component].value()
         }),
         &(),
         NewtonRaphson::default(),
     )?;
-    let coordinates: NodalReferenceCoordinates<3> = (0..2)
+    let coordinates = (0..2)
         .flat_map(|k| {
             (0..3).flat_map(move |j| {
                 (0..3).map(move |i| [0.5 * i as Scalar, 0.5 * j as Scalar, 0.25 * k as Scalar])
@@ -786,19 +789,19 @@ fn planar_vs_wedge_root() -> Result<(), AssertionError> {
         row += 1;
     });
     let solution_wedge = model.root(
-        &crate::fem::block::test::displacement_conditions_3(&a, &b, |node, component| {
+        &displacement_conditions_3(&a, &b, |node, component| {
             coordinates[node][component].value()
         }),
         &(),
         NewtonRaphson::default(),
     )?;
-    let layer_0: NodalCoordinates<2> = solution_wedge
+    let layer_0 = solution_wedge
         .iter()
         .take(9)
         .map(|coordinate| [coordinate[0].value(), coordinate[1].value()])
         .collect::<Vec<_>>()
         .into();
-    let layer_1: NodalCoordinates<2> = solution_wedge
+    let layer_1 = solution_wedge
         .iter()
         .skip(9)
         .map(|coordinate| [coordinate[0].value(), coordinate[1].value()])
@@ -825,8 +828,7 @@ fn planar_quad_patch_root() -> Result<(), AssertionError> {
         vec![Connectivity::Quadrilateral(quad_connectivity_2d().into())],
         coordinates_2d(),
     ));
-    let model: Model<Quad, 2> = (mesh, constitutive_model())
-        .try_into()
+    let model = Model::<Quad, 2>::try_from((mesh, constitutive_model()))
         .map_err(|error: String| AssertionError { message: error })?;
     let deformation = [[1.1, 0.1], [0.0, 0.9]];
     let coordinates = coordinates_2d();
@@ -842,13 +844,13 @@ fn planar_quad_patch_root() -> Result<(), AssertionError> {
         })
     });
     let solution = model.root(
-        &crate::fem::block::test::displacement_conditions_2(&a, &b, |node, component| {
+        &displacement_conditions_2(&a, &b, |node, component| {
             coordinates_2d()[node][component].value()
         }),
         &(),
         NewtonRaphson::default(),
     )?;
-    let expected: NodalCoordinates<2> = coordinates
+    let expected = coordinates
         .iter()
         .map(|coordinate| {
             [
@@ -888,12 +890,11 @@ fn planar_minimize_vs_root() -> Result<(), AssertionError> {
         vec![Connectivity::Triangular(connectivity_2d().into())],
         coordinates_2d(),
     ));
-    let model: Model<TriNeoHookean, 2> = (mesh, neo_hookean_model())
-        .try_into()
+    let model = Model::<TriNeoHookean, 2>::try_from((mesh, neo_hookean_model()))
         .map_err(|error: String| AssertionError { message: error })?;
     let (a, b) = planar_constraint();
     let solution_root = model.root(
-        &crate::fem::block::test::displacement_conditions_2(&a, &b, |node, component| {
+        &displacement_conditions_2(&a, &b, |node, component| {
             coordinates_2d()[node][component].value()
         }),
         &(),
@@ -901,7 +902,7 @@ fn planar_minimize_vs_root() -> Result<(), AssertionError> {
     )?;
     let (a, b) = planar_constraint();
     let solution_minimize = model.minimize(
-        &crate::fem::block::test::displacement_conditions_2(&a, &b, |node, component| {
+        &displacement_conditions_2(&a, &b, |node, component| {
             coordinates_2d()[node][component].value()
         }),
         &(),

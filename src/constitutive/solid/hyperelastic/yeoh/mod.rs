@@ -13,7 +13,23 @@ use crate::{
 
 const SEVEN_THIRDS: Scalar = 7.0 / 3.0;
 
-#[doc = include_str!("doc.md")]
+/// The Yeoh hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear moduli $`\mu_n`$ for $`n=1\ldots N`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The shear modulus is given by $`\mu=\mu_1`$.
+/// - The Yeoh model reduces to the [Neo-Hookean model](super::NeoHookean) when $`N=1`$.
+///
+/// [^1]: O.H. Yeoh, [Rubber Chem. Technol. **66**, 754 (1993)](https://doi.org/10.5254/1.3538343).
 #[derive(Clone, Debug)]
 pub struct Yeoh {
     /// The bulk modulus $`\kappa`$.
@@ -32,7 +48,9 @@ impl Solid for Yeoh {
 }
 
 impl Elastic for Yeoh {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \sum_{n=1}^N \frac{n\mu_n}{J}\left[\mathrm{tr}(\mathbf{B}^* ) - 3\right]^{n-1}\,{\mathbf{B}^*}' + \frac{\kappa}{2}\left(J - \frac{1}{J}\right)\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -53,7 +71,14 @@ impl Elastic for Yeoh {
             / jacobian.powf(FIVE_THIRDS)
             + IDENTITY * self.bulk_modulus() * 0.5 * (jacobian - 1.0 / jacobian))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \begin{aligned}
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) =
+    /// \,& \sum_{n=1}^N \frac{n\mu_n}{J^{5/3}}\left[\mathrm{tr}(\mathbf{B}^* ) - 3\right]^{n-1}\left(\delta_{ik}F_{jL} + \delta_{jk}F_{iL} - \frac{2}{3}\,\delta_{ij}F_{kL}- \frac{5}{3} \, B_{ij}'F_{kL}^{-T} \right)
+    /// \\
+    /// &+ \sum_{n=2}^N \frac{2n(n-1)\mu_n}{J^{7/3}}\left[\mathrm{tr}(\mathbf{B}^* ) - 3\right]^{n-2}B_{ij}'B_{km}'F_{mL}^{-T} + \frac{\kappa}{2} \left(J + \frac{1}{J}\right)\delta_{ij}F_{kL}^{-T}
+    /// \end{aligned}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -103,7 +128,9 @@ impl Elastic for Yeoh {
 }
 
 impl Hyperelastic for Yeoh {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \sum_{n=1}^N \frac{\mu_n}{2}\big[\mathrm{tr}(\mathbf{B}^* ) - 3\big]^n + \frac{\kappa}{2}\left[\frac{1}{2}\left(J^2 - 1\right) - \ln J\right]
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

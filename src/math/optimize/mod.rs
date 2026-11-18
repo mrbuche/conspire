@@ -17,7 +17,9 @@ pub use globalization::{
     Armijo, Error, Goldstein, LineSearchError, NoSearch, ObjectiveMerit, Residual, ResidualMerit,
     TrustRegion, Wolfe,
 };
-pub use linear::{Direct, Krylov, KrylovError, KrylovMethod, LinearSolver};
+pub use linear::{
+    Direct, Eigenpairs, Krylov, KrylovError, KrylovMethod, Lanczos, LanczosError, LinearSolver,
+};
 pub use nonlinear::{
     BarzilaiBorwein, BarzilaiBorweinStep, Conjugacy, ConjugateGradient, Corrections, Descent,
     GradientDescent, LimitedMemoryBFGS, NewtonRaphson, StepEstimator,
@@ -39,7 +41,7 @@ use crate::{
     },
     units::{UnitDiv, UnitMul},
 };
-use std::fmt::{Debug, Display};
+use core::fmt::{Debug, Display};
 
 /// The step size taking a decrement of type `D` to an increment of `X`.
 pub type StepSize<D, X> = Quantity<<<X as Tensor>::Unit as UnitDiv<<D as Tensor>::Unit>>::Output>;

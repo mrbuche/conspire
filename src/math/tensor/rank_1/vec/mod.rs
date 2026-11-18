@@ -8,7 +8,7 @@ use crate::math::{
     TensorRank1List, TensorRank2SparseVec2D, TensorRank2SparseVec2DSymmetric, TensorRank2Vec2D,
     TensorVec, Vector, assert::FiniteDifference, tensor::vec::TensorVector,
 };
-use std::{
+use core::{
     array::from_fn,
     mem::forget,
     ops::{Div, Sub},
@@ -94,14 +94,6 @@ impl<const D: usize, I, U> From<TensorRank1Vec<D, I, U>> for Vec<[TensorRank0; D
         forget(vec);
         // SAFETY: as above, from `TensorRank1` back to `[TensorRank0; D]`.
         unsafe { Vec::from_raw_parts(pointer, length, capacity) }
-    }
-}
-
-impl<const D: usize, I, U> From<Vec<Vec<TensorRank0>>> for TensorRank1Vec<D, I, U> {
-    fn from(vec: Vec<Vec<TensorRank0>>) -> Self {
-        vec.into_iter()
-            .map(|tensor_rank_1| tensor_rank_1.into())
-            .collect()
     }
 }
 

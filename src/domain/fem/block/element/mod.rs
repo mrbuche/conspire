@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod test;
 
-#[cfg(feature = "autodiff")]
-pub(crate) mod autodiff;
 pub mod cohesive;
 pub mod diffusion;
 pub mod electrical;
@@ -13,6 +11,7 @@ pub mod planar;
 pub mod quadratic;
 pub mod serendipity;
 pub mod solid;
+pub mod stabilized;
 pub mod surface;
 pub mod thermal;
 pub mod time_scale;
@@ -26,7 +25,7 @@ use crate::{
     mechanics::{CoordinateList, CurrentCoordinates, CurrentVelocities, ReferenceCoordinates},
     units::{Length, ReciprocalLength, Volume},
 };
-use std::fmt::{self, Debug, Formatter};
+use core::fmt::{self, Debug, Formatter};
 
 const FRAC_1_SQRT_3: Scalar = 0.577_350_269_189_625_8; // nightly feature
 const FRAC_SQRT_3_5: Scalar = 0.774_596_669_241_483;

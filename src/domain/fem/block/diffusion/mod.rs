@@ -77,7 +77,7 @@ where
                     &self.nodal_fields_element(element_connectivity, nodal_fields),
                 )
             })
-            .sum::<Result<Quantity<L::Energy>, FiniteElementError>>()
+            .sum::<Result<_, FiniteElementError>>()
             .map_err(|error| ElementModelError::upstream(error, self))
     }
     fn nodal_forces_into(

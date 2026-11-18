@@ -11,7 +11,7 @@ use crate::{
         assert::{Assert, AssertionError},
     },
 };
-use std::{array::from_fn, f64::consts::SQRT_2};
+use core::{array::from_fn, f64::consts::SQRT_2};
 
 fn energy(theta: Scalar, nodes: &Raw) -> Scalar {
     terms(

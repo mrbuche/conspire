@@ -1,9 +1,11 @@
 use crate::math::{
-    Current, HessianBlock, Quantity, Reference, SquareMatrix, Tensor, TensorArray, TensorRank1,
-    TensorRank2, TensorRank4, Transposed,
+    Current, HessianBlock, Quantity, Reference, SquareMatrix, Tensor, TensorArray, TensorList,
+    TensorRank1, TensorRank2, TensorRank4, TensorVector, Transposed,
+    assert::{Assert, AssertionError},
 };
 use crate::units::Force;
 use crate::units::{Dimensionless, Rate, Stress, Viscosity};
+use core::ops::Mul;
 
 type Deformation = TensorRank2<3, Current, Reference, Dimensionless>;
 type Rates = TensorRank2<3, Reference, Reference, Rate>;
@@ -167,4 +169,142 @@ fn a_contraction_over_a_length_of_the_unit_is_a_number() {
     let over = a.contraction_over(&b, Quantity::<Force>::new(2.0));
     assert_eq!(over.value(), 32.0 / 4.0);
     let _: Quantity<Dimensionless> = over;
+}
+
+mod axpy {
+    use crate::math::{
+        Current, Quantity, QuantitySparseVec, Tensor, TensorArray, TensorRank1, TensorRank2,
+        TensorRank2SparseVec, TensorSparseVec, TensorTuple, Vector,
+    };
+    use crate::units::Length;
+    #[test]
+    fn a_vector_adds_a_multiple() {
+        let mut y = Vector::from([1.0, 2.0, 3.0]);
+        y.axpy(2.0, &Vector::from([1.0, 0.0, -1.0]));
+        assert_eq!(y.as_slice(), &[3.0, 2.0, 1.0]);
+    }
+    #[test]
+    fn a_vector_subtracts_a_multiple() {
+        let mut y = Vector::from([1.0, 2.0, 3.0]);
+        y.axmy(2.0, &Vector::from([1.0, 0.0, -1.0]));
+        assert_eq!(y.as_slice(), &[-1.0, 2.0, 5.0]);
+    }
+    #[test]
+    fn a_quantity_adds_a_multiple() {
+        let mut y = Quantity::<Length>::new(1.0);
+        y.axpy(3.0, &Quantity::<Length>::new(2.0));
+        assert_eq!(y.value(), 7.0);
+    }
+    #[test]
+    fn a_tensor_with_units_adds_a_multiple() {
+        let mut y = TensorRank1::<3, Current, Length>::from([1.0, 2.0, 3.0]);
+        y.axpy(
+            0.5,
+            &TensorRank1::<3, Current, Length>::from([2.0, 4.0, 6.0]),
+        );
+        assert_eq!(y, TensorRank1::<3, Current, Length>::from([2.0, 4.0, 6.0]));
+    }
+    #[test]
+    fn a_tuple_adds_a_multiple_to_each_part() {
+        let mut y = TensorTuple(
+            TensorRank1::<3, Current, Length>::from([1.0, 1.0, 1.0]),
+            Quantity::<Length>::new(1.0),
+        );
+        let x = TensorTuple(
+            TensorRank1::<3, Current, Length>::from([1.0, 2.0, 3.0]),
+            Quantity::<Length>::new(4.0),
+        );
+        y.axmy(-2.0, &x);
+        assert_eq!(
+            y.0,
+            TensorRank1::<3, Current, Length>::from([3.0, 5.0, 7.0])
+        );
+        assert_eq!(y.1.value(), 9.0);
+    }
+    fn quantities(entries: &[(usize, f64)]) -> QuantitySparseVec<Length> {
+        let mut row = QuantitySparseVec::<Length>::default();
+        entries
+            .iter()
+            .for_each(|&(column, value)| row[column] += Quantity::new(value));
+        row
+    }
+    #[test]
+    fn sparse_quantities_with_different_patterns_merge_by_column() {
+        let mut y = quantities(&[(1, 1.0), (4, 4.0)]);
+        y.axpy(2.0, &quantities(&[(1, 10.0), (2, 20.0)]));
+        assert_eq!(y[1].value(), 21.0);
+        assert_eq!(y[2].value(), 40.0);
+        assert_eq!(y[4].value(), 4.0);
+    }
+    #[test]
+    fn sparse_tensors_with_different_patterns_merge_by_column() {
+        let row = |entries: &[(usize, f64)]| {
+            let mut row = TensorSparseVec::<Quantity<Length>>::default();
+            entries
+                .iter()
+                .for_each(|&(column, value)| row[column] += Quantity::new(value));
+            row
+        };
+        let mut y = row(&[(1, 1.0), (4, 4.0)]);
+        y.axmy(2.0, &row(&[(1, 10.0), (2, 20.0)]));
+        assert_eq!(y[1].value(), -19.0);
+        assert_eq!(y[2].value(), -40.0);
+        assert_eq!(y[4].value(), 4.0);
+    }
+    #[test]
+    fn sparse_matrices_with_different_patterns_merge_by_column() {
+        let row = |entries: &[(usize, f64)]| {
+            let mut row = TensorRank2SparseVec::<3, Current, Current>::default();
+            entries.iter().for_each(|&(column, value)| {
+                row[column] += TensorRank2::<3, Current, Current>::identity() * value
+            });
+            row
+        };
+        let mut y = row(&[(1, 1.0), (4, 4.0)]);
+        y.axpy(0.5, &row(&[(1, 10.0), (2, 20.0)]));
+        assert_eq!(y[1][0][0], 6.0);
+        assert_eq!(y[2][1][1], 10.0);
+        assert_eq!(y[4][2][2], 4.0);
+    }
+}
+
+#[test]
+fn a_list_times_a_borrowed_scalar_leaves_the_list_alone() -> Result<(), AssertionError> {
+    let list = TensorList::<TensorRank1<3, Current>, 2>::from([
+        TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+        TensorRank1::<3, Current>::from([4.0, 5.0, 6.0]),
+    ]);
+    let two = 2.0;
+    let scaled = Mul::mul(&list, &two);
+    Assert::default().eq_within_tols(
+        &scaled[0],
+        &TensorRank1::<3, Current>::from([2.0, 4.0, 6.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &scaled[1],
+        &TensorRank1::<3, Current>::from([8.0, 10.0, 12.0]),
+    )?;
+    Assert::default().eq_within_tols(&list[0], &TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]))
+}
+
+#[test]
+fn a_vector_times_a_borrowed_scalar_leaves_the_vector_alone() -> Result<(), AssertionError> {
+    let vector = TensorVector::from([
+        TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+        TensorRank1::<3, Current>::from([4.0, 5.0, 6.0]),
+    ]);
+    let two = 2.0;
+    let scaled = Mul::mul(&vector, &two);
+    Assert::default().eq_within_tols(
+        &scaled[0],
+        &TensorRank1::<3, Current>::from([2.0, 4.0, 6.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &scaled[1],
+        &TensorRank1::<3, Current>::from([8.0, 10.0, 12.0]),
+    )?;
+    Assert::default().eq_within_tols(
+        &vector[0],
+        &TensorRank1::<3, Current>::from([1.0, 2.0, 3.0]),
+    )
 }

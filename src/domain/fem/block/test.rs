@@ -22,14 +22,11 @@ macro_rules! test_finite_element_block {
         crate::fem::block::test::test_finite_element_block_inner!($element);
         mod block_plastic {
             use super::*;
-            use crate::{
-                EPSILON,
-                math::{Rank2, TensorRank2, assert::AssertionError},
-                mechanics::test::{
+            use crate::{math::{Rank2, TensorRank2, assert::AssertionError}, mechanics::test::{
                     get_rotation_current_configuration, get_rotation_reference_configuration,
                     get_translation_current_configuration, get_translation_reference_configuration,
-                },
-            };
+                }};
+            use crate::math::{EPSILON};
             mod elastic_plastic {
                 use super::*;
                 use crate::{
@@ -297,20 +294,16 @@ macro_rules! test_finite_element_block_inner {
         crate::domain::block::test::test_block_elastic_and_hyperelastic!($element);
         mod block_viscous {
             use super::*;
-            use crate::{
-                EPSILON,
-                fem::block::test::{
+            use crate::{fem::block::test::{
                     test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
                     test_finite_element_block_with_hyperviscoelastic_constitutive_model,
-                },
-                math::{Rank2, TensorRank2, assert::AssertionError},
-                mechanics::test::{
+                }, math::{Rank2, TensorRank2, assert::AssertionError}, mechanics::test::{
                     get_rotation_current_configuration, get_rotation_rate_current_configuration,
                     get_rotation_reference_configuration, get_translation_current_configuration,
                     get_translation_rate_current_configuration,
                     get_translation_reference_configuration,
-                },
-            };
+                }};
+            use crate::math::{EPSILON};
             mod elastic_hyperviscous {
                 use super::*;
                 use crate::{

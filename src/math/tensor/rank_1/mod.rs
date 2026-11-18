@@ -9,17 +9,18 @@ pub(crate) mod list_2d;
 pub(crate) mod vec;
 pub(crate) mod vec_2d;
 
-use std::{
-    array::from_fn,
+use core::{
+    array::{IntoIter, from_fn},
     fmt::{self, Debug, Display, Formatter},
     iter::Sum,
     marker::PhantomData,
+    mem::{transmute, transmute_copy},
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use crate::math::ABS_TOL;
 use crate::units::{UnitDiv, UnitMul};
 use crate::{
-    ABS_TOL,
     math::{
         matrix::vector::Vector,
         tensor::{
@@ -62,37 +63,32 @@ impl<const D: usize, I, U> PartialEq for TensorRank1<D, I, U> {
 
 impl<const D: usize, I, U> TensorRank1<D, I, U> {
     pub(super) fn canonical(&self) -> &TensorRank1<D, Reference, Dimensionless> {
-        // SAFETY: `TensorRank1` is `repr(transparent)` over `[Quantity<U>; D]` and `Quantity` over a
-        // number, the configuration and unit markers being zero-sized, so all of them share a layout.
-        unsafe { &*(self as *const Self as *const TensorRank1<D, Reference, Dimensionless>) }
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
+        unsafe { transmute::<&Self, &TensorRank1<D, Reference, Dimensionless>>(self) }
     }
     /// Asserts that the tensor carries the given unit.
     pub fn with_unit<V>(self) -> TensorRank1<D, I, V> {
         relabel(self.into_canonical())
     }
     /// Returns the direction the tensor points in.
-    pub fn normalized(self) -> TensorRank1<D, I, Dimensionless> {
-        let norm = self.norm().value();
-        (self / norm).with_unit()
+    pub fn normalized(&self) -> TensorRank1<D, I, Dimensionless>
+    where
+        U: UnitDiv<U, Output = Dimensionless>,
+    {
+        self / self.norm()
     }
     fn into_canonical(self) -> TensorRank1<D, Reference, Dimensionless> {
-        // SAFETY: as in `canonical`, and `read` takes a bitwise copy of a tensor with no drop glue.
-        unsafe {
-            (&self as *const Self)
-                .cast::<TensorRank1<D, Reference, Dimensionless>>()
-                .read()
-        }
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
+        unsafe { transmute_copy::<Self, TensorRank1<D, Reference, Dimensionless>>(&self) }
     }
 }
 
 pub(super) fn relabel<const D: usize, I, U>(
     tensor: TensorRank1<D, Reference, Dimensionless>,
 ) -> TensorRank1<D, I, U> {
-    // SAFETY: as in `into_canonical`.
+    // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
     unsafe {
-        (&tensor as *const TensorRank1<D, Reference, Dimensionless>)
-            .cast::<TensorRank1<D, I, U>>()
-            .read()
+        transmute_copy::<TensorRank1<D, Reference, Dimensionless>, TensorRank1<D, I, U>>(&tensor)
     }
 }
 
@@ -385,7 +381,7 @@ impl<const D: usize, I, U> Tensor for TensorRank1<D, I, U> {
 
 impl<const D: usize, I, U> IntoIterator for TensorRank1<D, I, U> {
     type Item = Quantity<U>;
-    type IntoIter = std::array::IntoIter<Self::Item, D>;
+    type IntoIter = IntoIter<Self::Item, D>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -430,17 +426,6 @@ impl<const D: usize, I, U> From<[TensorRank0; D]> for TensorRank1<D, I, U> {
 impl<const D: usize, I, U> From<TensorRank1<D, I, U>> for [TensorRank0; D] {
     fn from(tensor_rank_1: TensorRank1<D, I, U>) -> Self {
         tensor_rank_1.0.map(|entry| entry.value())
-    }
-}
-
-impl<const D: usize, I, U> From<Vec<TensorRank0>> for TensorRank1<D, I, U> {
-    fn from(vec: Vec<TensorRank0>) -> Self {
-        Self(
-            TryInto::<[TensorRank0; D]>::try_into(vec)
-                .unwrap()
-                .map(Quantity::new),
-            PhantomData,
-        )
     }
 }
 

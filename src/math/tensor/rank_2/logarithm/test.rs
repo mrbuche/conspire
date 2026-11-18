@@ -305,7 +305,7 @@ fn logm_non_symmetric_matches_expm_round_trip() -> Result<(), AssertionError> {
         rel_tol: 1e-9,
         ..Default::default()
     }
-    .eq_within_tols(logm.expm().unwrap(), &tensor)
+    .eq_within_tols(logm.expm()?, &tensor)
 }
 
 #[test]

@@ -2,12 +2,11 @@ use crate::{
     domain::{
         Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
         NodalState, NodalVelocities, NodalVelocitiesHistory,
-        block::{element::Elements, finalize_node_neighbors, solver_from_neighbors},
         boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, PowerAt},
         solid::{NodalDampingsSolid, NodalForcesSolid, viscoelastic::ViscoelasticElements},
     },
     math::{
-        Quantity, Tensor,
+        Quantity,
         integrate::{ImplicitDaeMinimize, IntegrationError},
         optimize::Optimization,
     },
@@ -143,15 +142,7 @@ where
         let initial = *time
             .first()
             .ok_or(IntegrationError::LengthTimeLessThanTwo)?;
-        let mut neighbors = vec![Vec::new(); self.coordinates().len()];
-        self.node_neighbors(&mut neighbors);
-        finalize_node_neighbors(&mut neighbors);
-        let sparse = solver_from_neighbors(
-            &neighbors,
-            &boundary_conditions.constraint_at(initial),
-            D,
-            true,
-        );
+        let sparse = self.sparse_solver(&boundary_conditions.constraint_at(initial), D, true);
         integrator.integrate(
             |time: Quantity<Time>,
              nodal_coordinates: &NodalCoordinates<D>,
@@ -172,7 +163,7 @@ where
              nodal_coordinates: &NodalCoordinates<D>,
              nodal_velocities: &NodalVelocities<D>| {
                 let mut nodal_dampings =
-                    self.nodal_stiffnesses(nodal_coordinates, nodal_velocities)?;
+                    self.nodal_dampings(nodal_coordinates, nodal_velocities)?;
                 applied_loads.add_stiffness_at(time, nodal_coordinates, &mut nodal_dampings)?;
                 Ok(nodal_dampings)
             },

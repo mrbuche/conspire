@@ -15,10 +15,8 @@ use portable::trisolve as trisolve_backend;
 
 use super::super::{SparseError, matrix::CscMatrix};
 use super::gemm::{CHUNK, NONE, etree, gemm_wide, max_below, reach_sorted, supernodes};
-use crate::{
-    ABS_TOL, REL_TOL,
-    math::{Scalar, Vector, simd},
-};
+use crate::math::{ABS_TOL, REL_TOL};
+use crate::math::{Scalar, Vector, simd};
 
 /// Threshold for preferring the diagonal pivot, which preserves the
 /// fill-reducing ordering when the matrix has a symmetric pattern.

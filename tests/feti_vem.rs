@@ -2,6 +2,7 @@
 
 use conspire::{
     constitutive::solid::hyperelastic::NeoHookean,
+    domain::decomposition::feti::Feti,
     fem::boundary::{
         BoundaryConditions as Conditions, Constrain, ConstrainAt, Displacement, Solid,
     },
@@ -9,7 +10,6 @@ use conspire::{
         Minimize, Model, NodalCoordinates, NodalReferenceCoordinates,
         solid::elastic::ElasticElements,
     },
-    feti::Feti,
     geometry::{
         Coordinates,
         grid::Voxels,
@@ -184,7 +184,7 @@ fn newton_with_feti_matches_newton_with_the_sparse_solve_on_polyhedra() {
             NewtonRaphson {
                 abs_tol: TOLERANCES,
                 linear_solver: Feti {
-                    partition: mesh(nel).partition_box([2; 3]),
+                    decomposition: mesh(nel).decomposition_box([2; 3]),
                     ..Default::default()
                 },
                 ..Default::default()

@@ -1,7 +1,7 @@
 use super::Quantity;
 use crate::math::{Tensor, TensorRank0};
 use crate::units::Dimensionless;
-use std::{
+use core::{
     fmt::{self, Debug, Display, Formatter, Result},
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
@@ -81,6 +81,12 @@ impl<U> Display for QuantitySparseVec<U> {
 impl<U> Tensor for QuantitySparseVec<U> {
     type Item = Quantity<U>;
     type Unit = U;
+    fn axpy(&mut self, factor: TensorRank0, other: &Self) {
+        other
+            .0
+            .iter()
+            .for_each(|(column, entry)| self[*column].axpy(factor, entry));
+    }
     fn iter(&self) -> impl Iterator<Item = &Self::Item> {
         self.0.iter().map(|(_, entry)| entry)
     }

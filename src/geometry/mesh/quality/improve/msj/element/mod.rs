@@ -10,7 +10,7 @@ use crate::{
     math::{CrossProduct, Quantity, Reference, Scalar, Tensor, TensorList, TensorRank1},
     units::{Area, Dimensionless, Length, ReciprocalLength, Volume},
 };
-use std::array::from_fn;
+use core::array::from_fn;
 
 pub(super) struct Frame {
     pub(super) edges: CoordinateList<3, 3>,

@@ -13,7 +13,24 @@ use crate::{
 
 const FOUR_THIRDS: Scalar = 4.0 / 3.0;
 
-#[doc = include_str!("doc.md")]
+/// The Isihara hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The extra modulus $`\mu_m`$.
+/// - The quadratic modulus $`\mu_q`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Isihara model reduces to the [Mooney-Rivlin model](super::MooneyRivlin) when $`\mu_q\to 0`$.
+///
+/// [^1]: A. Isihara, N. Hashitsume, and M. Tatibana, [J. Chem. Phys. **19**, 1508 (1951)](https://doi.org/10.1063/1.1748111).
 #[derive(Clone, Debug)]
 pub struct Isihara {
     /// The bulk modulus $`\kappa`$.
@@ -47,7 +64,9 @@ impl Solid for Isihara {
 }
 
 impl Elastic for Isihara {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{1}{J}\left\{2\left[\frac{\mu-\mu_m}{2} + \mu_q\left(\mathrm{tr}(\mathbf{B}^*) - 3\right)\right]{\mathbf{B}^* }' - \mu_m\left(\mathbf{B}^{* -1}\right)' + \frac{\kappa}{2}\left(J^2-1\right)\mathbf{1}\right\}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -68,7 +87,17 @@ impl Elastic for Isihara {
                 / jacobian,
         )
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \begin{aligned}
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) =
+    /// \,& \frac{2}{J^{5/3}}\left[\frac{\mu-\mu_m}{2} + \mu_q\left(\mathrm{tr}(\mathbf{B}^*) - 3\right)\right]\left(\delta_{ik}F_{jL} + \delta_{jk}F_{iL} - \frac{2}{3}\,\delta_{ij}F_{kL}- \frac{5}{3} \, B_{ij}'F_{kL}^{-T} \right)
+    /// + \frac{\kappa}{2} \left(J + \frac{1}{J}\right)\delta_{ij}F_{kL}^{-T}
+    /// \\
+    /// &- \frac{\mu_m}{J}\left[ \frac{2}{3}\,B_{ij}^{* -1}F_{kL}^{-T} - B_{ik}^{* -1}F_{jL}^{-T} - B_{ik}^{* -1}F_{iL}^{-T} + \frac{2}{3}\,\delta_{ij}\left(B_{km}^{* -1}\right)'F_{mL}^{-T} - \left(B_{ij}^{* -1}\right)'F_{kL}^{-T} \right]
+    /// \\
+    /// &+ \frac{1}{J}\,{B_{ij}^*}'\left(\frac{4\mu_q}{J^{2/3}}F_{kL} - \frac{4}{3}\mu_q\,\mathrm{tr}(\mathbf{B}^*)F_{kL}^{-T}\right)
+    /// \end{aligned}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -130,7 +159,9 @@ impl Elastic for Isihara {
 }
 
 impl Hyperelastic for Isihara {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \frac{\mu - \mu_m}{2}\left[\mathrm{tr}(\mathbf{B}^* ) - 3\right] + \frac{\mu_m}{2}\left[I_2(\mathbf{B}^*) - 3\right] + \frac{\mu_q}{2}\left[\mathrm{tr}(\mathbf{B}^* ) - 3\right]^2 + \frac{\kappa}{2}\left[\frac{1}{2}\left(J^2 - 1\right) - \ln J\right]
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

@@ -11,7 +11,21 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Eulerian Almansi-Hamel elastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Eulerian Almansi-Hamel strain measure is given by $`\mathbf{e}=\tfrac{1}{2}(\mathbf{1}-\mathbf{B}^{-1})`$.
+/// - This is the Eulerian counterpart of the [Lagrangian Almansi-Hamel model](super::AlmansiHamelLagrangian).
 #[derive(Clone, Debug)]
 pub struct AlmansiHamelEulerian {
     /// The bulk modulus $`\kappa`$.
@@ -30,7 +44,9 @@ impl Solid for AlmansiHamelEulerian {
 }
 
 impl Elastic for AlmansiHamelEulerian {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{2\mu}{J}\,\mathbf{e}' + \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{e})\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -44,7 +60,9 @@ impl Elastic for AlmansiHamelEulerian {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
             + IDENTITY * (self.bulk_modulus() * strain_trace / jacobian))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) = \frac{\mu}{J}\left[B_{jk}^{-1}F_{iL}^{-T} + B_{ik}^{-1}F_{jL}^{-T} - 2e_{ij}'F_{kL}^{-T}\right] + \frac{\lambda}{J}\,\delta_{ij}B_{km}^{-1}F_{mL}^{-T} - \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{e})\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

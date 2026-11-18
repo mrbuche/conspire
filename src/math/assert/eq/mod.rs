@@ -2,7 +2,7 @@ mod owned;
 
 use super::{Assert, AssertionError};
 use crate::math::Tensor;
-use std::fmt::Display;
+use core::fmt::Display;
 
 /// Equality assertions, overloaded across owned and borrowed operands.
 pub trait AssertEq<Rhs = Self> {
@@ -61,6 +61,20 @@ pub(super) fn non_negative_impl<T: Default + Display + PartialOrd>(
         Err(AssertionError {
             message: format!(
                 "\n\x1b[1;91mAssertion `left >= right` failed.\n\x1b[0;91m  left: {a}\n right: 0\x1b[0m"
+            ),
+        })
+    }
+}
+
+pub(super) fn non_positive_impl<T: Default + Display + PartialOrd>(
+    a: &T,
+) -> Result<(), AssertionError> {
+    if a <= &T::default() {
+        Ok(())
+    } else {
+        Err(AssertionError {
+            message: format!(
+                "\n\x1b[1;91mAssertion `left <= right` failed.\n\x1b[0;91m  left: {a}\n right: 0\x1b[0m"
             ),
         })
     }

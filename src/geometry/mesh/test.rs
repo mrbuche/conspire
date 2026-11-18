@@ -1,14 +1,12 @@
+use crate::math::FxHashMap;
 use crate::{
     geometry::{
         Coordinate, Coordinates,
-        mesh::{Connectivity, Mesh, Tessellation},
+        mesh::{Connectivity, Mesh, Tessellation, Watertight},
     },
     math::assert::AssertionError,
 };
-use std::{
-    collections::HashMap,
-    f64::consts::{PI, TAU},
-};
+use core::f64::consts::{PI, TAU};
 
 pub const CONNECTIVITY: [[usize; 3]; 12] = [
     [0, 2, 1],
@@ -40,6 +38,27 @@ pub fn mesh() -> Mesh<3> {
     let connectivities = vec![Connectivity::Triangular(CONNECTIVITY.to_vec().into())];
     let coordinates = Coordinates::from(COORDINATES);
     (connectivities, coordinates).into()
+}
+
+pub fn cuboid(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
+    let coordinates: Coordinates<3> = COORDINATES
+        .iter()
+        .map(|corner| {
+            core::array::from_fn(|axis| {
+                minimum[axis] + (maximum[axis] - minimum[axis]) * corner[axis].value()
+            })
+            .into()
+        })
+        .collect();
+    (CONNECTIVITY.to_vec(), coordinates).into()
+}
+
+pub fn watertight(tessellation: Tessellation) -> Watertight {
+    Watertight::new(tessellation).unwrap()
+}
+
+pub fn solid(minimum: [f64; 3], maximum: [f64; 3]) -> Watertight {
+    Watertight::new(cuboid(minimum, maximum)).unwrap()
 }
 
 pub fn sphere(stacks: usize, slices: usize, radius: f64) -> Tessellation {
@@ -80,9 +99,7 @@ pub fn sphere(stacks: usize, slices: usize, radius: f64) -> Tessellation {
             ring_start(stacks) + j,
         ]);
     }
-    let coordinates = Coordinates::from(points);
-    let connectivities = vec![Connectivity::Triangular(faces.into())];
-    Mesh::from((connectivities, coordinates)).into()
+    (faces, points).into()
 }
 
 pub fn mesh_with_node_sets() -> Mesh<3> {
@@ -168,7 +185,7 @@ pub fn octahedron(levels: usize) -> Tessellation {
         [0, 3, 5],
     ];
     for _ in 0..levels {
-        let mut midpoints = HashMap::new();
+        let mut midpoints = FxHashMap::default();
         let mut midpoint = |a: usize, b: usize, points: &mut Vec<[f64; 3]>| {
             *midpoints.entry((a.min(b), a.max(b))).or_insert_with(|| {
                 let sum = [0, 1, 2].map(|i| points[a][i] + points[b][i]);
@@ -189,9 +206,7 @@ pub fn octahedron(levels: usize) -> Tessellation {
             })
             .collect();
     }
-    let coordinates = Coordinates::from(points);
-    let connectivities = vec![Connectivity::Triangular(faces.into())];
-    Mesh::from((connectivities, coordinates)).into()
+    (faces, points).into()
 }
 
 mod node_element_connectivity {

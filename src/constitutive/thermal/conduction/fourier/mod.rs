@@ -8,7 +8,16 @@ use crate::{
     units::{Power, PowerPerLengthTemperature, PowerTemperatureDensity},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Fourier thermal conduction constitutive model.
+///
+/// **Parameters**
+/// - The thermal conductivity $`k`$.
+///
+/// **External variables**
+/// - The temperature gradient $`\nabla T`$.
+///
+/// **Internal variables**
+/// - None.
 #[derive(Clone, Debug)]
 pub struct Fourier {
     /// The thermal conductivity $`k`$.
@@ -25,21 +34,27 @@ impl Thermal for Fourier {}
 
 impl Diffusion for Fourier {
     type Balance = Power;
-    #[doc = include_str!("potential.md")]
+    /// ```math
+    /// u(\nabla T) = \frac{1}{2}k\nabla T\cdot\nabla T
+    /// ```
     fn potential(
         &self,
         temperature_gradient: &TemperatureGradient,
     ) -> Result<Quantity<PowerTemperatureDensity>, ConstitutiveError> {
         Ok(temperature_gradient.norm_squared() * self.thermal_conductivity() * 0.5)
     }
-    #[doc = include_str!("heat_flux.md")]
+    /// ```math
+    /// \mathbf{q}(\nabla T) = -k\nabla T
+    /// ```
     fn flux(
         &self,
         temperature_gradient: &TemperatureGradient,
     ) -> Result<HeatFlux, ConstitutiveError> {
         Ok(temperature_gradient * -self.thermal_conductivity())
     }
-    #[doc = include_str!("heat_flux_tangent.md")]
+    /// ```math
+    /// \frac{\partial\mathbf{q}}{\partial\nabla T} = -k\mathbf{I}
+    /// ```
     fn tangent(
         &self,
         _temperature_gradient: &TemperatureGradient,

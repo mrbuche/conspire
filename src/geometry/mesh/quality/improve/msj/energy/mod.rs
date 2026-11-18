@@ -12,7 +12,8 @@ use crate::{
     math::{Quantity, QuantityVector, Scalar, Tensor, TensorListVec},
     units::{Area, Dimensionless, Length},
 };
-use std::{mem::swap, sync::Mutex, thread::scope};
+use core::mem::swap;
+use std::{sync::Mutex, thread::scope};
 
 const LIGHT: usize = 1 << 15;
 

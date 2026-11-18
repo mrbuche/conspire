@@ -4,7 +4,7 @@ mod test;
 use super::TensorRank2;
 use crate::math::{Tensor, TensorArray, TensorRank0};
 use crate::units::Dimensionless;
-use std::{
+use core::{
     fmt::{self, Debug, Display, Formatter, Result},
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
@@ -88,6 +88,12 @@ impl<const D: usize, I, J, U> Display for TensorRank2SparseVec<D, I, J, U> {
 impl<const D: usize, I, J, U> Tensor for TensorRank2SparseVec<D, I, J, U> {
     type Item = TensorRank2<D, I, J, U>;
     type Unit = U;
+    fn axpy(&mut self, factor: TensorRank0, other: &Self) {
+        other
+            .0
+            .iter()
+            .for_each(|(column, entry)| self[*column].axpy(factor, entry));
+    }
     fn iter(&self) -> impl Iterator<Item = &Self::Item> {
         self.0.iter().map(|(_, entry)| entry)
     }

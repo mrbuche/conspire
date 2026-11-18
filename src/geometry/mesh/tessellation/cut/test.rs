@@ -3,17 +3,16 @@ use crate::{
     geometry::{
         Coordinate, Coordinates,
         mesh::{
-            Connectivity, Dualization, Mesh, PolytopalConnectivity, Verdict,
-            tessellation::Tessellation,
+            Connectivity, Dualization, Mesh, PolytopalConnectivity, Verdict, Watertight,
+            tessellation::Tessellation, test::watertight,
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
-    math::{CrossProduct, Quantity, Tensor},
+    math::{CrossProduct, FxHashMap, Quantity, Tensor},
 };
-use std::collections::HashMap;
 
 fn cut(
-    tessellation: &Tessellation,
+    tessellation: &Watertight,
     balancing: Balancing,
     scale: f64,
 ) -> Result<Mesh<3>, &'static str> {
@@ -27,7 +26,7 @@ fn cut_uniform(tessellation: &Tessellation, spacing: f64) -> Result<Mesh<3>, &'s
 }
 
 fn cut_polyhedral(
-    tessellation: &Tessellation,
+    tessellation: &Watertight,
     balancing: Balancing,
     scale: f64,
 ) -> Result<Mesh<3>, &'static str> {
@@ -37,7 +36,7 @@ fn cut_polyhedral(
 
 #[test]
 fn a_tolerance_refines_the_dual_background() {
-    let sphere = crate::geometry::mesh::test::octahedron(3);
+    let sphere = watertight(crate::geometry::mesh::test::octahedron(3));
     let balancing = Balancing::Strong(1);
     let (coarse, _) = sphere.dual_background(balancing, 3.0, None).unwrap();
     let (fine, _) = sphere
@@ -53,7 +52,7 @@ fn a_tolerance_refines_the_dual_background() {
 
 #[test]
 fn a_tolerance_refines_the_octree_background() {
-    let sphere = crate::geometry::mesh::test::octahedron(3);
+    let sphere = watertight(crate::geometry::mesh::test::octahedron(3));
     let balancing = Balancing::Strong(1);
     let (coarse, _) = sphere.octree_background(balancing, 3.0, None).unwrap();
     let (fine, _) = sphere
@@ -72,7 +71,7 @@ pub(super) fn signed_volumes(
     coordinates: &Coordinates<3>,
 ) -> Vec<f64> {
     let faces_nodes = polyhedra.faces_nodes();
-    let mut owner = HashMap::new();
+    let mut owner = FxHashMap::default();
     polyhedra
         .elements_faces()
         .iter()
@@ -114,7 +113,7 @@ pub(super) fn signed_volumes(
         .collect()
 }
 
-pub(super) fn dual(tessellation: &Tessellation, scale: f64) -> Mesh<3> {
+pub(super) fn dual(tessellation: &Watertight, scale: f64) -> Mesh<3> {
     let mut octree =
         Octree::<u16, usize>::from_features(tessellation, scale, CurvatureSizing::default(), 2)
             .unwrap();
@@ -128,7 +127,7 @@ fn midpoint(
     a: usize,
     b: usize,
     coordinates: &mut Vec<[f64; 3]>,
-    cache: &mut HashMap<[usize; 2], usize>,
+    cache: &mut FxHashMap<[usize; 2], usize>,
 ) -> usize {
     let key = if a < b { [a, b] } else { [b, a] };
     *cache.entry(key).or_insert_with(|| {
@@ -140,7 +139,7 @@ fn midpoint(
     })
 }
 
-pub(super) fn sphere(refinements: usize) -> Tessellation {
+pub(super) fn sphere(refinements: usize) -> Watertight {
     let mut coordinates = vec![
         [1.0, 0.0, 0.0],
         [-1.0, 0.0, 0.0],
@@ -160,7 +159,7 @@ pub(super) fn sphere(refinements: usize) -> Tessellation {
         [0, 3, 5],
     ];
     (0..refinements).for_each(|_| {
-        let mut cache = HashMap::new();
+        let mut cache = FxHashMap::default();
         faces = faces
             .iter()
             .flat_map(|&[a, b, c]| {
@@ -171,51 +170,10 @@ pub(super) fn sphere(refinements: usize) -> Tessellation {
             })
             .collect()
     });
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(faces.into())],
-        Coordinates::from(coordinates),
-    )))
+    watertight((faces, coordinates).into())
 }
 
-pub(super) fn star(refinements: usize, height: f64) -> Tessellation {
-    let base = sphere(refinements);
-    let coordinates_base = base.mesh().coordinates();
-    let mut coordinates: Vec<[f64; 3]> = coordinates_base
-        .iter()
-        .map(|point| [point[0].value(), point[1].value(), point[2].value()])
-        .collect();
-    let mut faces = Vec::new();
-    base.mesh()
-        .connectivities()
-        .iter()
-        .flatten()
-        .for_each(|triangle| {
-            let [a, b, c] = [triangle[0], triangle[1], triangle[2]];
-            let centroid: Vec<f64> = (0..3)
-                .map(|d| (coordinates[a][d] + coordinates[b][d] + coordinates[c][d]) / 3.0)
-                .collect();
-            let norm = centroid
-                .iter()
-                .map(|value| value * value)
-                .sum::<f64>()
-                .sqrt();
-            coordinates.push([
-                centroid[0] / norm * height,
-                centroid[1] / norm * height,
-                centroid[2] / norm * height,
-            ]);
-            let apex = coordinates.len() - 1;
-            faces.push([a, b, apex]);
-            faces.push([b, c, apex]);
-            faces.push([c, a, apex]);
-        });
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(faces.into())],
-        Coordinates::from(coordinates),
-    )))
-}
-
-pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
+pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Watertight {
     let [x0, y0, z0] = minimum;
     let [x1, y1, z1] = maximum;
     let coordinates = vec![
@@ -240,10 +198,7 @@ pub(super) fn box_surface(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation 
         .iter()
         .flat_map(|&[a, b, c, d]| [[a, b, c], [a, c, d]])
         .collect();
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(faces.into())],
-        Coordinates::from(coordinates),
-    )))
+    watertight((faces, coordinates).into())
 }
 
 pub(super) fn hexahedron(minimum: [f64; 3], maximum: [f64; 3]) -> Mesh<3> {
@@ -272,7 +227,7 @@ fn cut_sphere() {
     let mesh = cut(&tessellation, Balancing::Strong(1), 12.0).unwrap();
     assert_eq!(mesh.number_of_element_blocks(), 2);
     let coordinates = mesh.coordinates();
-    let mut usage: HashMap<Vec<usize>, usize> = HashMap::new();
+    let mut usage: FxHashMap<Vec<usize>, usize> = FxHashMap::default();
     mesh.iter().for_each(|block| match block {
         Connectivity::Hexahedral(_) => block.iter().for_each(|element| {
             block.local_faces().iter().for_each(|face| {
@@ -398,7 +353,7 @@ fn cut_uniform_thin_plate() {
     assert!(mesh.is_ok(), "{}", mesh.err().unwrap_or(""));
 }
 
-fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Tessellation {
+fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Watertight {
     let plain = box_surface(minimum, maximum);
     let axis = [1.0 / 3.0_f64.sqrt(); 3];
     let (sin, cos) = angle.sin_cos();
@@ -409,7 +364,7 @@ fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Tessellation
             axis[2] * p[0] - axis[0] * p[2],
             axis[0] * p[1] - axis[1] * p[0],
         ];
-        std::array::from_fn(|d| p[d] * cos + cross[d] * sin + axis[d] * dot * (1.0 - cos))
+        core::array::from_fn(|d| p[d] * cos + cross[d] * sin + axis[d] * dot * (1.0 - cos))
     };
     let triangles = match &plain.mesh().connectivities()[0] {
         Connectivity::Triangular(triangles) => triangles.iter().copied().collect::<Vec<_>>(),
@@ -421,10 +376,7 @@ fn rotated_box(minimum: [f64; 3], maximum: [f64; 3], angle: f64) -> Tessellation
         .iter()
         .map(|p| rotate([p[0].value(), p[1].value(), p[2].value()]))
         .collect();
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(triangles.into())],
-        Coordinates::from(coordinates),
-    )))
+    watertight((triangles, coordinates).into())
 }
 
 fn corners_landed_on(tessellation: &Tessellation, mesh: &Mesh<3>) -> usize {
@@ -497,7 +449,7 @@ fn spanned(mesh: &Mesh<3>) -> f64 {
 }
 
 fn boundary_faces(mesh: &Mesh<3>) -> usize {
-    let mut faces = HashMap::<[usize; 3], usize>::new();
+    let mut faces = FxHashMap::<[usize; 3], usize>::default();
     tets(mesh).iter().for_each(|tet| {
         [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
             .iter()
@@ -534,7 +486,7 @@ fn conforming_in_a_box(mesh: &Mesh<3>) {
             flush(low[axis]) || flush(high[axis])
         })
     };
-    let mut faces = HashMap::<[usize; 3], usize>::new();
+    let mut faces = FxHashMap::<[usize; 3], usize>::default();
     tets(mesh).iter().for_each(|tet| {
         [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
             .iter()
@@ -593,14 +545,14 @@ fn classify_agrees_between_the_hex_and_tet_lattices() {
         .iter()
         .zip(found.chunks(6))
         .for_each(|(&cell, tets)| assert!(tets.iter().all(|&class| class == cell)));
-    let cells_differing: std::collections::BTreeSet<usize> = classes
+    let cells_differing: alloc::collections::BTreeSet<usize> = classes
         .iter()
         .zip(&found)
         .enumerate()
         .filter(|&(_, (&rasterized, &found))| rasterized != found)
         .map(|(element, _)| element / 6)
         .collect();
-    let hexes_differing: std::collections::BTreeSet<usize> = cells
+    let hexes_differing: alloc::collections::BTreeSet<usize> = cells
         .iter()
         .zip(&hex_found)
         .enumerate()
@@ -613,7 +565,7 @@ fn classify_agrees_between_the_hex_and_tet_lattices() {
     assert!(found.contains(&Class::Outside))
 }
 
-fn check_octree_tet_background(tessellation: &Tessellation, graded: bool) {
+fn check_octree_tet_background(tessellation: &Watertight, graded: bool) {
     let (mesh, classes) = tessellation
         .octree_tet_background(Balancing::Strong(1), Pairing::Regular, 1.0, None)
         .unwrap();

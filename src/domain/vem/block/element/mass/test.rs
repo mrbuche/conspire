@@ -1,3 +1,4 @@
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{Quantity, Scalar, Tensor},
     mechanics::ReferenceCoordinate,
@@ -113,35 +114,36 @@ fn bipyramid_at(nodes: &[[Scalar; 3]; 5]) -> Case {
     )
 }
 
-fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) {
-    crate::math::assert::Assert {
+fn assert_close(a: Scalar, b: Scalar, tolerance: Scalar) -> Result<(), AssertionError> {
+    Assert {
         abs_tol: tolerance,
         rel_tol: tolerance,
         ..Default::default()
     }
     .eq_within_tols(a, &b)
-    .unwrap()
 }
 
 #[test]
-fn shares_a_skewed_tetrahedron_equally() {
+fn shares_a_skewed_tetrahedron_equally() -> Result<(), AssertionError> {
     fractions(&tetrahedron())
         .iter()
-        .for_each(|&fraction| assert_close(fraction, 0.25, 1e-12));
+        .try_for_each(|&fraction| assert_close(fraction, 0.25, 1e-12))?;
+    Ok(())
 }
 
 #[test]
-fn shares_a_box_equally() {
+fn shares_a_box_equally() -> Result<(), AssertionError> {
     fractions(&cube())
         .iter()
-        .for_each(|&fraction| assert_close(fraction, 0.125, 1e-12));
+        .try_for_each(|&fraction| assert_close(fraction, 0.125, 1e-12))?;
+    Ok(())
 }
 
 #[test]
-fn totals_the_mass_of_the_element() {
+fn totals_the_mass_of_the_element() -> Result<(), AssertionError> {
     [tetrahedron(), cube(), bipyramid(0.7, 0.4)]
         .iter()
-        .for_each(|(element, coordinates)| {
+        .try_for_each(|(element, coordinates)| {
             let total = element
                 .nodal_lumped_masses(DENSITY, coordinates)
                 .iter()
@@ -152,18 +154,19 @@ fn totals_the_mass_of_the_element() {
 }
 
 #[test]
-fn respects_the_symmetry_of_a_bipyramid() {
+fn respects_the_symmetry_of_a_bipyramid() -> Result<(), AssertionError> {
     let fractions = fractions(&bipyramid(0.7, 0.7));
-    assert_close(fractions[0], fractions[1], 1e-12);
-    assert_close(fractions[1], fractions[2], 1e-12);
-    assert_close(fractions[3], fractions[4], 1e-12);
+    assert_close(fractions[0], fractions[1], 1e-12)?;
+    assert_close(fractions[1], fractions[2], 1e-12)?;
+    assert_close(fractions[3], fractions[4], 1e-12)?;
     fractions
         .iter()
         .for_each(|&fraction| assert!(fraction > 0.0));
+    Ok(())
 }
 
 #[test]
-fn stays_positive_and_bounded_on_a_flat_agglomerate() {
+fn stays_positive_and_bounded_on_a_flat_agglomerate() -> Result<(), AssertionError> {
     let fractions: Vec<Vec<Scalar>> = [1e-1, 1e-3, 1e-5]
         .iter()
         .map(|&epsilon| fractions(&bipyramid(epsilon, 1.0)))
@@ -176,11 +179,12 @@ fn stays_positive_and_bounded_on_a_flat_agglomerate() {
     fractions[1]
         .iter()
         .zip(&fractions[2])
-        .for_each(|(&a, &b)| assert_close(a, b, 1e-3));
+        .try_for_each(|(&a, &b)| assert_close(a, b, 1e-3))?;
+    Ok(())
 }
 
 #[test]
-fn matches_a_quadrature_of_the_projection_on_a_lopsided_bipyramid() {
+fn matches_a_quadrature_of_the_projection_on_a_lopsided_bipyramid() -> Result<(), AssertionError> {
     let s = 3.0_f64.sqrt() / 2.0;
     let nodes = [
         [1.0, 0.0, 0.0],
@@ -252,5 +256,6 @@ fn matches_a_quadrature_of_the_projection_on_a_lopsided_bipyramid() {
     fractions(&case)
         .iter()
         .zip(&diagonal)
-        .for_each(|(&fraction, &entry)| assert_close(fraction, entry / trace, 1e-12));
+        .try_for_each(|(&fraction, &entry)| assert_close(fraction, entry / trace, 1e-12))?;
+    Ok(())
 }

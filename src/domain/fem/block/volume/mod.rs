@@ -36,7 +36,7 @@ where
                             .map(|(&node, &shape_function)| {
                                 &reference_coordinates[node] * shape_function
                             })
-                            .sum::<ReferenceCoordinate>();
+                            .sum();
                         element_connectivity
                             .iter()
                             .zip(shape_functions.iter())

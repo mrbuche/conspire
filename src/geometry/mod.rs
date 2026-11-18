@@ -6,11 +6,20 @@ pub mod bbox;
 /// Bounding volume hierarchies.
 pub mod bvh;
 
+/// Constructive solid geometry.
+pub mod csg;
+
 /// Primitive and polyhedral meshes.
 pub mod mesh;
 
 /// Orthotrees, such as quadtrees and octrees.
 pub mod ntree;
+
+/// Exact geometric predicates.
+pub mod predicates;
+
+/// Solids through booleans and signed distances.
+pub mod solid;
 
 /// Regular grids of values.
 pub mod grid;
@@ -23,12 +32,20 @@ use crate::{
     units::{Dimensionless, Length},
 };
 
+/// Point in `D` dimensions, with length units.
 pub type Coordinate<const D: usize> = TensorRank1<D, Reference, Length>;
+/// Vector of coordinates.
 pub type Coordinates<const D: usize> = TensorRank1Vec<D, Reference, Length>;
+/// Fixed-size list of `N` coordinates.
 pub type CoordinateList<const D: usize, const N: usize> = TensorRank1List<D, Reference, N, Length>;
+/// Borrowed view of coordinates.
 pub type CoordinatesRef<'a, const D: usize> = TensorRank1RefVec<'a, D, Reference, Length>;
+/// Unit direction in `D` dimensions, dimensionless.
 pub type Direction<const D: usize> = TensorRank1<D, Reference, Dimensionless>;
+/// Vector of directions.
 pub type Directions<const D: usize> = TensorRank1Vec<D, Reference, Dimensionless>;
+/// Fixed-size list of `N` directions.
 pub type DirectionList<const D: usize, const N: usize> =
     TensorRank1List<D, Reference, N, Dimensionless>;
+/// Borrowed view of directions.
 pub type DirectionsRef<'a, const D: usize> = TensorRank1RefVec<'a, D, Reference, Dimensionless>;

@@ -237,10 +237,10 @@ fn rotation_rate_current_configuration() -> Result<(), AssertionError> {
 
 #[test]
 fn size() {
-    assert_eq!(std::mem::size_of::<Scalar>(), std::mem::size_of::<f64>());
+    assert_eq!(core::mem::size_of::<Scalar>(), core::mem::size_of::<f64>());
     assert_eq!(
-        std::mem::size_of::<DeformationGradient>(),
-        std::mem::size_of::<[[f64; 3]; 3]>()
+        core::mem::size_of::<DeformationGradient>(),
+        core::mem::size_of::<[[f64; 3]; 3]>()
     );
 }
 
@@ -302,11 +302,3 @@ fn not_a_tensor() {
             .is_err()
     )
 }
-
-// #[test]
-// fn welp() {
-//     let _ = get_translation_current_configuration()
-//         + get_translation_rate_current_configuration()
-//             * get_translation_reference_configuration()[0]
-//         + get_temperature_gradient() * get_temperature();
-// }

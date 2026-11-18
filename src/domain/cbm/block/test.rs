@@ -1,6 +1,6 @@
 use super::{Block, node::Weighting};
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     cbm::SolidElements,
     constitutive::solid::elastic::{
         AlmansiHamelEulerian,
@@ -16,7 +16,10 @@ use crate::{
         solid::{NodalForcesSolid, NodalStiffnessesSolid, elastic::ElasticElements},
     },
     geometry::{Coordinate, Coordinates, mesh::PrimitiveConnectivity},
-    math::{Tensor, assert::Assert, assert::perturbation},
+    math::{
+        Tensor,
+        assert::{Assert, AssertionError, perturbation},
+    },
     mechanics::{
         DeformationGradient, DeformationGradientRate, test::get_deformation_gradient_rate,
     },
@@ -48,7 +51,7 @@ fn apply(
 }
 
 #[test]
-fn patch_test_uniform_deformation_gradient() {
+fn patch_test_uniform_deformation_gradient() -> Result<(), AssertionError> {
     let (connectivity, reference_coordinates) = two_tetrahedra_reference();
     let block = Block::from(((), connectivity, &reference_coordinates));
     let deformation_gradient =
@@ -60,11 +63,10 @@ fn patch_test_uniform_deformation_gradient() {
         .try_for_each(|particle_deformation_gradient| {
             Assert::default().eq_within_tols(particle_deformation_gradient, &deformation_gradient)
         })
-        .unwrap()
 }
 
 #[test]
-fn patch_test_uniform_deformation_gradient_rate() {
+fn patch_test_uniform_deformation_gradient_rate() -> Result<(), AssertionError> {
     let (connectivity, reference_coordinates) = two_tetrahedra_reference();
     let block = Block::from(((), connectivity, &reference_coordinates));
     let deformation_gradient =
@@ -85,11 +87,10 @@ fn patch_test_uniform_deformation_gradient_rate() {
                 &deformation_gradient_rate,
             )
         })
-        .unwrap()
 }
 
 #[test]
-fn patch_test_uniform_deformation_gradient_solid_angle_weighting() {
+fn patch_test_uniform_deformation_gradient_solid_angle_weighting() -> Result<(), AssertionError> {
     let (connectivity, reference_coordinates) = two_tetrahedra_reference();
     let block = Block::from((
         (),
@@ -106,7 +107,6 @@ fn patch_test_uniform_deformation_gradient_solid_angle_weighting() {
         .try_for_each(|particle_deformation_gradient| {
             Assert::default().eq_within_tols(particle_deformation_gradient, &deformation_gradient)
         })
-        .unwrap()
 }
 
 fn constitutive_model() -> AlmansiHamelEulerian {
@@ -132,7 +132,7 @@ fn nodal_forces_and_stiffnesses_finite_difference()
     let (connectivity, reference_coordinates) = two_tetrahedra_reference();
     let block = Block::from((constitutive_model(), connectivity, &reference_coordinates));
     let coordinates = non_uniformly_deformed_coordinates(&reference_coordinates);
-    let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates).unwrap();
+    let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates)?;
     let number_of_nodes = reference_coordinates.len();
     let mut finite_difference = NodalStiffnessesSolid::<3>::zero(number_of_nodes);
     (0..number_of_nodes).for_each(|node_b| {
@@ -165,7 +165,7 @@ fn nodal_forces_and_stiffnesses_finite_difference_solid_angle_weighting()
         Weighting::SolidAngle,
     ));
     let coordinates = non_uniformly_deformed_coordinates(&reference_coordinates);
-    let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates).unwrap();
+    let nodal_stiffnesses = block.nodal_stiffnesses(&coordinates)?;
     let number_of_nodes = reference_coordinates.len();
     let mut finite_difference = NodalStiffnessesSolid::<3>::zero(number_of_nodes);
     (0..number_of_nodes).for_each(|node_b| {
@@ -289,8 +289,8 @@ mod uniform {
 
     mod block_viscous {
         use super::*;
+        use crate::math::EPSILON;
         use crate::{
-            EPSILON,
             domain::block::test::{
                 test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
                 test_finite_element_block_with_hyperviscoelastic_constitutive_model,
@@ -530,8 +530,8 @@ mod solid_angle {
 
     mod block_viscous {
         use super::*;
+        use crate::math::EPSILON;
         use crate::{
-            EPSILON,
             domain::block::test::{
                 test_finite_element_block_with_elastic_hyperviscous_constitutive_model,
                 test_finite_element_block_with_hyperviscoelastic_constitutive_model,

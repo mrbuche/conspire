@@ -24,7 +24,11 @@ where
     U: TensorVec<Item = Y>,
     V: TensorVec<Item = Derivative<Y, T>>,
 {
-    #[doc = include_str!("doc.md")]
+    /// Solves an initial value problem by implicitly integrating a system of ordinary differential equations.
+    ///
+    /// ```math
+    /// \frac{dy}{dt} = f(t, y),\quad y(t_0) = y_0,\quad \frac{\partial f}{\partial y} = J(t, y)
+    /// ```
     fn integrate(
         &self,
         mut function: impl FnMut(Quantity<T>, &Y) -> Result<Derivative<Y, T>, IntegrationError>,

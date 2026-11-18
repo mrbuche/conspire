@@ -71,6 +71,7 @@ fn verner_9() {
 
 mod stability {
     use super::ButcherTableau;
+    use crate::math::assert::{Assert, AssertionError};
     use crate::math::integrate::ode::explicit::{
         fixed_step::{euler, heun, midpoint, ralston},
         variable_step::{bogacki_shampine, dormand_prince},
@@ -92,17 +93,14 @@ mod stability {
     }
 
     #[test]
-    fn embedded() {
+    fn embedded() -> Result<(), AssertionError> {
         let s = bogacki_shampine::Tableau::stability();
-        assert!((s.real() - 2.5127).abs() < 1e-3, "{}", s.real());
-        assert!(
-            (s.imaginary() - 3.0_f64.sqrt()).abs() < 1e-6,
-            "{}",
-            s.imaginary()
-        );
+        Assert::within(1e-3).eq_within_tols(s.real(), &2.5127)?;
+        Assert::within(1e-6).eq_within_tols(s.imaginary(), &3.0_f64.sqrt())?;
         let s = dormand_prince::Tableau::stability();
-        assert!((s.real() - 3.3066).abs() < 1e-3, "{}", s.real());
+        Assert::within(1e-3).eq_within_tols(s.real(), &3.3066)?;
         assert!(s.imaginary() > 0.5, "{}", s.imaginary());
+        Ok(())
     }
 
     #[test]
@@ -123,7 +121,7 @@ mod stability {
         let s = bogacki_shampine::Tableau::stability();
         assert_eq!(s.extent(-0.4), s.extent(0.4));
         assert_eq!(s.extent(0.0), s.real());
-        assert_eq!(s.extent(std::f64::consts::FRAC_PI_2), s.imaginary());
+        assert_eq!(s.extent(core::f64::consts::FRAC_PI_2), s.imaginary());
         [1.6, 2.0, f64::INFINITY, f64::NAN]
             .iter()
             .for_each(|&angle| {

@@ -1,6 +1,3 @@
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
-
 pub use crate::domain::block::element::solid::hyperviscoelastic::HyperviscoelasticElement;
 
 use crate::{

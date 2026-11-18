@@ -11,7 +11,25 @@ use crate::{
     units::{EnergyDensity, Stress},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Blatz-Ko hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The mixing parameter $`f`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The parameter $`n = \kappa/2\mu - 1/3`$ is determined by the bulk and shear moduli.
+/// - This model reduces to the rubber case when $`f\to 1`$ and to the foam case when $`f\to 0`$.
+/// - In the tangent stiffness, $`K = (1-f)J^{2n} - fJ^{-2n}`$ and $`K' = 2n\left[(1-f)J^{2n} + fJ^{-2n}\right]`$.
+///
+/// [^1]: P.J. Blatz and W.L. Ko, [Trans. Soc. Rheol. **6**, 223 (1962)](https://doi.org/10.1122/1.548937).
 #[derive(Clone, Debug)]
 pub struct BlatzKo {
     /// The bulk modulus $`\kappa`$.
@@ -42,7 +60,9 @@ impl Solid for BlatzKo {
 }
 
 impl Elastic for BlatzKo {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{\mu}{J}\Big\{f\mathbf{B} - (1 - f)\mathbf{B}^{-1} + \left[(1-f)J^{2n} - fJ^{-2n}\right]\mathbf{1}\Big\}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -59,7 +79,16 @@ impl Elastic for BlatzKo {
                 * (self.shear_modulus() / jacobian),
         )
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \begin{aligned}
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) =
+    /// \,& \frac{\mu f}{J}\Big[\delta_{ik}F_{jL} + \delta_{jk}F_{iL} - B_{ij}F_{kL}^{-T}\Big]
+    /// \\
+    /// &+ \frac{\mu(1-f)}{J}\Big[B_{ik}^{-1}F_{jL}^{-T} + F_{iL}^{-T}B_{jk}^{-1} + B_{ij}^{-1}F_{kL}^{-T}\Big]
+    /// \\
+    /// &+ \frac{\mu}{J}\left(K' - K\right)\delta_{ij}F_{kL}^{-T}
+    /// \end{aligned}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -99,7 +128,9 @@ impl Elastic for BlatzKo {
 }
 
 impl Hyperelastic for BlatzKo {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \frac{\mu}{2}\left\{f\left[I_1 - 3 + \frac{1}{n}\left(I_3^{-n} - 1\right)\right] + (1-f)\left[\frac{I_2}{I_3} - 3 + \frac{1}{n}\left(I_3^n - 1\right)\right]\right\}
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

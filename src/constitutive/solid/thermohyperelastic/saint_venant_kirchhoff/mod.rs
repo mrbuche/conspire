@@ -11,7 +11,23 @@ use crate::{
 
 use super::*;
 
-#[doc = include_str!("doc.md")]
+/// The Saint Venant-Kirchhoff thermohyperelastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The coefficient of thermal expansion $`\alpha`$.
+/// - The reference temperature $`T_\mathrm{ref}`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+/// - The temperature $`T`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Green-Saint Venant strain measure is given by $`\mathbf{E}=\tfrac{1}{2}(\mathbf{C}-\mathbf{1})`$.
 #[derive(Clone, Debug)]
 pub struct SaintVenantKirchhoff {
     /// The bulk modulus $`\kappa`$.
@@ -34,7 +50,9 @@ impl Solid for SaintVenantKirchhoff {
 }
 
 impl Thermoelastic for SaintVenantKirchhoff {
-    #[doc = include_str!("second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F}, T) = 2\mu\mathbf{E}' + \kappa\,\mathrm{tr}(\mathbf{E})\mathbf{1} - 3\alpha\kappa(T - T_\mathrm{ref})\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -52,7 +70,9 @@ impl Thermoelastic for SaintVenantKirchhoff {
                             * self.coefficient_of_thermal_expansion
                             * (temperature - self.reference_temperature()))))
     }
-    #[doc = include_str!("second_piola_kirchhoff_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{G}_{IJkL}(\mathbf{F}) = \mu\,\delta_{JL}F_{kI} + \mu\,\delta_{IL}F_{kJ} + \lambda\,\delta_{IJ}F_{kL}
+    /// ```
     fn second_piola_kirchhoff_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -70,7 +90,9 @@ impl Thermoelastic for SaintVenantKirchhoff {
                 ),
         )
     }
-    #[doc = include_str!("second_piola_kirchhoff_thermal_tangent.md")]
+    /// ```math
+    /// \frac{\partial\mathbf{S}}{\partial T}(\mathbf{F}) = -3\alpha\kappa\,\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_thermal_tangent(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -79,7 +101,9 @@ impl Thermoelastic for SaintVenantKirchhoff {
         let _jacobian = self.jacobian(deformation_gradient)?;
         Ok(IDENTITY_00 * (-3.0 * self.bulk_modulus() * self.coefficient_of_thermal_expansion))
     }
-    #[doc = include_str!("second_piola_kirchhoff_mixed_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2 S_{IJ}}{\partial F_{kL}\partial T}(\mathbf{F}) = 0
+    /// ```
     fn second_piola_kirchhoff_mixed_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -88,7 +112,9 @@ impl Thermoelastic for SaintVenantKirchhoff {
         let _jacobian = self.jacobian(deformation_gradient)?;
         Ok(SecondPiolaKirchhoffMixedTangentStiffness::zero())
     }
-    #[doc = include_str!("second_piola_kirchhoff_thermal_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2\mathbf{S}}{\partial T^2}(\mathbf{F}) = \mathbf{0}
+    /// ```
     fn second_piola_kirchhoff_thermal_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -103,7 +129,9 @@ impl Thermoelastic for SaintVenantKirchhoff {
 }
 
 impl Thermohyperelastic for SaintVenantKirchhoff {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}, T) = \mu\,\mathrm{tr}(\mathbf{E}^2) + \frac{\lambda}{2}\,\mathrm{tr}(\mathbf{E})^2 - 3\alpha\kappa\,\mathrm{tr}(\mathbf{E})(T - T_\mathrm{ref})
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

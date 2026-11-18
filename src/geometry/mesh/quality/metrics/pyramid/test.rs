@@ -1,5 +1,5 @@
 use crate::geometry::mesh::{Connectivity, Mesh, Verdict};
-use std::f64::consts::FRAC_1_SQRT_2;
+use core::f64::consts::FRAC_1_SQRT_2;
 
 fn pyramid(coordinates: Vec<[f64; 3]>) -> Mesh<3> {
     let connectivities = vec![Connectivity::Pyramidal(vec![[0, 1, 2, 3, 4]].into())];
@@ -19,7 +19,7 @@ fn perfect_pyramid_is_unit() {
     let mesh = pyramid(PERFECT.to_vec());
     assert!((mesh.minimum_scaled_jacobians()[0][0] - 1.0).abs() < 1.0e-12);
     assert!(mesh.minimum_jacobians()[0][0] > 0.0);
-    assert!((mesh.maximum_edge_ratios()[0][0] - 1.0).abs() < 1.0e-12);
+    assert!((mesh.edge_ratios()[0][0] - 1.0).abs() < 1.0e-12);
     assert!(mesh.maximum_skews()[0][0].abs() < 1.0e-12);
     assert!((mesh.volumes()[0][0] - FRAC_1_SQRT_2 / 3.0).abs() < 1.0e-12);
 }

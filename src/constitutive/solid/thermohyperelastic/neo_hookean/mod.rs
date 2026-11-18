@@ -15,7 +15,26 @@ use crate::{
     },
 };
 
-#[doc = include_str!("doc.md")]
+/// The Neo-Hookean thermohyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$ at the reference temperature.
+/// - The coefficient of thermal expansion $`\alpha`$ at the reference temperature.
+/// - The change of the coefficient of thermal expansion with temperature $`\alpha'`$.
+/// - The reference temperature $`T_\mathrm{ref}`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+/// - The temperature $`T`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The shear modulus is proportional to the temperature, $`\mu(T)=\mu\,T/T_\mathrm{ref}`$, so that the shear response is purely entropic, as in an ideal rubber: its internal energy does not depend on the deformation, stretching it at constant length raises its stress with temperature, and stretching it adiabatically warms it. The thermal expansion enters only through the volumetric response, with the coefficient $`\alpha(T) = \alpha + \alpha'(T - T_\mathrm{ref})`$ and the thermal strain $`\int_{T_\mathrm{ref}}^{T}\alpha(\theta)\,\mathrm{d}\theta`$, which is $`\alpha(T - T_\mathrm{ref})`$ when $`\alpha' = 0`$.
+///
+/// [^1]: R.S. Rivlin, [Philos. Trans. R. Soc. London, Ser. A **240**, 459 (1948)](https://doi.org/10.1098/rsta.1948.0002).
 #[derive(Clone, Debug)]
 pub struct NeoHookean {
     /// The bulk modulus $`\kappa`$.
@@ -61,7 +80,9 @@ impl NeoHookean {
 }
 
 impl Thermoelastic for NeoHookean {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}, T) = \frac{\mu\,T}{T_\mathrm{ref}\,J^{5/3}}\,\mathbf{B}' + \kappa\left[\frac{1}{2}\left(J - \frac{1}{J}\right) - 3\left(\alpha + \frac{\alpha'}{2}(T - T_\mathrm{ref})\right)(T - T_\mathrm{ref})\right]\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -77,7 +98,9 @@ impl Thermoelastic for NeoHookean {
                             - 3.0 * self.thermal_strain_at(temperature))),
         )
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}, T) = \frac{\mu\,T}{T_\mathrm{ref}\,J^{5/3}}\left(\delta_{ik}F_{jL} + \delta_{jk}F_{iL} - \frac{2}{3}\delta_{ij}F_{kL}\right) + \left[\frac{\kappa}{2}\left(J + \frac{1}{J}\right)\delta_{ij} - \frac{5}{3}\frac{\mu\,T}{T_\mathrm{ref}\,J^{5/3}}B_{ij}'\right]F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -97,7 +120,9 @@ impl Thermoelastic for NeoHookean {
                 &inverse_transpose_deformation_gradient,
             ))
     }
-    #[doc = include_str!("cauchy_thermal_tangent.md")]
+    /// ```math
+    /// \frac{\partial\boldsymbol{\sigma}}{\partial T}(\mathbf{F}, T) = \frac{\mu}{T_\mathrm{ref}\,J^{5/3}}\,\mathbf{B}' - 3\kappa\left[\alpha + \alpha'(T - T_\mathrm{ref})\right]\mathbf{1}
+    /// ```
     fn cauchy_thermal_tangent(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -110,7 +135,9 @@ impl Thermoelastic for NeoHookean {
                 - IDENTITY * (3.0 * self.bulk_modulus() * self.thermal_expansion_at(temperature)),
         )
     }
-    #[doc = include_str!("cauchy_mixed_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2\sigma_{ij}}{\partial F_{kL}\partial T}(\mathbf{F}) = \frac{\mu}{T_\mathrm{ref}\,J^{5/3}}\left(\delta_{ik}F_{jL} + F_{iL}\delta_{jk} - \frac{2}{3}\,\delta_{ij}F_{kL} - \frac{5}{3}\,B'_{ij}F_{kL}^{-T}\right)
+    /// ```
     fn cauchy_mixed_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -129,7 +156,9 @@ impl Thermoelastic for NeoHookean {
                 &deformation_gradient.inverse_transpose(),
             ))
     }
-    #[doc = include_str!("cauchy_thermal_tangent_stiffness.md")]
+    /// ```math
+    /// \frac{\partial^2\boldsymbol{\sigma}}{\partial T^2}(\mathbf{F}) = -3\kappa\alpha'\,\mathbf{1}
+    /// ```
     fn cauchy_thermal_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -144,7 +173,9 @@ impl Thermoelastic for NeoHookean {
 }
 
 impl Thermohyperelastic for NeoHookean {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}, T) = \frac{\mu\,T}{2\,T_\mathrm{ref}}\left[\mathrm{tr}(\mathbf{B}^*) - 3\right] + \frac{\kappa}{2}\left[\frac{1}{2}\left(J^2 - 1\right) - \ln J\right] - 3\kappa\left(\alpha + \frac{\alpha'}{2}(T - T_\mathrm{ref})\right)(T - T_\mathrm{ref})(J - 1)
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

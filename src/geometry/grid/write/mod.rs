@@ -5,14 +5,19 @@ use crate::{
     geometry::grid::Grid,
     io::{Npy, NpyType, Write, write::Compression},
 };
-use std::{fmt::Display, io::Error as ErrorIO, path::Path};
+use core::fmt::Display;
+use std::{io::Error as ErrorIO, path::Path};
 
+/// Grid output file.
 pub enum Output<P>
 where
     P: AsRef<Path>,
 {
+    /// NumPy file.
     Npy(P),
+    /// SPN file.
     Spn(P),
+    /// VTI file with compression.
     Vti(Compression<P>),
 }
 

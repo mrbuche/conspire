@@ -11,7 +11,20 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Saint Venant-Kirchhoff elastic solid constitutive model.
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Green-Saint Venant strain measure is given by $`\mathbf{e}=\tfrac{1}{2}(\mathbf{B}-\mathbf{1})`$.
 #[derive(Clone, Debug)]
 pub struct SaintVenantKirchhoff {
     /// The bulk modulus $`\kappa`$.
@@ -30,7 +43,9 @@ impl Solid for SaintVenantKirchhoff {
 }
 
 impl Elastic for SaintVenantKirchhoff {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \frac{2\mu}{J}\,\mathbf{e}' + \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{e})\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -41,7 +56,9 @@ impl Elastic for SaintVenantKirchhoff {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus() / jacobian)
             + IDENTITY * (self.bulk_modulus() * strain_trace / jacobian))
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) = \frac{\mu}{J}\left[\delta_{jk}F_{iL} + \delta_{ik}F_{jL} - 2e_{ij}'F_{kL}^{-T}\right] + \frac{\lambda}{J}\,\delta_{ij}F_{kL} - \frac{\kappa}{J}\,\mathrm{tr}(\mathbf{e})\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

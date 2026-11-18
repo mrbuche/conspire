@@ -1,4 +1,5 @@
 use super::VelocityVerlet;
+use crate::math::assert::{Assert, AssertionError};
 use crate::{
     math::{
         Quantity, Scalar, Tensor, TensorVector,
@@ -6,7 +7,7 @@ use crate::{
     },
     units::{Acceleration, Length, RateSquared, Time, Velocity},
 };
-use std::f64::consts::TAU;
+use core::f64::consts::TAU;
 
 type Solution = (
     Times,
@@ -45,7 +46,7 @@ fn max_error(dt: Scalar) -> Scalar {
 
 #[test]
 fn a_state_is_given_at_every_time_when_the_span_rounds_up_to_one_more_step() {
-    let dt = std::hint::black_box(1e-6_f64);
+    let dt = core::hint::black_box(1e-6_f64);
     assert!((2000.0 * dt) / dt > 2000.0);
     let (times, positions, velocities, accelerations) =
         oscillate(&VelocityVerlet { dt }, 2000.0 * dt).unwrap();
@@ -67,9 +68,10 @@ fn oscillator_matches_exact_solution() {
 }
 
 #[test]
-fn second_order_convergence() {
+fn second_order_convergence() -> Result<(), AssertionError> {
     let ratio = max_error(0.01) / max_error(0.005);
-    assert!((ratio - 4.0).abs() < 0.1, "ratio {ratio}");
+    Assert::within(0.1).eq_within_tols(ratio, &4.0)?;
+    Ok(())
 }
 
 #[test]

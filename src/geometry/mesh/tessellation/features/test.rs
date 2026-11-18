@@ -1,11 +1,10 @@
 use crate::{
     geometry::{
         Coordinate, Coordinates,
-        mesh::{Connectivity, Mesh, tessellation::Tessellation},
+        mesh::{Connectivity, tessellation::Tessellation},
     },
-    math::{Quantity, Tensor, TensorVec},
+    math::{FxHashMap, Quantity, Tensor, TensorVec},
 };
-use std::collections::HashMap;
 
 fn cube(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
     let [x0, y0, z0] = minimum;
@@ -32,10 +31,7 @@ fn cube(minimum: [f64; 3], maximum: [f64; 3]) -> Tessellation {
         .iter()
         .flat_map(|&[a, b, c, d]| [[a, b, c], [a, c, d]])
         .collect();
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(faces.into())],
-        Coordinates::from(coordinates),
-    )))
+    (faces, coordinates).into()
 }
 
 fn sphere(refinements: usize) -> Tessellation {
@@ -58,7 +54,7 @@ fn sphere(refinements: usize) -> Tessellation {
         [0, 3, 5],
     ];
     (0..refinements).for_each(|_| {
-        let mut cache = HashMap::new();
+        let mut cache = FxHashMap::default();
         faces = faces
             .iter()
             .flat_map(|&[a, b, c]| {
@@ -80,10 +76,7 @@ fn sphere(refinements: usize) -> Tessellation {
             })
             .collect()
     });
-    Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(faces.into())],
-        Coordinates::from(coordinates),
-    )))
+    (faces, coordinates).into()
 }
 
 #[test]
@@ -155,10 +148,7 @@ fn triangles_that_share_no_nodes_have_no_features() {
             .for_each(|node| coordinates.push(tessellation.mesh().coordinates()[node].clone()));
         unshared.push([first, first + 1, first + 2])
     });
-    let soup = Tessellation::from(Mesh::from((
-        vec![Connectivity::Triangular(unshared.into())],
-        coordinates,
-    )));
+    let soup: Tessellation = (unshared, coordinates).into();
     assert!(soup.features().corners().is_empty());
     assert!(soup.features().creases().is_empty());
 }

@@ -5,8 +5,8 @@ macro_rules! test_thermoelastic_thermal_conduction_rate_block {
                 D, G, M, N, P, get_connectivity, get_coordinates_block,
                 get_reference_coordinates_block, get_velocities_block, $element,
             };
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::{
                     multiphysics::Canonical,
                     solid::thermoelastic::{

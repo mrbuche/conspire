@@ -5,7 +5,7 @@ use crate::{
     geometry::{
         Coordinate, CoordinateList,
         bbox::BoundingBox,
-        mesh::Tessellation,
+        mesh::Watertight,
         ntree::{
             Octree,
             balance::Balancing,
@@ -17,7 +17,7 @@ use crate::{
     },
     math::{Quantity, Scalar},
 };
-use std::array::from_fn;
+use core::array::from_fn;
 
 const D: usize = 3;
 const M: usize = 6;
@@ -36,12 +36,12 @@ where
     /// from curvature alone). `padding` adds extra empty root levels in case
     /// the tessellation's boundary overlaps the primordial primal node.
     pub fn from_features(
-        tessellation: &Tessellation,
+        watertight: &Watertight,
         scale: Scalar,
         curvature: CurvatureSizing,
         padding: u16,
     ) -> Result<Self, &'static str> {
-        Self::refine(&Sizing::new(tessellation, scale, curvature, padding))
+        Self::refine(&Sizing::new(watertight, scale, curvature, padding))
     }
     /// Refines an octree to a given size field.
     pub fn refine(sizing: &Sizing) -> Result<Self, &'static str> {

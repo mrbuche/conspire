@@ -5,7 +5,8 @@ use crate::math::{
     HessianBlock, Quantity, QuantityVector, Scalar, Tensor, TensorRank1, TensorRank1Vec,
     TensorRank2, TensorTuple, TensorVec,
 };
-use std::{
+use alloc::vec::IntoIter;
+use core::{
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign},
 };
@@ -133,7 +134,7 @@ impl IndexMut<usize> for Matrix {
 
 impl IntoIterator for Matrix {
     type Item = Vector;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
+    type IntoIter = IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }

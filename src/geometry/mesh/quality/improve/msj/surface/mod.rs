@@ -10,7 +10,8 @@ use crate::{
     math::{Quantity, QuantityVector, Scalar, Tensor},
     units::{Dimensionless, Length},
 };
-use std::{array::from_fn, thread::scope};
+use core::array::from_fn;
+use std::thread::scope;
 
 const CREASE: Quantity = Dimensionless::of(0.866);
 

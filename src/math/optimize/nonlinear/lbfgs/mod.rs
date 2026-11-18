@@ -10,15 +10,15 @@ use crate::math::{
     sparse::SparseSolver,
 };
 use crate::units::{Dimensionless, UnitDiv, UnitMul};
-use std::fmt::{self, Debug, Formatter};
-use std::{
-    collections::VecDeque,
+use alloc::collections::VecDeque;
+use core::{
+    fmt::{self, Debug, Formatter},
     mem::swap,
     ops::Range,
-    sync::{
-        Barrier,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
+};
+use std::{
+    sync::Barrier,
     thread::{available_parallelism, scope},
 };
 

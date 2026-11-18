@@ -1,5 +1,5 @@
+use crate::math::EPSILON;
 use crate::{
-    EPSILON,
     constitutive::{
         canonical::Canonical,
         fluid::plastic::{Linear, PlasticFlow, VonMises, YieldSurface},
@@ -84,7 +84,7 @@ macro_rules! test_canonical {
             };
             let step = 1e-6;
             let energy = |gamma: f64| -> Result<f64, AssertionError> {
-                let f_p_gamma = (&direction * gamma).expm().unwrap() * &f_p;
+                let f_p_gamma = (&direction * gamma).expm()? * &f_p;
                 Ok(model.helmholtz_free_energy_density(&f, &f_p_gamma)?.value())
             };
             let fd = (energy(step)? - energy(-step)?) / (2.0 * step);

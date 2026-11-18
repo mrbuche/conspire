@@ -3,9 +3,6 @@
 #[cfg(test)]
 pub mod test;
 
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
-
 pub mod canonical;
 pub mod chemical;
 pub mod cohesive;
@@ -18,7 +15,7 @@ pub mod solid;
 pub mod thermal;
 
 use crate::math::{Scalar, Style, StyledError, assert::AssertionError, styled_error};
-use std::fmt::{Debug, Display};
+use core::fmt::{Debug, Display};
 
 /// Required methods for constitutive models.
 pub trait Constitutive

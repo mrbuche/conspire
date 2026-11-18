@@ -17,9 +17,10 @@ use crate::{
     },
     units::{Dimensionless, Length},
 };
+use core::cell::RefCell;
 use energy::Energy;
 use kind::{HEXAHEDRON, PYRAMID, TETRAHEDRON, WEDGE};
-use std::{cell::RefCell, sync::Mutex, thread::available_parallelism};
+use std::{sync::Mutex, thread::available_parallelism};
 use surface::Surface;
 
 type Gradient = TensorRank1Vec<3, Reference, Length>;

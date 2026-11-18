@@ -9,7 +9,8 @@ use crate::math::{
     SquareMatrix, Tensor, TensorRank1Vec, TensorRank2, TensorTuple, TensorVec, TensorVector,
     write_tensor_rank_0,
 };
-use std::{
+use alloc::vec::IntoIter;
+use core::{
     fmt::{Display, Formatter, Result},
     iter::Sum,
     mem::forget,
@@ -17,7 +18,7 @@ use std::{
         Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, RangeFrom, RangeTo, Sub,
         SubAssign,
     },
-    slice, vec,
+    slice::Iter,
 };
 
 /// A vector.
@@ -279,7 +280,7 @@ impl Jacobian for Vector {
 
 impl IntoIterator for Vector {
     type Item = Scalar;
-    type IntoIter = vec::IntoIter<Self::Item>;
+    type IntoIter = IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -287,7 +288,7 @@ impl IntoIterator for Vector {
 
 impl<'a> IntoIterator for &'a Vector {
     type Item = &'a Scalar;
-    type IntoIter = slice::Iter<'a, Scalar>;
+    type IntoIter = Iter<'a, Scalar>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }

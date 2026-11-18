@@ -3,7 +3,7 @@ use super::{
     TensorRank0, TensorRank2, TensorRank3, levi_civita,
 };
 use crate::math::Current;
-use crate::{ABS_TOL, REL_TOL};
+use crate::math::{ABS_TOL, REL_TOL};
 
 fn get_array() -> [[[TensorRank0; 4]; 4]; 4] {
     [
@@ -528,8 +528,8 @@ fn from() {
 #[test]
 fn size() {
     assert_eq!(
-        std::mem::size_of::<TensorRank3::<3, Current, Current, Current>>(),
-        std::mem::size_of::<[TensorRank2::<3, Current, Current>; 3]>()
+        core::mem::size_of::<TensorRank3::<3, Current, Current, Current>>(),
+        core::mem::size_of::<[TensorRank2::<3, Current, Current>; 3]>()
     )
 }
 

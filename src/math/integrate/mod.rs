@@ -1,5 +1,3 @@
-#[cfg(feature = "doc")]
-pub mod doc;
 #[cfg(test)]
 mod test;
 

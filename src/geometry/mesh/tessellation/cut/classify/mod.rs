@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod test;
 
-use super::{Class, DIRECTIONS, topology::element_faces};
+use super::{Class, topology::element_faces};
+use crate::geometry::mesh::tessellation::NORMALIZED_DIRECTIONS;
+use crate::math::FxHashMap;
 use crate::{
     geometry::{
         Coordinate, Coordinates, CoordinatesRef, Direction, DirectionsRef,
@@ -10,7 +12,7 @@ use crate::{
     },
     math::Tensor,
 };
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::hash_map::Entry;
 
 impl Tessellation {
     pub fn classify(&self, mesh: &Mesh<D>) -> Vec<Class> {
@@ -18,7 +20,7 @@ impl Tessellation {
         let surface_coordinates = surface.coordinates();
         let elements: Vec<&[usize]> = surface.connectivities().iter().flatten().collect();
         let normals: DirectionsRef<'_, D> = self.normals().iter().flatten().collect();
-        let directions = DIRECTIONS.map(|direction| direction.normalized());
+        let directions = NORMALIZED_DIRECTIONS;
         let bvh = self.bvh();
         let coordinates = mesh.coordinates();
         let number_of_elements = mesh.number_of_elements();
@@ -45,7 +47,7 @@ impl Tessellation {
                     )
                 })
             });
-        let mut faces = HashMap::new();
+        let mut faces = FxHashMap::default();
         let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); number_of_elements];
         let mut offset = 0;
         mesh.iter().for_each(|block| {
@@ -105,7 +107,7 @@ impl Tessellation {
         });
         classes
     }
-    pub(super) fn encloses(
+    pub(in crate::geometry::mesh::tessellation) fn encloses(
         &self,
         point: &Coordinate<D>,
         surface_coordinates: &Coordinates<D>,

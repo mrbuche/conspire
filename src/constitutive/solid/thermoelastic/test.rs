@@ -123,7 +123,7 @@ macro_rules! thermal_tangent_finite_difference {
             let model = $constitutive_model;
             let deformation_gradient = $crate::mechanics::test::get_deformation_gradient();
             let temperature = $crate::mechanics::test::get_temperature();
-            let step = $crate::math::Quantity::new($crate::EPSILON);
+            let step = $crate::math::Quantity::new($crate::math::EPSILON);
             let finite_difference = (model
                 .$stress(&deformation_gradient, temperature + step * 0.5)?
                 - model.$stress(&deformation_gradient, temperature - step * 0.5)?)
@@ -147,15 +147,15 @@ macro_rules! mixed_tangent_finite_difference {
             (0..3).try_for_each(|k| {
                 (0..3).try_for_each(|l| {
                     let mut plus = deformation_gradient.clone();
-                    plus[k][l] += $crate::math::assert::perturbation(0.5 * $crate::EPSILON);
+                    plus[k][l] += $crate::math::assert::perturbation(0.5 * $crate::math::EPSILON);
                     let mut minus = deformation_gradient.clone();
-                    minus[k][l] -= $crate::math::assert::perturbation(0.5 * $crate::EPSILON);
+                    minus[k][l] -= $crate::math::assert::perturbation(0.5 * $crate::math::EPSILON);
                     let difference = model.$thermal_tangent(&plus, temperature)?
                         - model.$thermal_tangent(&minus, temperature)?;
                     (0..3).try_for_each(|i| {
                         (0..3).try_for_each(|j| {
                             $crate::math::assert::Assert::default().eq_within_fd_tol(
-                                &(difference[i][j] / $crate::EPSILON),
+                                &(difference[i][j] / $crate::math::EPSILON),
                                 &mixed[i][j][k][l],
                             )
                         })

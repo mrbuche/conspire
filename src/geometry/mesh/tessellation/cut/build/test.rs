@@ -1,13 +1,13 @@
 use super::super::geometry::signed_volume;
 use super::super::test::{box_surface, hexahedron, signed_volumes, sphere};
+use crate::math::{FxHashMap, FxHashSet};
 use crate::{
     geometry::{
-        mesh::{Connectivity, Mesh, tessellation::Tessellation},
+        mesh::{Connectivity, Mesh, Watertight, tessellation::Tessellation},
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
     math::CrossProduct,
 };
-use std::collections::{HashMap, HashSet};
 
 #[test]
 fn assemble_generic_matches_assemble_hexahedron() {
@@ -15,7 +15,7 @@ fn assemble_generic_matches_assemble_hexahedron() {
     let mesh = hexahedron([0.9, -0.1, -0.1], [1.1, 0.1, 0.1]);
     let classes = tessellation.classify(&mesh);
     let tables = tessellation
-        .tables(&mesh, &classes, &HashSet::new())
+        .tables(&mesh, &classes, &FxHashSet::default())
         .unwrap();
     let expected = tessellation.assemble(&mesh, &classes, &tables).unwrap();
     let expected_volume = match &expected.connectivities()[0] {
@@ -37,7 +37,7 @@ fn assemble_generic_matches_assemble_hexahedron() {
         _ => panic!("expected the recomposed hexahedron"),
     };
     let generic_tables = tessellation
-        .tables_generic(&mesh, &classes, &HashSet::new())
+        .tables_generic(&mesh, &classes, &FxHashSet::default())
         .unwrap();
     let result = tessellation
         .assemble_generic(&mesh, &classes, &generic_tables)
@@ -134,7 +134,7 @@ fn tessellation_volume(tessellation: &Tessellation) -> f64 {
         .sum()
 }
 
-fn generic_cut(tessellation: &Tessellation, scale: f64) -> f64 {
+fn generic_cut(tessellation: &Watertight, scale: f64) -> f64 {
     let mut octree =
         Octree::<u16, usize>::from_features(tessellation, scale, CurvatureSizing::default(), 2)
             .unwrap();
@@ -159,7 +159,7 @@ fn generic_cut(tessellation: &Tessellation, scale: f64) -> f64 {
         .unwrap();
     match &result.connectivities()[0] {
         Connectivity::Polyhedral(connectivity) => {
-            let mut uses = HashMap::new();
+            let mut uses = FxHashMap::default();
             connectivity.elements_faces().iter().for_each(|faces| {
                 assert!(faces.len() > 3, "cell cannot bound a volume");
                 faces

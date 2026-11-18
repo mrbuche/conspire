@@ -8,7 +8,16 @@ use crate::{
     units::{Diffusivity, MolarFlowRate, MolarFlowRateConcentrationDensity},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Fick chemical diffusion constitutive model.
+///
+/// **Parameters**
+/// - The diffusivity $`D`$.
+///
+/// **External variables**
+/// - The concentration gradient $`\nabla c`$.
+///
+/// **Internal variables**
+/// - None.
 #[derive(Clone, Debug)]
 pub struct Fick {
     /// The diffusivity $`D`$.
@@ -19,21 +28,27 @@ impl Chemical for Fick {}
 
 impl Diffusion for Fick {
     type Balance = MolarFlowRate;
-    #[doc = include_str!("potential.md")]
+    /// ```math
+    /// u(\nabla c) = \frac{1}{2}D\nabla c\cdot\nabla c
+    /// ```
     fn potential(
         &self,
         concentration_gradient: &ConcentrationGradient,
     ) -> Result<Quantity<MolarFlowRateConcentrationDensity>, ConstitutiveError> {
         Ok(concentration_gradient.norm_squared() * self.diffusivity * 0.5)
     }
-    #[doc = include_str!("molar_flux.md")]
+    /// ```math
+    /// \mathbf{J}(\nabla c) = -D\nabla c
+    /// ```
     fn flux(
         &self,
         concentration_gradient: &ConcentrationGradient,
     ) -> Result<MolarFlux, ConstitutiveError> {
         Ok(concentration_gradient * -self.diffusivity)
     }
-    #[doc = include_str!("molar_flux_tangent.md")]
+    /// ```math
+    /// \frac{\partial\mathbf{J}}{\partial\nabla c} = -D\mathbf{I}
+    /// ```
     fn tangent(
         &self,
         _concentration_gradient: &ConcentrationGradient,

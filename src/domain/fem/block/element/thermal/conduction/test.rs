@@ -2,8 +2,8 @@ macro_rules! test_thermal {
     ($element: ident) => {
         mod thermal_element {
             use super::{N, element};
+            use crate::math::EPSILON;
             use crate::{
-                EPSILON,
                 constitutive::thermal::conduction::Fourier,
                 fem::block::element::{
                     FiniteElementError,

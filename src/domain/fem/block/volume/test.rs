@@ -21,7 +21,7 @@ fn neo_hookean() -> NeoHookean {
 }
 
 fn coordinates() -> NodalReferenceCoordinates<3> {
-    NodalReferenceCoordinates::from([
+    [
         [0.0, 0.0, 0.0],
         [2.0, 0.0, 0.0],
         [2.0, 3.0, 0.0],
@@ -34,7 +34,8 @@ fn coordinates() -> NodalReferenceCoordinates<3> {
         [2.0, 0.0, 2.0],
         [2.0, 3.0, 2.0],
         [0.0, 3.0, 2.0],
-    ])
+    ]
+    .into()
 }
 
 fn stack() -> Model<Hex, 3> {
@@ -51,17 +52,16 @@ fn stack() -> Model<Hex, 3> {
 }
 
 fn near(found: Quantity<Volume>, expected: f64) -> Result<(), AssertionError> {
-    Assert::default().eq_within_tols(found, &Quantity::<Volume>::new(expected))
+    Assert::default().eq_within_tols(found, &Quantity::new(expected))
 }
 
 #[test]
 fn a_cuboid_gives_an_eighth_of_its_volume_to_each_node() -> Result<(), AssertionError> {
     let coordinates = coordinates();
-    let model: Model<Hex, 3> = (
+    let model = Model::from((
         Hex::from((neo_hookean(), vec![[0, 1, 2, 3, 4, 5, 6, 7]], &coordinates)),
         coordinates,
-    )
-        .into();
+    ));
     let volumes = model.nodal_volumes();
     (0..8).try_for_each(|node| near(volumes[node], 6.0 / 8.0))
 }
@@ -82,7 +82,7 @@ fn the_nodal_volumes_add_up_to_the_volume() -> Result<(), AssertionError> {
 #[test]
 fn blocks_add_up_too() -> Result<(), AssertionError> {
     let coordinates = coordinates();
-    let model: Model<Blocks<Hex, Hex>, 3> = (
+    let model = Model::from((
         Blocks(
             Hex::from((neo_hookean(), vec![[0, 1, 2, 3, 4, 5, 6, 7]], &coordinates)),
             Hex::from((
@@ -92,7 +92,6 @@ fn blocks_add_up_too() -> Result<(), AssertionError> {
             )),
         ),
         coordinates,
-    )
-        .into();
+    ));
     near(model.nodal_volumes().volume(), 12.0)
 }

@@ -10,7 +10,7 @@ use crate::math::{
     Vector,
 };
 use crate::units::{UnitHalves, UnitSum};
-use std::{
+use core::{
     fmt::{Display, Formatter, Result},
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
@@ -200,6 +200,10 @@ where
         } else {
             None
         }
+    }
+    fn axpy(&mut self, factor: TensorRank0, tensor_tuple: &Self) {
+        self.0.axpy(factor, &tensor_tuple.0);
+        self.1.axpy(factor, &tensor_tuple.1)
     }
     fn full_contraction(&self, tensor_tuple: &Self) -> TensorRank0 {
         self.0.full_contraction(&tensor_tuple.0) + self.1.full_contraction(&tensor_tuple.1)

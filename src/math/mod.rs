@@ -1,5 +1,9 @@
 //! Mathematical methods.
 
+pub(crate) const ABS_TOL: f64 = 1e-12;
+pub(crate) const REL_TOL: f64 = 1e-12;
+pub(crate) const EPSILON: f64 = 1e-6;
+
 /// Assertion helpers for comparing values.
 pub mod assert;
 
@@ -22,7 +26,6 @@ pub mod sparse;
 pub mod special;
 
 mod graph;
-mod hash;
 mod labels;
 mod matrix;
 mod simd;
@@ -31,8 +34,8 @@ mod tensor;
 
 pub(crate) use style::{Style, StyledError, defeat_message, styled_error};
 
+pub use crate::hash::{FxHashMap, FxHashSet, FxHasher};
 pub use graph::{Graph, Incidence};
-pub use hash::{FxHashMap, FxHashSet, FxHasher};
 pub use labels::Labels;
 pub use matrix::{
     Matrix,
@@ -80,7 +83,7 @@ pub use tensor::{
     vec::{TensorRank1RefVec, TensorVector},
 };
 
-use std::fmt;
+use core::fmt;
 
 fn write_tensor_rank_0(f: &mut fmt::Formatter, tensor_rank_0: &TensorRank0) -> fmt::Result {
     let num = if tensor_rank_0.abs() > 1e-1 {

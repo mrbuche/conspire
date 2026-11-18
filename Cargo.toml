@@ -8,15 +8,13 @@ homepage = "https://mrbuche.github.io/conspire"
 keywords = ["conspire", "mrbuche"]
 license = "GPL-3.0"
 name = "conspire"
-repository = "https://github.com/mrbuche/conspire.rs"
-version = "0.9.0"
+repository = "https://github.com/mrbuche/conspire"
+version = "0.9.1"
 
 [features]
 all = ['cbm', 'vem']
-autodiff = []
 cbm = ['constitutive', 'geometry']
 constitutive = ['mechanics']
-doc = []
 fem = ['constitutive', 'geometry']
 geometry = ['io', 'math']
 io = []
@@ -35,8 +33,3 @@ codegen-units = 1
 lto = true
 panic = "abort"
 strip = "symbols"
-
-[profile.release-dev]
-inherits = "release"
-codegen-units = 32
-lto = false

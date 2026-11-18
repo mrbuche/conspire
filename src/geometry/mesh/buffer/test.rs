@@ -1,16 +1,20 @@
+use super::prism_tets;
 use crate::{
     geometry::{
         Coordinates,
         mesh::{
-            Connectivity, Dualization, Fitting, Mesh, Tessellation, Verdict,
+            Connectivity, Dualization, Fitting, Mesh, Tessellation, Verdict, Watertight,
             tessellation::from::test::tessellation,
             test::{octahedron, sphere},
         },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
-    math::{Quantity, Scalar, Tensor, assert::AssertionError},
+    math::{
+        FxHashMap, FxHashSet, Quantity, Scalar, Tensor,
+        assert::{Assert, AssertionError},
+    },
 };
-use std::collections::{HashMap, HashSet};
+use core::array::from_fn;
 
 fn core() -> Mesh<3> {
     let coordinates = Coordinates::from(vec![
@@ -26,17 +30,17 @@ fn core() -> Mesh<3> {
     let connectivities = vec![Connectivity::Hexahedral(
         vec![[0, 1, 2, 3, 4, 5, 6, 7]].into(),
     )];
-    Mesh::from((connectivities, coordinates))
+    (connectivities, coordinates).into()
 }
 
 #[test]
 fn buffer_captures_corners() -> Result<(), AssertionError> {
-    let mesh = core().buffer(&tessellation(), Fitting::Soft).unwrap();
+    let mesh = core().buffer(&tessellation(), Fitting::Soft)?;
     assert_eq!(mesh.coordinates().len(), 16);
     assert_eq!(mesh.number_of_element_blocks(), 1);
     assert_eq!(mesh.iter().flatten().count(), 7);
     let coordinates = mesh.coordinates();
-    let corners: HashSet<[u8; 3]> = (8..16)
+    let corners: FxHashSet<[u8; 3]> = (8..16)
         .map(|node| {
             let point = &coordinates[node];
             point.iter().for_each(|&entry| {
@@ -65,7 +69,7 @@ fn buffer_captures_corners() -> Result<(), AssertionError> {
 #[test]
 fn buffer_snaps_to_surface() -> Result<(), AssertionError> {
     let target = tessellation();
-    let mesh = core().buffer(&target, Fitting::Snap).unwrap();
+    let mesh = core().buffer(&target, Fitting::Snap)?;
     let surface = target.mesh();
     let elements: Vec<&[usize]> = surface.connectivities().iter().flatten().collect();
     let bvh = target.bvh();
@@ -124,7 +128,7 @@ fn buffer_tets_raises_three_tetrahedra_per_boundary_triangle() {
     let (tessellation, trimmed) = trimmed_tets(0.3);
     let (elements, nodes) = (trimmed.number_of_elements(), trimmed.number_of_nodes());
     let faces = trimmed.exterior_faces().len();
-    let boundary: HashSet<usize> = trimmed.exterior_faces().into_iter().flatten().collect();
+    let boundary: FxHashSet<usize> = trimmed.exterior_faces().into_iter().flatten().collect();
     let mesh = trimmed.buffer_tets(&tessellation, Fitting::Soft).unwrap();
     assert_eq!(mesh.number_of_element_blocks(), 1);
     assert!(matches!(
@@ -135,7 +139,7 @@ fn buffer_tets_raises_three_tetrahedra_per_boundary_triangle() {
     assert_eq!(mesh.number_of_elements(), elements + 3 * faces);
     assert_eq!(mesh.number_of_nodes(), nodes + boundary.len());
     assert!(worst_scaled_jacobian(&mesh) > 0.0);
-    let mut counts = HashMap::<[usize; 3], usize>::new();
+    let mut counts = FxHashMap::<[usize; 3], usize>::default();
     mesh.iter().flatten().for_each(|tet| {
         [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
             .iter()
@@ -215,7 +219,7 @@ fn bar() -> Tessellation {
 }
 
 fn assert_manifold_boundary(mesh: &Mesh<3>) {
-    let mut edges: HashMap<[usize; 2], u32> = HashMap::new();
+    let mut edges: FxHashMap<[usize; 2], u32> = FxHashMap::default();
     for face in mesh.exterior_faces() {
         for i in 0..face.len() {
             let mut edge = [face[i], face[(i + 1) % face.len()]];
@@ -233,9 +237,9 @@ fn assert_manifold_boundary(mesh: &Mesh<3>) {
 #[test]
 fn buffer_tets_repairs_a_pinched_trim() -> Result<(), AssertionError> {
     let target = bar();
-    let (mut mesh, _) = target.lattice_tet_background(Quantity::new(0.1)).unwrap();
-    target.trim(&mut mesh).unwrap();
-    let mesh = mesh.buffer_tets(&target, Fitting::Soft).unwrap();
+    let (mut mesh, _) = target.lattice_tet_background(Quantity::new(0.1))?;
+    target.trim(&mut mesh)?;
+    let mesh = mesh.buffer_tets(&target, Fitting::Soft)?;
     assert_eq!(mesh.number_of_element_blocks(), 1);
     assert_manifold_boundary(&mesh);
     assert!(worst_scaled_jacobian(&mesh) > 0.0);
@@ -270,7 +274,7 @@ fn mirror_mismatch(mesh: &Mesh<3>, axis: usize) -> Scalar {
 fn buffer_preserves_mirror_symmetry() {
     let target = octahedron(2);
     let mut octree = Octree::<u16, usize>::from_features(
-        &target,
+        &Watertight::new(octahedron(2)).unwrap(),
         5.0,
         CurvatureSizing {
             tolerance: None,
@@ -289,4 +293,84 @@ fn buffer_preserves_mirror_symmetry() {
         let mismatch = mirror_mismatch(&mesh, axis);
         assert!(mismatch < 1.0e-8, "axis {axis} mirror mismatch: {mismatch}");
     });
+}
+
+fn numberings() -> Vec<[usize; 6]> {
+    fn extend(prefix: &mut Vec<usize>, all: &mut Vec<[usize; 6]>) {
+        if prefix.len() == 6 {
+            all.push(from_fn(|i| prefix[i]));
+            return;
+        }
+        for node in 0..6 {
+            if !prefix.contains(&node) {
+                prefix.push(node);
+                extend(prefix, all);
+                prefix.pop();
+            }
+        }
+    }
+    let mut all = Vec::new();
+    extend(&mut Vec::new(), &mut all);
+    all
+}
+
+fn signed_volume(tet: [usize; 4], points: &[[f64; 3]; 6]) -> f64 {
+    let [a, b, c, d] = tet.map(|node| points[node]);
+    let [u, v, w]: [[f64; 3]; 3] = [b, c, d].map(|x| from_fn(|i| x[i] - a[i]));
+    (u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
+        + u[2] * (v[0] * w[1] - v[1] * w[0]))
+        / 6.0
+}
+
+#[test]
+fn a_prism_is_split_into_positive_tetrahedra_filling_it_whatever_its_numbering()
+-> Result<(), AssertionError> {
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ];
+    for numbering in numberings() {
+        let mut points = [[0.0; 3]; 6];
+        numbering
+            .iter()
+            .zip(corners)
+            .for_each(|(&node, corner)| points[node] = corner);
+        let base = [numbering[0], numbering[1], numbering[2]];
+        let top = [numbering[3], numbering[4], numbering[5]];
+        let tets = prism_tets(base, top);
+        let volumes = tets.map(|tet| signed_volume(tet, &points));
+        assert!(
+            volumes.iter().all(|&volume| volume > 1.0e-12),
+            "{numbering:?}"
+        );
+        Assert::within(1.0e-12).eq_within_tols(volumes.iter().sum::<f64>(), 0.5)?
+    }
+    Ok(())
+}
+
+#[test]
+fn a_prism_cuts_each_lateral_quadrilateral_through_its_lowest_node() {
+    for numbering in numberings() {
+        let base = [numbering[0], numbering[1], numbering[2]];
+        let top = [numbering[3], numbering[4], numbering[5]];
+        let tets = prism_tets(base, top);
+        let joined =
+            |a: usize, b: usize| tets.iter().any(|tet| tet.contains(&a) && tet.contains(&b));
+        for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+            let quadrilateral = [base[i], base[j], top[j], top[i]];
+            let lowest = *quadrilateral.iter().min().unwrap();
+            let at = quadrilateral
+                .iter()
+                .position(|&node| node == lowest)
+                .unwrap();
+            let opposite = quadrilateral[(at + 2) % 4];
+            let other = [quadrilateral[(at + 1) % 4], quadrilateral[(at + 3) % 4]];
+            assert!(joined(lowest, opposite), "{numbering:?}");
+            assert!(!joined(other[0], other[1]), "{numbering:?}");
+        }
+    }
 }

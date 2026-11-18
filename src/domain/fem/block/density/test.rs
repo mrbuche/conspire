@@ -1,24 +1,28 @@
 use crate::{
     fem::{
         NodalReferenceCoordinates,
-        block::{Block, Densities, ElementDensities, element::linear::Tetrahedron},
+        block::{
+            Block, Densities, ElementDensities,
+            element::{FiniteElement, linear::Tetrahedron},
+        },
     },
     math::{
         Quantity,
         assert::{Assert, AssertionError},
     },
     mechanics::ReferenceCoordinate,
-    units::{Density, Mass},
+    units::Density,
 };
 
 fn coordinates() -> NodalReferenceCoordinates<3> {
-    NodalReferenceCoordinates::from([
+    [
         [0.1, 0.2, 0.0],
         [1.3, 0.1, 0.2],
         [0.2, 0.9, 0.1],
         [0.3, 0.4, 1.2],
         [1.5, 1.4, 1.3],
-    ])
+    ]
+    .into()
 }
 
 const CONNECTIVITY: [[usize; 4]; 2] = [[0, 1, 2, 3], [1, 2, 3, 4]];
@@ -40,10 +44,8 @@ macro_rules! test_density {
     ($mod:ident, $g:literal) => {
         mod $mod {
             use super::*;
-
             type B = Block<(), Tetrahedron<$g>, $g, 3, 4, 4, ElementDensities<$g>>;
             type Scalar = Block<(), Tetrahedron<$g>, $g, 3, 4, 4, Quantity<Density>>;
-
             #[test]
             fn constant_density_gives_density_times_volume() -> Result<(), AssertionError> {
                 let density = Density::kilograms_per_cubic_meter(7.8e3);
@@ -51,7 +53,6 @@ macro_rules! test_density {
                 Assert::default().eq_within_tols(&block.mass(), &(density * block.volume()))?;
                 Assert::default().eq_within_tols(block.density(), &density)
             }
-
             #[test]
             fn a_constant_closure_agrees_with_the_scalar() -> Result<(), AssertionError> {
                 let density = Density::kilograms_per_cubic_meter(7.8e3);
@@ -70,7 +71,6 @@ macro_rules! test_density {
                     )
                 })
             }
-
             #[test]
             fn variable_density_is_sampled_at_the_integration_points() -> Result<(), AssertionError>
             {
@@ -92,9 +92,9 @@ macro_rules! test_density {
                     .zip(reference.elements())
                     .map(|(&nodes, element)| {
                         Density::kilograms_per_cubic_meter(linear(centroid_x(nodes)))
-                            * crate::fem::block::element::FiniteElement::volume(element)
+                            * FiniteElement::volume(element)
                     })
-                    .sum::<Quantity<Mass>>();
+                    .sum();
                 Assert::default().eq_within_tols(&block.mass(), &expected)
             }
         }

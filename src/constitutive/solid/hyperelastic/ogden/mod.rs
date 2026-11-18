@@ -17,7 +17,24 @@ use crate::{
     units::{EnergyDensity, Stress},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Ogden hyperelastic solid constitutive model.[^1]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear moduli $`\mu_n`$ for $`n=1\ldots N`$.
+/// - The exponents $`\alpha_n`$ for $`n=1\ldots N`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The shear modulus is given by $`\mu=\boldsymbol{\alpha}\cdot\boldsymbol{\mu}/2`$.
+/// - The Ogden model reduces to the [Neo-Hookean model](super::NeoHookean) when $`N=1`$ and $`\alpha_1\to 2`$.
+///
+/// [^1]: R.W. Ogden, [Proc. R. Soc. Lond. A **326**, 565 (1972)](https://doi.org/10.1098/rspa.1972.0026).
 #[derive(Clone, Debug)]
 pub struct Ogden {
     /// The bulk modulus $`\kappa`$.
@@ -87,7 +104,9 @@ impl Solid for Ogden {
 }
 
 impl Elastic for Ogden {
-    #[doc = include_str!("cauchy_stress.md")]
+    /// ```math
+    /// \boldsymbol{\sigma}(\mathbf{F}) = \sum_{n=1}^N \frac{\mu_n}{J}\,\mathrm{dev}\left({\mathbf{V}^*}^{\alpha_n}\right) + \frac{\kappa}{2}\left(J - \frac{1}{J}\right)\mathbf{1}
+    /// ```
     fn cauchy_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -102,7 +121,9 @@ impl Elastic for Ogden {
         }
         Ok(cauchy_stress)
     }
-    #[doc = include_str!("cauchy_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{T}_{ijkL}(\mathbf{F}) = \sum_{n=1}^N\frac{\mu_n}{J^{\alpha_n/3+1}}\left[\mathrm{dev}\left(\frac{\partial\mathbf{V}^{\alpha_n}}{\partial F_{kL}}\right)_{ij} - \left(\frac{\alpha_n}{3}+1\right)\mathrm{dev}(\mathbf{V}^{\alpha_n})_{ij}F_{kL}^{-T}\right] + \frac{\kappa}{2}\left(J + \frac{1}{J}\right)\delta_{ij}F_{kL}^{-T}
+    /// ```
     fn cauchy_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -141,7 +162,9 @@ impl Elastic for Ogden {
 }
 
 impl Hyperelastic for Ogden {
-    #[doc = include_str!("helmholtz_free_energy_density.md")]
+    /// ```math
+    /// a(\mathbf{F}) = \sum_{n=1}^N \frac{\mu_n}{\alpha_n}\big[\mathrm{tr}({\mathbf{V}^*}^{\alpha_n}) - 3\big] + \frac{\kappa}{2}\left[\frac{1}{2}\left(J^2 - 1\right) - \ln J\right]
+    /// ```
     fn helmholtz_free_energy_density(
         &self,
         deformation_gradient: &DeformationGradient,

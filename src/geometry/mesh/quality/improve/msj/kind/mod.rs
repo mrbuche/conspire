@@ -5,7 +5,8 @@ use crate::{
     geometry::mesh::quality::metrics::{pyramid, tetrahedron, wedge},
     math::Scalar,
 };
-use std::{array::from_fn, f64::consts::SQRT_2, sync::LazyLock};
+use core::{array::from_fn, f64::consts::SQRT_2};
+use std::sync::LazyLock;
 
 pub(super) type Weights = [[Scalar; 8]; 3];
 

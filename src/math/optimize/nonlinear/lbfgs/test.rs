@@ -10,7 +10,7 @@ use crate::{
     },
     units::{Area, Dimensionless, Length},
 };
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 fn solver() -> LimitedMemoryBFGS {
     LimitedMemoryBFGS {

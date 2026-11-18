@@ -86,30 +86,24 @@ fn square_matrix_mul_other_square_matrix_dim_9() -> Result<(), AssertionError> {
 }
 
 #[test]
-fn quadratic_form_matches_multiplication() {
+fn quadratic_form_matches_multiplication() -> Result<(), AssertionError> {
     let mut square_matrix = SquareMatrix::zero(3);
     (0..3).for_each(|i| (0..3).for_each(|j| square_matrix[i][j] = (1 + i * 3 + j) as f64));
     let vector = Vector::from([1.0, -2.0, 3.0]);
     let form = square_matrix.quadratic_form(&vector);
-    Assert::default()
-        .eq_within_tols(form, &(&vector * (square_matrix * &vector)))
-        .unwrap()
+    Assert::default().eq_within_tols(form, &(&vector * (square_matrix * &vector)))
 }
 
 #[test]
-fn quadratic_form_leading_ignores_trailing_rows_and_columns() {
+fn quadratic_form_leading_ignores_trailing_rows_and_columns() -> Result<(), AssertionError> {
     let mut square_matrix = SquareMatrix::zero(3);
     (0..3).for_each(|i| (0..3).for_each(|j| square_matrix[i][j] = (1 + i * 3 + j) as f64));
     let vector = Vector::from([1.0, -2.0, 3.0]);
-    Assert::default()
-        .eq_within_tols(square_matrix.quadratic_form_leading(&vector, 2), &9.0)
-        .unwrap();
-    Assert::default()
-        .eq_within_tols(
-            square_matrix.quadratic_form_leading(&vector, 3),
-            &square_matrix.quadratic_form(&vector),
-        )
-        .unwrap()
+    Assert::default().eq_within_tols(square_matrix.quadratic_form_leading(&vector, 2), &9.0)?;
+    Assert::default().eq_within_tols(
+        square_matrix.quadratic_form_leading(&vector, 3),
+        &square_matrix.quadratic_form(&vector),
+    )
 }
 
 #[test]

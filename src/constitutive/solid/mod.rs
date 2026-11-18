@@ -1,8 +1,5 @@
 //! Solid constitutive models.
 
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
-
 mod canonical;
 
 pub mod elastic;
@@ -36,7 +33,7 @@ use crate::{
     },
     units::Stress,
 };
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 impl<C> Constitutive for C where C: Solid {}
 

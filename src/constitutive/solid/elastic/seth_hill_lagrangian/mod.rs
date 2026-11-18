@@ -17,7 +17,28 @@ use crate::{
     units::Stress,
 };
 
-#[doc = include_str!("doc.md")]
+/// The Lagrangian Seth-Hill elastic solid constitutive model.[^1]<sup>,</sup>[^2]
+///
+/// **Parameters**
+/// - The bulk modulus $`\kappa`$.
+/// - The shear modulus $`\mu`$.
+/// - The exponent $`m`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Seth-Hill strain measure is given by $`\mathbf{E}^{(m)} = \tfrac{1}{m}(\mathbf{U}^m - \mathbf{1})`$.
+/// - The model reduces to the elastic [Hencky model](super::Hencky) when $`m=0`$.
+/// - The model reduces to the hyperelastic [Saint Venant-Kirchhoff model](super::super::hyperelastic::SaintVenantKirchhoff) when $`m=2`$.
+/// - The model reduces to the [Lagrangian Almansi-Hamel model](super::AlmansiHamelLagrangian) when $`m=-2`$.
+/// - This is the Lagrangian counterpart of the [Eulerian Seth-Hill model](super::SethHillEulerian).
+///
+/// [^1]: B.R. Seth, *Generalized Strain Measure with Applications to Physical Problems*, AD0266913 (1961).
+/// [^2]: R. Hill, [J. Mech. Phys. Solids **16**, 229 (1968)](https://doi.org/10.1016/0022-5096(68)90031-8).
 #[derive(Clone, Debug)]
 pub struct SethHillLagrangian {
     /// The bulk modulus $`\kappa`$.
@@ -51,7 +72,9 @@ impl Solid for SethHillLagrangian {
 }
 
 impl Elastic for SethHillLagrangian {
-    #[doc = include_str!("second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F}) = 2\mu\mathbf{E}^{(m)}{}' + \kappa\,\mathrm{tr}\big(\mathbf{E}^{(m)}\big)\mathbf{1}
+    /// ```
     fn second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -72,7 +95,9 @@ impl Elastic for SethHillLagrangian {
         Ok(deviatoric_strain * (2.0 * self.shear_modulus())
             + IDENTITY_00 * (self.bulk_modulus() * strain_trace))
     }
-    #[doc = include_str!("second_piola_kirchhoff_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{G}_{IJkL}(\mathbf{F}) = \mu\,\frac{\partial C_{IJ}^{m/2}}{\partial F_{kL}} + \lambda\,\delta_{IJ}F_{kM}C_{ML}^{m/2-1}
+    /// ```
     fn second_piola_kirchhoff_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,

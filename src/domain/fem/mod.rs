@@ -1,8 +1,5 @@
 //! Finite element methods.
 
-#[cfg(test)]
-mod test;
-
 pub mod block;
 pub mod volume {
     pub use crate::domain::volume::{NodalVolumeElements, NodalVolumes};

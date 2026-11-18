@@ -2,8 +2,8 @@
 mod test;
 
 use super::{Erase, Scalar, Tensor};
-use crate::{ABS_TOL, REL_TOL};
-use std::f64::consts::E;
+use crate::math::{ABS_TOL, REL_TOL};
+use core::f64::consts::E;
 
 const NINE_FIFTHS: Scalar = 9.0 / 5.0;
 

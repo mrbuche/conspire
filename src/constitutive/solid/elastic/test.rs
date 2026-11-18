@@ -118,7 +118,7 @@ macro_rules! test_solid_constitutive
         #[test]
         fn bulk_modulus() -> Result<(), AssertionError>
         {
-            use crate::EPSILON;
+            use crate::math::EPSILON;
             let model = $constitutive_model;
             let deformation_gradient = DeformationGradient::identity()*(1.0 + EPSILON / 3.0);
             let first_piola_kirchhoff_stress = first_piola_kirchhoff_stress_from_deformation_gradient_simple!(&model, &deformation_gradient)?;
@@ -128,7 +128,7 @@ macro_rules! test_solid_constitutive
         #[test]
         fn shear_modulus() -> Result<(), AssertionError>
         {
-            use crate::EPSILON;
+            use crate::math::EPSILON;
             let model = $constitutive_model;
             let mut deformation_gradient = DeformationGradient::identity();
             deformation_gradient[0][1] = $crate::math::Quantity::new(EPSILON);
@@ -142,17 +142,14 @@ pub(crate) use test_solid_constitutive;
 
 macro_rules! test_solid_constitutive_model_no_tangents {
     ($constitutive_model: expr) => {
-        use crate::{
-            EPSILON,
-            math::{TensorArray, assert::AssertionError},
-            mechanics::{
+        use crate::{math::{TensorArray, assert::AssertionError}, mechanics::{
                 CauchyStress, FirstPiolaKirchhoffStress, SecondPiolaKirchhoffStress,
                 test::{
                     get_deformation_gradient, get_deformation_gradient_rotated,
                     get_rotation_current_configuration, get_rotation_reference_configuration,
                 },
-            },
-        };
+            }};
+        use crate::math::{EPSILON};
         mod cauchy_stress {
             use super::*;
             mod deformed {

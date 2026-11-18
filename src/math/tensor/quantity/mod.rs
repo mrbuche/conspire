@@ -13,9 +13,10 @@ use crate::math::{TensorList, assert::FiniteDifference};
 use crate::units::{
     Dimensionless, IsDimensionless, UnitDiv, UnitHalves, UnitInv, UnitMul, UnitRoot,
 };
-use std::{
+use core::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
+    iter::Sum,
     marker::PhantomData,
     ops::{Add, AddAssign, Div, DivAssign, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -190,7 +191,7 @@ impl<U> PartialEq for Quantity<U> {
 }
 
 impl<U> PartialOrd for Quantity<U> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(&other.0)
     }
 }
@@ -514,13 +515,13 @@ impl PartialEq<Quantity<Dimensionless>> for TensorRank0 {
 }
 
 impl PartialOrd<TensorRank0> for Quantity<Dimensionless> {
-    fn partial_cmp(&self, tensor_rank_0: &TensorRank0) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, tensor_rank_0: &TensorRank0) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(tensor_rank_0)
     }
 }
 
 impl PartialOrd<Quantity<Dimensionless>> for TensorRank0 {
-    fn partial_cmp(&self, quantity: &Quantity<Dimensionless>) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, quantity: &Quantity<Dimensionless>) -> Option<core::cmp::Ordering> {
         self.partial_cmp(&quantity.0)
     }
 }
@@ -535,7 +536,7 @@ where
     }
 }
 
-impl<U> std::iter::Sum for Quantity<U> {
+impl<U> Sum for Quantity<U> {
     fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = Self>,
@@ -544,7 +545,7 @@ impl<U> std::iter::Sum for Quantity<U> {
     }
 }
 
-impl<'a, U> std::iter::Sum<&'a Quantity<U>> for Quantity<U> {
+impl<'a, U> Sum<&'a Quantity<U>> for Quantity<U> {
     fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = &'a Quantity<U>>,
@@ -574,6 +575,9 @@ impl<U> Tensor for Quantity<U> {
     ) -> Option<usize> {
         self.0.error_count(&other.0, tol_abs, tol_rel)
     }
+    fn axpy(&mut self, factor: TensorRank0, other: &Self) {
+        self.0 += factor * other.0
+    }
     fn full_contraction(&self, quantity: &Self) -> TensorRank0 {
         self.0 * quantity.0
     }
@@ -581,10 +585,10 @@ impl<U> Tensor for Quantity<U> {
         self.0 == 0.0
     }
     fn iter(&self) -> impl Iterator<Item = &Self::Item> {
-        std::slice::from_ref(self).iter()
+        core::slice::from_ref(self).iter()
     }
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Item> {
-        std::slice::from_mut(self).iter_mut()
+        core::slice::from_mut(self).iter_mut()
     }
     fn len(&self) -> usize {
         1

@@ -33,11 +33,7 @@ where
     )>,
     PrimitiveConnectivity<D, N>: TryFrom<Connectivity, Error = &'static str>,
 {
-    Ok(Block::from((
-        constitutive_model,
-        PrimitiveConnectivity::<D, N>::try_from(connectivity)?,
-        coordinates,
-    )))
+    Ok((constitutive_model, connectivity.try_into()?, coordinates).into())
 }
 
 impl<C, F, const G: usize, const N: usize, const P: usize> FromConnectivities<3, C>

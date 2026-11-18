@@ -5,13 +5,17 @@ use super::{
 use crate::{
     geometry::{
         Coordinate, CoordinateList,
-        mesh::{Connectivity, Dualization, Fitting, Mesh, MeshError, Tessellation, Verdict},
+        mesh::{
+            Connectivity, Dualization, Fitting, Mesh, MeshError, Tessellation, Verdict, Watertight,
+        },
         ntree::{Balance, Balancing, CurvatureSizing, Octree, Pairing},
     },
     math::{Quantity, Scalar, Tensor},
     units::{Area, Dimensionless, Length},
 };
-use std::{collections::BTreeSet, f64::consts::TAU, time::Instant};
+use alloc::collections::BTreeSet;
+use core::f64::consts::TAU;
+use std::time::Instant;
 
 const SWEEPS: usize = 20;
 const UNREACHABLE: Quantity = Dimensionless::of(1.0);
@@ -245,7 +249,7 @@ fn an_unreachable_threshold_is_an_error_but_keeps_the_improvement() {
     assert!(worst(&mesh) > before + 0.05);
 }
 
-fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Tessellation {
+fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Watertight {
     let mut coordinates = Vec::new();
     (0..around).for_each(|i| {
         let theta = TAU * i as Scalar / around as Scalar;
@@ -270,11 +274,12 @@ fn torus(major: Scalar, minor: Scalar, around: usize, tube: usize) -> Tessellati
             })
         })
         .collect();
-    Mesh::from((
+    let tessellation: Tessellation = Mesh::from((
         vec![Connectivity::Triangular(faces.into())],
         coordinates.into(),
     ))
-    .into()
+    .into();
+    Watertight::new(tessellation).unwrap()
 }
 
 fn gap(mesh: &Mesh<3>, target: &Tessellation) -> Scalar {

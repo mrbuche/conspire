@@ -10,6 +10,7 @@ pub(crate) mod boundary;
 pub mod cbm;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod chemical;
+pub mod decomposition;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod density;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
@@ -20,13 +21,13 @@ pub(crate) mod electrical;
 pub(crate) mod factor;
 #[cfg(feature = "fem")]
 pub mod fem;
-#[cfg(feature = "fem")]
-#[path = "partition/feti/mod.rs"]
-pub mod feti;
 pub(crate) mod from;
+pub(crate) mod lumping;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod multiphysics;
+pub(crate) mod parallel;
 pub(crate) mod solid;
+pub(crate) mod stability;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod thermal;
 pub(crate) mod time_scale;
@@ -40,7 +41,7 @@ pub(crate) mod volume;
 
 use crate::{
     domain::{
-        block::element::Elements,
+        block::{element::Elements, finalize_node_neighbors, solver_from_neighbors},
         boundary::{Conservative, Constrain, Load, LoadStiffness, NodalState},
     },
     geometry::{
@@ -48,14 +49,15 @@ use crate::{
         mesh::{NodeSets, SideSets},
     },
     math::{
-        Current, Reference, Style, StyledError, TensorRank1Vec, TensorRank1Vec2D,
+        Current, Reference, Style, StyledError, Tensor, TensorRank1Vec, TensorRank1Vec2D,
         assert::AssertionError,
-        optimize::{Optimization, OptimizationError, RootFinding},
+        optimize::{EqualityConstraint, Optimization, OptimizationError, RootFinding},
+        sparse::SparseSolver,
         styled_error,
     },
     units::{Acceleration, Length, Velocity},
 };
-use std::fmt::{Debug, Display};
+use core::fmt::{Debug, Display};
 
 pub(crate) fn nodal_coordinates<const D: usize>(
     coordinates: Coordinates<D>,
@@ -109,7 +111,7 @@ impl<B, const D: usize> Model<B, D> {
 
 #[cfg_attr(not(any(feature = "fem", feature = "vem")), allow(dead_code))]
 #[derive(Debug)]
-pub struct Blocks<B1, B2>(pub(crate) B1, pub(crate) B2);
+pub struct Blocks<B1, B2>(pub B1, pub B2);
 
 #[cfg_attr(not(any(feature = "fem", feature = "vem")), allow(dead_code))]
 #[derive(Debug)]
@@ -156,6 +158,38 @@ where
 impl<B, const D: usize> Model<B, D> {
     pub fn blocks(&self) -> &B {
         &self.blocks
+    }
+}
+
+#[cfg_attr(
+    not(any(feature = "fem", feature = "vem", feature = "cbm")),
+    allow(dead_code)
+)]
+impl<B, const D: usize> Model<B, D>
+where
+    B: Elements,
+{
+    /// The nodes that share an element with each node, sorted and without repeats.
+    pub(crate) fn finalized_neighbors(&self) -> Vec<Vec<usize>> {
+        let mut neighbors = vec![Vec::new(); self.coordinates.len()];
+        self.node_neighbors(&mut neighbors);
+        finalize_node_neighbors(&mut neighbors);
+        neighbors
+    }
+    /// The sparse solver for the nodes that share an element, with `dimension` unknowns for each
+    /// node.
+    pub(crate) fn sparse_solver(
+        &self,
+        equality_constraints: &[EqualityConstraint],
+        dimension: usize,
+        symmetric: bool,
+    ) -> SparseSolver {
+        solver_from_neighbors(
+            &self.finalized_neighbors(),
+            equality_constraints,
+            dimension,
+            symmetric,
+        )
     }
 }
 

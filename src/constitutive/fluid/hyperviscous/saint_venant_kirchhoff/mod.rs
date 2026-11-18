@@ -12,12 +12,26 @@ use crate::{
     math::{ContractWith, IDENTITY_00, Quantity, Rank2, TensorRank4},
     mechanics::{
         DeformationGradient, DeformationGradientRate, SecondPiolaKirchhoffRateTangentStiffness,
-        SecondPiolaKirchhoffStress,
+        SecondPiolaKirchhoffStress, SecondPiolaKirchhoffTangentStiffness,
     },
     units::{Dissipation, Viscosity},
 };
 
-#[doc = include_str!("doc.md")]
+/// The Saint Venant-Kirchhoff viscous fluid constitutive model.
+///
+/// **Parameters**
+/// - The bulk viscosity $`\zeta`$.
+/// - The shear viscosity $`\eta`$.
+///
+/// **External variables**
+/// - The deformation gradient $`\mathbf{F}`$.
+/// - The deformation gradient rate $`\dot{\mathbf{F}}`$.
+///
+/// **Internal variables**
+/// - None.
+///
+/// **Notes**
+/// - The Green-Saint Venant strain rate $`\dot{\mathbf{E}}`$ follows from $`\mathbf{E}=\tfrac{1}{2}(\mathbf{C}-\mathbf{1})`$.
 #[derive(Clone, Debug)]
 pub struct SaintVenantKirchhoff {
     /// The bulk viscosity $`\zeta`$.
@@ -33,7 +47,9 @@ impl Viscous for SaintVenantKirchhoff {
     fn shear_viscosity(&self) -> Quantity<Viscosity> {
         self.shear_viscosity
     }
-    #[doc = include_str!("viscous_second_piola_kirchhoff_stress.md")]
+    /// ```math
+    /// \mathbf{S}(\mathbf{F},\dot{\mathbf{F}}) = 2\eta\dot{\mathbf{E}}' + \zeta\,\mathrm{tr}(\dot{\mathbf{E}})\mathbf{1}
+    /// ```
     fn viscous_second_piola_kirchhoff_stress(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -45,7 +61,9 @@ impl Viscous for SaintVenantKirchhoff {
         Ok(deviatoric_strain_rate * (2.0 * self.shear_viscosity())
             + IDENTITY_00 * (self.bulk_viscosity() * strain_rate_trace))
     }
-    #[doc = include_str!("viscous_second_piola_kirchhoff_rate_tangent_stiffness.md")]
+    /// ```math
+    /// \mathcal{W}_{IJkL}(\mathbf{F}) = \eta\,\delta_{JL}F_{kI} + \eta\,\delta_{IL}F_{kJ} + \left(\zeta - \frac{2}{3}\,\eta\right)\delta_{IJ}F_{kL}
+    /// ```
     fn viscous_second_piola_kirchhoff_rate_tangent_stiffness(
         &self,
         deformation_gradient: &DeformationGradient,
@@ -62,10 +80,31 @@ impl Viscous for SaintVenantKirchhoff {
                 ),
         )
     }
+    fn viscous_second_piola_kirchhoff_tangent_stiffness(
+        &self,
+        _: &DeformationGradient,
+        deformation_gradient_rate: &DeformationGradientRate,
+    ) -> Result<SecondPiolaKirchhoffTangentStiffness, ConstitutiveError> {
+        let scaled_deformation_gradient_rate_transpose =
+            deformation_gradient_rate.transpose() * self.shear_viscosity();
+        Ok(
+            TensorRank4::dyad_ik_jl(&scaled_deformation_gradient_rate_transpose, &IDENTITY_00)
+                + TensorRank4::dyad_il_jk(
+                    &IDENTITY_00,
+                    &scaled_deformation_gradient_rate_transpose,
+                )
+                + TensorRank4::dyad_ij_kl(
+                    &(IDENTITY_00 * (self.bulk_viscosity() - TWO_THIRDS * self.shear_viscosity())),
+                    deformation_gradient_rate,
+                ),
+        )
+    }
 }
 
 impl Hyperviscous for SaintVenantKirchhoff {
-    #[doc = include_str!("viscous_dissipation.md")]
+    /// ```math
+    /// \psi(\mathbf{F},\dot{\mathbf{F}}) = \eta\,\mathrm{tr}(\dot{\mathbf{E}}^2) + \frac{1}{2}\left(\zeta - \frac{2}{3}\,\eta\right)\mathrm{tr}(\dot{\mathbf{E}})^2
+    /// ```
     fn viscous_dissipation(
         &self,
         deformation_gradient: &DeformationGradient,

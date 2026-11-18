@@ -10,12 +10,10 @@ pub use self::{
     eq::AssertEq, error::AssertionError, fd::FiniteDifference, fd::perturbation, fd_eq::AssertFd,
 };
 
-use self::eq::{non_negative_impl, zero_impl, zero_within_tols_impl};
-use crate::{
-    ABS_TOL, EPSILON, REL_TOL,
-    math::{Scalar, Tensor},
-};
-use std::fmt::Display;
+use self::eq::{non_negative_impl, non_positive_impl, zero_impl, zero_within_tols_impl};
+use crate::math::{ABS_TOL, EPSILON, REL_TOL};
+use crate::math::{Scalar, Tensor};
+use core::fmt::Display;
 
 /// Specifies tolerances used by [`AssertEq`] functionalities.
 pub struct Assert {
@@ -35,6 +33,14 @@ impl Default for Assert {
 }
 
 impl Assert {
+    /// Returns tolerances that accept only an absolute difference below `abs_tol`.
+    pub fn within(abs_tol: Scalar) -> Self {
+        Self {
+            abs_tol,
+            rel_tol: 0.0,
+            ..Self::default()
+        }
+    }
     /// Asserts exact equality.
     pub fn eq<T, Rhs>(a: T, b: Rhs) -> Result<(), AssertionError>
     where
@@ -62,6 +68,13 @@ impl Assert {
         T: Default + Display + PartialOrd,
     {
         non_negative_impl(a)
+    }
+    /// Asserts non-positivity.
+    pub fn non_positive<T>(a: &T) -> Result<(), AssertionError>
+    where
+        T: Default + Display + PartialOrd,
+    {
+        non_positive_impl(a)
     }
     /// Asserts exact equality with zero.
     pub fn zero<T>(a: &T) -> Result<(), AssertionError>

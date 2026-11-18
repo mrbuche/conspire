@@ -4,17 +4,18 @@ pub mod test;
 mod base;
 mod buffer;
 mod connectivity;
+mod decomposition;
 pub(crate) mod differential;
 mod error;
 mod fit;
 mod from;
 mod into;
-mod partition;
 mod quality;
 mod read;
 mod remesh;
-mod retain;
+pub(crate) mod retain;
 mod sets;
+mod sheets;
 mod smooth;
 mod tessellation;
 mod write;
@@ -27,20 +28,19 @@ pub use self::{
         Connectivities, Connectivity, polytopal::PolytopalConnectivity,
         primitive::PrimitiveConnectivity,
     },
+    decomposition::{Bisection, Decomposition, DecompositionQuality},
     differential::laplace::Weighting,
     error::MeshError,
-    fit::{Fitting, Freedom},
-    partition::{Bisection, Partition, PartitionQuality},
+    fit::Fitting,
     quality::metrics::Verdict,
     read::Input,
     remesh::{AnisotropicSizing, IsotropicSizing, Remeshing, RemeshingMetric},
     smooth::Smoothing,
     tessellation::{
         Tessellation,
-        cut::{
-            Class,
-            marching::{Finish, Marching, Placement},
-        },
+        corefine::{Constraint, Corefined, Crossing, Interfaces, Polyline, Region, Side},
+        cut::Class,
+        watertight::{Defects, Watertight},
         write::Stl,
     },
     write::{Output, exodus::ExodusFormat, vtk::Vtk},
@@ -50,7 +50,7 @@ use crate::{
     geometry::Coordinates,
     math::{Incidence, Labels},
 };
-use std::cell::OnceCell;
+use core::cell::OnceCell;
 
 pub struct Mesh<const D: usize> {
     connectivities: Connectivities,

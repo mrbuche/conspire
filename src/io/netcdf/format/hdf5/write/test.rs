@@ -17,8 +17,8 @@ fn spec(name: &str, xtype: i32, dimids: Vec<usize>) -> VarSpec {
 }
 
 fn le<T: Copy>(values: &[T]) -> Vec<u8> {
-    let n = std::mem::size_of_val(values);
-    unsafe { std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), n) }.to_vec()
+    let n = core::mem::size_of_val(values);
+    unsafe { core::slice::from_raw_parts(values.as_ptr().cast::<u8>(), n) }.to_vec()
 }
 
 fn write_to_vec(dims: &[DimSpec], vars: &[VarSpec], data: Vec<Vec<u8>>, threads: usize) -> Vec<u8> {
@@ -286,4 +286,12 @@ fn hyperslab_out_of_bounds_panics() {
     }
     let nc = NetCDF::open(path).unwrap();
     nc.get_variable_slice::<i32>("v", &[2], &[5]).unwrap();
+}
+
+#[test]
+fn zero_width_rows_plan_a_single_chunk() {
+    use super::chunk::plan;
+    let p = plan(&[3, 0], &[], 8, 1);
+    assert_eq!(p.chunk_dims, [3, 0]);
+    assert_eq!(p.blobs.len(), 1);
 }

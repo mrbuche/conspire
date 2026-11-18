@@ -5,19 +5,22 @@ use crate::{
     geometry::grid::Grid,
     io::{Npy, NpyType},
 };
+use core::{fmt::Display, str::FromStr};
 use std::{
-    fmt::Display,
     io::{Error as ErrorIO, ErrorKind},
     path::Path,
-    str::FromStr,
 };
 
+/// Grid input file.
 pub enum Input<P>
 where
     P: AsRef<Path>,
 {
+    /// NumPy file.
     Npy(P),
+    /// SPN file with element counts per axis.
     Spn(P, Vec<usize>),
+    /// VTI file.
     Vti(P),
 }
 
