@@ -22,9 +22,11 @@ pub use linear::{
     Direct, Eigenpairs, Krylov, KrylovError, KrylovMethod, Lanczos, LanczosError, LinearSolver,
 };
 pub use nonlinear::{
-    BarzilaiBorwein, BarzilaiBorweinStep, Conjugacy, ConjugateGradient, Corrections, Descent,
-    GradientDescent, LimitedMemoryBFGS, NewtonRaphson, StepEstimator,
+    BarzilaiBorwein, BarzilaiBorweinStep, Conjugacy, ConjugateGradient, GradientDescent,
+    NewtonRaphson, StepEstimator,
 };
+#[cfg(feature = "std")]
+pub use nonlinear::{Corrections, Descent, LimitedMemoryBFGS};
 pub use preconditioning::{Jacobi, Precondition, Preconditioning, Scaled};
 pub use strategy::SolveStrategy;
 pub use tolerance::Tolerances;
