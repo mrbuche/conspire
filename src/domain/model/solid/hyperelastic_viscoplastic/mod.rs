@@ -1,8 +1,8 @@
 use crate::{
     domain::{
         Blocks, ElasticViscoplasticAndElastic, ElementModel, ElementModelError, Model,
-        NodalCoordinates, NodalCoordinatesHistory, NodalState,
-        boundary::{ConservativeAt, ConstrainAt, LoadAt},
+        NodalCoordinates, NodalCoordinatesHistory,
+        boundary::{ConservativeAt, ConstrainAt, LoadAt, NodalState},
         solid::{
             NodalForcesSolid, NodalStiffnessesSolid,
             elastic_viscoplastic::{ElasticViscoplasticDaeElements, ElasticViscoplasticElements},

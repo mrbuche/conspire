@@ -1,9 +1,9 @@
 use crate::{
     domain::{
-        Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalState,
-        ProvidesTangent, Root, SolverFor,
+        Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, ProvidesTangent, Root,
+        SolverFor,
         block::element::{Elements, Items},
-        boundary::{Constrain, Load, LoadStiffness},
+        boundary::{Constrain, Load, LoadStiffness, NodalState},
         parallel::ItemIndex,
         solid::{NodalForcesSolid, NodalStiffnessesSolid},
     },

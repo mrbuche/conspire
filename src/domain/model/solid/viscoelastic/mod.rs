@@ -1,9 +1,9 @@
 use crate::{
     domain::{
         Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
-        NodalState, NodalVelocities, NodalVelocitiesHistory,
+        NodalVelocities, NodalVelocitiesHistory,
         block::element::Elements,
-        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt},
+        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, NodalState},
         solid::{NodalDampingsSolid, NodalForcesSolid, NodalStiffnessesSolid},
     },
     math::{

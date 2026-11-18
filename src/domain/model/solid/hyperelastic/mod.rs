@@ -1,8 +1,8 @@
 use crate::{
     domain::{
-        Blocks, ElementModel, ElementModelError, Minimize, Model, NodalCoordinates, NodalState,
+        Blocks, ElementModel, ElementModelError, Minimize, Model, NodalCoordinates,
         ProvidesTangent, SolverFor,
-        boundary::{Conservative, Constrain, Load},
+        boundary::{Conservative, Constrain, Load, NodalState},
         solid::{NodalForcesSolid, NodalStiffnessesSolidSymmetric, elastic::ElasticElements},
     },
     math::{

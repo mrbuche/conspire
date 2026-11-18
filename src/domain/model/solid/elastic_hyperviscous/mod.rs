@@ -1,8 +1,8 @@
 use crate::{
     domain::{
         Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
-        NodalState, NodalVelocities, NodalVelocitiesHistory,
-        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, PowerAt},
+        NodalVelocities, NodalVelocitiesHistory,
+        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, NodalState, PowerAt},
         solid::{NodalDampingsSolid, NodalForcesSolid, viscoelastic::ViscoelasticElements},
     },
     math::{

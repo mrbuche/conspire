@@ -1,10 +1,9 @@
 use crate::{
     constitutive::solid::elastic_plastic::{Outcome, StepError, Stepper},
     domain::{
-        ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory,
-        NodalState, Source,
+        ElementModel, ElementModelError, Model, NodalCoordinates, NodalCoordinatesHistory, Source,
         block::{element::Elements, solver_from_neighbors},
-        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt},
+        boundary::{ConstrainAt, LoadAt, LoadStiffnessAt, NodalState},
         solid::{NodalForcesSolid, NodalStiffnessesSolid},
     },
     math::{

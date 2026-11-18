@@ -3,10 +3,9 @@ pub(crate) mod loads;
 use crate::{
     constitutive::diffusion::Diffusive,
     domain::{
-        Blocks, ElementModel, ElementModelError, Minimize, Model, NodalState, ProvidesTangent,
-        Root, SolverFor,
+        Blocks, ElementModel, ElementModelError, Minimize, Model, ProvidesTangent, Root, SolverFor,
         block::element::Elements,
-        boundary::{Conservative, Constrain, Load, LoadStiffness},
+        boundary::{Conservative, Constrain, Load, LoadStiffness, NodalState},
     },
     math::{
         Quantity, QuantitySparseVec2D, QuantityVector, Tensor,

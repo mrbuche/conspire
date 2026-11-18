@@ -1,9 +1,9 @@
 use crate::{
     domain::{
-        Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, NodalState,
-        ProvidesTangent, Root, SolverFor,
+        Blocks, ElementModel, ElementModelError, Model, NodalCoordinates, ProvidesTangent, Root,
+        SolverFor,
         block::element::Elements,
-        boundary::{Constrain, Load, LoadStiffness},
+        boundary::{Constrain, Load, LoadStiffness, NodalState},
         multiphysics::solid_thermal::{
             NodalForceSolidThermal, NodalForcesSolidThermal, NodalStatesSolidThermal,
             NodalStiffnessesSolidThermal, split_states,
