@@ -90,6 +90,26 @@ impl<const D: usize, const G: usize, const N: usize, const O: usize> Element<D, 
     }
 }
 
+pub trait IntegrationData<const G: usize, const N: usize> {
+    fn gradient_vectors_at(
+        &self,
+        point: usize,
+    ) -> TensorRank1List<3, Reference, N, ReciprocalLength>;
+    fn integration_weight_at(&self, point: usize) -> Quantity<Volume>;
+}
+
+impl<const G: usize, const N: usize, const O: usize> IntegrationData<G, N> for Element<3, G, N, O> {
+    fn gradient_vectors_at(
+        &self,
+        point: usize,
+    ) -> TensorRank1List<3, Reference, N, ReciprocalLength> {
+        self.gradient_vectors[point].clone()
+    }
+    fn integration_weight_at(&self, point: usize) -> Quantity<Volume> {
+        self.integration_weights[point]
+    }
+}
+
 impl<const D: usize, const G: usize, const N: usize, const O: usize> Debug for Element<D, G, N, O> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let element = match (D, G, N, O) {

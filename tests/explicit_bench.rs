@@ -14,7 +14,7 @@ use conspire::{
         NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, Solid},
-        element::linear::Hexahedron,
+        element::linear::{Hexahedron, Tetrahedron},
         solid::{
             ElasticExplicitDynamics, Execution, Lumped, NodalForcesSolid, Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
@@ -27,6 +27,7 @@ use conspire::{
 use std::{hint::black_box, ops::Range, time::Instant};
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
+type Tets = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 
 const STEPS: usize = 50;
@@ -49,7 +50,6 @@ fn rubber(shear: f64, bulk: f64) -> NeoHookean {
     }
 }
 
-/// Hexahedra filling the layers `layers` of an `nx` by `ny` column grid.
 fn slab(nx: usize, ny: usize, layers: Range<usize>) -> Vec<[usize; 8]> {
     let index = |i: usize, j: usize, k: usize| (k * (ny + 1) + j) * (nx + 1) + i;
     layers
@@ -88,7 +88,6 @@ fn lattice(nx: usize, ny: usize, layers: usize) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// A smooth, small displacement so that every element has a nonzero stress.
 fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
     coordinates
         .iter()
@@ -131,7 +130,6 @@ fn time_of(repetitions: usize, mut operation: impl FnMut()) -> f64 {
     )
 }
 
-/// Times the serial and parallel nodal forces of a model, and checks that they are identical.
 fn compare<B>(label: &str, model: &Model<B, 3>, current: &NodalCoordinates<3>, repetitions: usize)
 where
     B: ElasticElements<3> + ParallelElasticElements<3>,
@@ -201,6 +199,73 @@ fn single_block() {
     }
 }
 
+fn tetrahedra(cells: usize, coordinates: &[[f64; 3]]) -> Vec<[usize; 4]> {
+    let index = |i: usize, j: usize, k: usize| (k * (cells + 1) + j) * (cells + 1) + i;
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let volume = |tetrahedron: &[usize; 4]| {
+        let point = |node: usize| coordinates[tetrahedron[node]];
+        let edge = |node: usize| {
+            let (a, b) = (point(0), point(node));
+            [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+        };
+        let (u, v, w) = (edge(1), edge(2), edge(3));
+        u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
+            + u[2] * (v[0] * w[1] - v[1] * w[0])
+    };
+    (0..cells)
+        .flat_map(|k| (0..cells).flat_map(move |j| (0..cells).map(move |i| [i, j, k])))
+        .flat_map(|[i, j, k]| {
+            orders.iter().map(move |order| {
+                let mut corner = [i, j, k];
+                let mut nodes = [index(i, j, k); 4];
+                for (step, &axis) in order.iter().enumerate() {
+                    corner[axis] += 1;
+                    nodes[step + 1] = index(corner[0], corner[1], corner[2]);
+                }
+                nodes
+            })
+        })
+        .map(|mut tetrahedron| {
+            if volume(&tetrahedron) < 0.0 {
+                tetrahedron.swap(1, 2);
+            }
+            tetrahedron
+        })
+        .collect()
+}
+
+#[test]
+#[ignore]
+fn single_block_tetrahedra() {
+    println!("\nthreads: {}", threads());
+    for cells in [6, 14, 28] {
+        let coordinates = lattice(cells, cells, cells);
+        let reference = NodalReferenceCoordinates::from(coordinates.clone());
+        let connectivity = tetrahedra(cells, &coordinates);
+        let elements = connectivity.len();
+        let model: Model<Tets, 3> = (
+            Tets::from((rubber(3.0e9, 13.0e9), density(), connectivity, &reference)),
+            reference,
+        )
+            .into();
+        let current = deformed(&coordinates);
+        let repetitions = (2_000_000 / elements).clamp(5, 400);
+        compare(
+            &format!("{elements} elements"),
+            &model,
+            &current,
+            repetitions,
+        );
+    }
+}
+
 #[test]
 #[ignore]
 fn single_block_steps() {
@@ -257,8 +322,6 @@ type Three = Blocks<Grid, Blocks<Steel, Grid>>;
 
 const COLUMNS: usize = 32;
 
-/// Three slabs of about 100k, 30k and 1k elements, with different constitutive models, that share
-/// the nodes on their interfaces.
 fn three_blocks() -> (Model<Three, 3>, Vec<[f64; 3]>) {
     let (first, second) = (98, 29);
     let layers = first + second + 1;
@@ -294,7 +357,6 @@ fn three_blocks() -> (Model<Three, 3>, Vec<[f64; 3]>) {
 
 type Four = Blocks<Grid, Blocks<Grid, Blocks<Grid, Grid>>>;
 
-/// Four small slabs of 1, 2, 3 and 4 layers, about 1k to 4k elements each.
 fn four_blocks() -> (Model<Four, 3>, Vec<[f64; 3]>) {
     let coordinates = lattice(COLUMNS, COLUMNS, 10);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
@@ -336,7 +398,6 @@ fn heterogeneous_blocks() {
     );
 }
 
-/// The cost of each operation of a step that is not the nodal forces, on the nodes of the grid.
 #[test]
 #[ignore]
 fn step_breakdown() {
@@ -406,7 +467,6 @@ fn step_breakdown() {
     );
 }
 
-/// The cost of a step apart from the one-time cost of a run, from runs of different lengths.
 #[test]
 #[ignore]
 fn step_marginal() {
@@ -470,8 +530,6 @@ fn step_marginal() {
     }
 }
 
-/// The cost per step of the integrator alone, with a constant acceleration, from runs of
-/// different lengths. The function costs one clone of the acceleration.
 #[test]
 #[ignore]
 fn integrator_marginal() {
