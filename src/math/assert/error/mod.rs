@@ -3,6 +3,8 @@ mod test;
 
 use crate::math::TensorError;
 use core::fmt::{self, Debug, Formatter};
+
+#[cfg(feature = "std")]
 use std::io::Error as ErrorIO;
 
 /// An error produced by a failed assertion, comparing two values.
@@ -38,6 +40,7 @@ impl From<TensorError> for AssertionError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<ErrorIO> for AssertionError {
     fn from(error: ErrorIO) -> Self {
         Self {

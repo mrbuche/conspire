@@ -1,11 +1,14 @@
 use super::Norm;
 use crate::math::Current;
-use crate::math::{Tensor, TensorRank1, Vector, random::random_normal};
+use crate::math::{Tensor, TensorRank1};
+#[cfg(feature = "std")]
+use crate::math::{Vector, random::random_normal};
 
 fn v() -> TensorRank1<4, Current> {
     TensorRank1::from([1.0, 2.0, 3.0, 4.0])
 }
 
+#[cfg(feature = "std")]
 fn kahan_dot(a: &[f64], b: &[f64]) -> f64 {
     let (mut sum, mut c) = (0.0, 0.0);
     a.iter().zip(b).for_each(|(&x, &y)| {
@@ -17,6 +20,7 @@ fn kahan_dot(a: &[f64], b: &[f64]) -> f64 {
     sum
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn full_contraction_matches_compensated_reference() {
     let data: Vec<f64> = (0..30_000).map(|_| random_normal(0.0, 1.0)).collect();
