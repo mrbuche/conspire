@@ -20,6 +20,7 @@ elements = ['constitutive']
 fem = ['elements', 'geometry']
 geometry = ['io', 'math']
 io = ['std']
+kernels = ['elements']
 math = []
 mechanics = ['math']
 nightly = []
@@ -39,3 +40,9 @@ codegen-units = 1
 lto = true
 panic = "abort"
 strip = "symbols"
+
+[[example]]
+crate-type = ["cdylib"]
+name = "kernels"
+path = "kernels/lib.rs"
+required-features = ["kernels"]
