@@ -54,6 +54,10 @@ pub use domain::fem;
 #[cfg(feature = "geometry")]
 pub mod geometry;
 
+#[cfg(feature = "gpu")]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod gpu;
+
 #[cfg(feature = "io")]
 pub mod io;
 

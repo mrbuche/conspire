@@ -75,4 +75,10 @@ repos:
     -   id: clippy
         args: ['--features', 'all', '--tests', '--', '-D',  'warnings']
         name: cargo clippy all tests
+    -   id: clippy
+        args: ['--features', 'gpu', '--', '-D',  'warnings']
+        name: cargo clippy gpu
+    -   id: clippy
+        args: ['--features', 'gpu', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy gpu tests
     -   id: fmt
