@@ -20,6 +20,7 @@ jobs:
           - mechanics
           - physics
           - constitutive
+          - elements
           - cbm
           - fem
           - vem
