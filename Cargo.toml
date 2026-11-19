@@ -43,6 +43,6 @@ strip = "symbols"
 
 [[example]]
 crate-type = ["cdylib"]
-name = "kernels"
-path = "kernels/lib.rs"
+name = "kernels_elements"
+path = "kernels/elements/lib.rs"
 required-features = ["kernels"]

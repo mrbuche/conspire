@@ -1,4 +1,4 @@
-book/build/
+src/gpu/kernels/*.ptx
 target/
 
 .claude/
@@ -12,5 +12,3 @@ target/
 **.vtk
 **.vtm
 **.vtu
-
-src/domain/gpu/kernels.ptx

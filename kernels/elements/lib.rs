@@ -17,6 +17,9 @@ fn thread() -> usize {
     unsafe { (_block_idx_x() as usize) * (_block_dim_x() as usize) + _thread_idx_x() as usize }
 }
 
+/// # Safety
+///
+/// `output` must have `count` values.
 #[unsafe(no_mangle)]
 pub unsafe extern "ptx-kernel" fn squares(output: *mut f64, count: u32) {
     let index = thread();
