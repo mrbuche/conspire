@@ -1,3 +1,5 @@
+#[cfg(feature = "gpu")]
+mod device;
 pub mod linear;
 
 use crate::{

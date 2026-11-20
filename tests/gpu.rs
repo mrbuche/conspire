@@ -26,10 +26,11 @@ use conspire::{
                 ElementNodalForcesSolid,
                 elastic::{ElasticElement, ElasticFiniteElement},
             },
+            stabilized::linear::Hexahedron as StabilizedHexahedron,
         },
         solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, DeviceKind},
     math::{Quantity, Tensor, assert::AssertionError},
     units::Density,
 };
@@ -38,6 +39,7 @@ use core::array::from_fn;
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Tetrahedra = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
+type StabilizedGrid = Block<NeoHookean, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
 
 const COLUMNS: usize = 3;
 const LAYERS: usize = 4;
@@ -88,9 +90,12 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
         (NeoHookean::NAME, rubber().parameters(), &below),
         (SaintVenantKirchhoff::NAME, steel().parameters(), &above),
     ]) {
+        assert_eq!(block.kind, DeviceKind::Full);
         assert_eq!(block.model, name);
         assert_eq!(block.parameters, parameters);
         assert_eq!(block.points, 8);
+        assert_eq!(block.values_per_item, 0);
+        assert!(block.values.is_empty());
         assert_eq!(block.derivatives, derivatives);
         assert_eq!(block.weights, weights);
         let items = connectivity.len();
@@ -104,6 +109,40 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
     }
     assert_eq!(blocks[0].parameters, [3.0e9, 13.0e9]);
     assert_eq!(blocks[1].parameters, [80.0e9, 160.0e9]);
+}
+
+#[test]
+fn a_block_of_stabilized_elements_is_described_by_the_values_of_each_element() {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let connectivity = slab(COLUMNS, 0..LAYERS);
+    let model: Model<StabilizedGrid, 3> = (
+        (rubber(), density(), connectivity.clone(), &reference).into(),
+        reference,
+    )
+        .into();
+    let mut blocks = Vec::new();
+    model.device_blocks(&mut blocks);
+    assert_eq!(blocks.len(), 1);
+    let block = &blocks[0];
+    let items = connectivity.len();
+    assert_eq!(block.kind, DeviceKind::Stabilized);
+    assert_eq!(block.model, NeoHookean::NAME);
+    assert_eq!(block.points, 1);
+    assert!(block.derivatives.is_empty() && block.weights.is_empty());
+    assert_eq!(block.values_per_item, 24 + 1 + 64);
+    assert_eq!(block.values.len(), 89 * items);
+    assert_eq!(block.layout.items, items);
+    assert_eq!(block.layout.nodes_per_item, 8);
+    for (item, nodes) in connectivity.iter().enumerate() {
+        let element =
+            StabilizedHexahedron::from(ElementNodalReferenceCoordinates::<8>::from(from_fn(|a| {
+                coordinates[nodes[a]]
+            })));
+        for (k, value) in element.values().into_iter().enumerate() {
+            assert_eq!(block.values[k * items + item].to_bits(), value.to_bits());
+        }
+    }
 }
 
 #[test]

@@ -2,6 +2,8 @@
 mod test;
 
 pub mod cohesive;
+#[cfg(feature = "gpu")]
+mod device;
 pub mod diffusion;
 pub mod electrical;
 mod error;
@@ -17,10 +19,6 @@ pub mod stabilized;
 pub mod surface;
 pub mod thermal;
 pub mod time_scale;
-
-pub use error::{ErrorRecord, FiniteElementError, FiniteElementKind};
-pub use integration::{IntegrationData, Recomputed};
-
 use crate::{
     math::{
         Projection, Quantity, Reference, Scalar, ScalarList, TensorList, TensorRank1,
@@ -30,6 +28,12 @@ use crate::{
     units::{Length, ReciprocalLength, Volume},
 };
 use core::fmt::{self, Debug, Formatter};
+
+pub use error::{ErrorRecord, FiniteElementError, FiniteElementKind};
+pub use integration::{IntegrationData, Recomputed};
+
+#[cfg(feature = "gpu")]
+pub use device::DeviceElement;
 
 const FRAC_1_SQRT_3: Scalar = 0.577_350_269_189_625_8; // nightly feature
 const FRAC_SQRT_3_5: Scalar = 0.774_596_669_241_483;
