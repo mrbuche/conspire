@@ -6,7 +6,10 @@ use crate::{
         linear::{LinearElement, LinearFiniteElement},
         solid::elastic::{ElasticElement, ElasticFiniteElement},
     },
-    math::Tensor,
+    math::{
+        Tensor,
+        assert::{Assert, AssertionError},
+    },
     units::Stress,
 };
 use core::array::from_fn;
@@ -34,38 +37,24 @@ where
     nodes
 }
 
-fn is_the_element<const G: usize, const N: usize>()
+fn is_the_element<const G: usize, const N: usize>() -> Result<(), AssertionError>
 where
     LinearElement<G, N>: LinearFiniteElement<G, N> + ElasticFiniteElement<NeoHookean, G, 3, N, N>,
 {
     let nodes = reference::<G, N>();
     let element = LinearElement::<G, N>::from(ElementNodalReferenceCoordinates::<N>::from(nodes));
-    let (derivatives, weights) = Recomputed::<G, N>::tables::<LinearElement<G, N>>();
-    let recomputed = Recomputed::new(nodes, &derivatives, &weights);
-    let (mut largest, mut worst) = (0.0_f64, 0.0_f64);
-    for point in 0..G {
-        let (expected, found) = (
-            element.gradient_vectors_at(point),
+    let (derivatives, weights) = Recomputed::<3, G, N>::tables::<LinearElement<G, N>>();
+    let recomputed = Recomputed::new(nodes.into(), &derivatives, &weights);
+    (0..G).try_for_each(|point| {
+        Assert::eq(
             recomputed.gradient_vectors_at(point),
-        );
-        for (expected, found) in expected.iter().zip(found.iter()) {
-            for (expected, found) in expected.iter().zip(found.iter()) {
-                largest = largest.max(expected.value().abs());
-                worst = worst.max((expected.value() - found.value()).abs());
-            }
-        }
-        let (expected, found) = (
-            element.integration_weight_at(point).value(),
+            element.gradient_vectors_at(point),
+        )?;
+        Assert::eq(
             recomputed.integration_weight_at(point).value(),
-        );
-        largest = largest.max(expected.abs());
-        worst = worst.max((expected - found).abs());
-    }
-    assert!(worst > 0.0 || largest > 0.0);
-    assert!(
-        worst <= 1e-12 * largest,
-        "the data differ by {worst} of up to {largest}"
-    );
+            element.integration_weight_at(point).value(),
+        )
+    })?;
     let current = from_fn(|a| {
         from_fn(|i| {
             nodes[a][i]
@@ -80,50 +69,43 @@ where
     };
     let expected = <LinearElement<G, N> as ElasticElement<NeoHookean>>::nodal_forces(
         &element, &model, &current,
-    )
-    .unwrap();
+    )?;
     let found =
         <LinearElement<G, N> as ElasticFiniteElement<NeoHookean, G, 3, N, N>>::nodal_forces_from(
             &recomputed,
             &model,
             &current,
-        )
-        .unwrap();
-    let (mut largest, mut worst) = (0.0_f64, 0.0_f64);
-    for (expected, found) in expected.iter().zip(found.iter()) {
-        for (expected, found) in expected.iter().zip(found.iter()) {
-            largest = largest.max(expected.value().abs());
-            worst = worst.max((expected.value() - found.value()).abs());
-        }
-    }
-    assert!(largest > 1e3, "the forces are {largest}, which is nothing");
+        )?;
     assert!(
-        worst <= 1e-10 * largest,
-        "the forces differ by {worst} of up to {largest}"
+        expected
+            .iter()
+            .any(|force| force.iter().any(|component| component.value().abs() > 1e3)),
+        "the forces are nothing"
     );
+    Assert::eq(&found, &expected)
 }
 
 #[test]
-fn hexahedra_recomputed_are_the_elements() {
-    is_the_element::<8, 8>();
+fn hexahedra_recomputed_are_the_elements() -> Result<(), AssertionError> {
+    is_the_element::<8, 8>()
 }
 
 #[test]
-fn tetrahedra_of_one_point_recomputed_are_the_elements() {
-    is_the_element::<1, 4>();
+fn tetrahedra_of_one_point_recomputed_are_the_elements() -> Result<(), AssertionError> {
+    is_the_element::<1, 4>()
 }
 
 #[test]
-fn tetrahedra_of_four_points_recomputed_are_the_elements() {
-    is_the_element::<4, 4>();
+fn tetrahedra_of_four_points_recomputed_are_the_elements() -> Result<(), AssertionError> {
+    is_the_element::<4, 4>()
 }
 
 #[test]
-fn wedges_recomputed_are_the_elements() {
-    is_the_element::<6, 6>();
+fn wedges_recomputed_are_the_elements() -> Result<(), AssertionError> {
+    is_the_element::<6, 6>()
 }
 
 #[test]
-fn pyramids_recomputed_are_the_elements() {
-    is_the_element::<8, 5>();
+fn pyramids_recomputed_are_the_elements() -> Result<(), AssertionError> {
+    is_the_element::<8, 5>()
 }

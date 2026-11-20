@@ -114,25 +114,14 @@ fn basic_from<const D: usize, const G: usize, const N: usize, const O: usize>(
 where
     Element<D, G, N, O>: FiniteElement<G, D, N, N>,
 {
-    let gradient_vectors = Element::shape_functions_gradients_at_integration_points()
-        .into_iter()
-        .map(|standard_gradient_operator| {
-            (&reference_nodal_coordinates * &standard_gradient_operator).inverse_transpose()
-                * standard_gradient_operator
-        })
-        .collect();
-    let integration_weights = Element::shape_functions_gradients_at_integration_points()
-        .into_iter()
-        .zip(Element::parametric_weights())
-        .map(|(standard_gradient_operator, integration_weight)| {
-            Quantity::new(
-                (&reference_nodal_coordinates * standard_gradient_operator).determinant()
-                    * integration_weight,
-            )
-        })
-        .collect();
+    let (derivatives, weights) = Recomputed::tables::<Element<D, G, N, O>>();
+    let recomputed = Recomputed::new(reference_nodal_coordinates, &derivatives, &weights);
     Element {
-        gradient_vectors,
-        integration_weights,
+        gradient_vectors: (0..G)
+            .map(|point| recomputed.gradient_vectors(point))
+            .collect(),
+        integration_weights: (0..G)
+            .map(|point| recomputed.integration_weight(point))
+            .collect(),
     }
 }
