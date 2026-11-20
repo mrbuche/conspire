@@ -27,6 +27,9 @@ physics = ['mechanics', 'std']
 std = []
 vem = ['fem']
 
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
 [package.metadata.docs.rs]
 features = ["all"]
 rustdoc-args = ["--html-in-header", ".github/katex.html"]

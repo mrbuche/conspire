@@ -1,6 +1,6 @@
 use super::message::{attr_f32, attr_i32, datatype, fill_value};
 use crate::io::netcdf::{
-    DefineVariable, GetVariable, NetCDF, PutVariable,
+    DefineVariable, GetVariable, NcType, NetCDF, PutVariable,
     format::{DimSpec, NC_DOUBLE, NC_INT, Storage, VarSpec, hdf5::write},
 };
 
@@ -16,8 +16,9 @@ fn spec(name: &str, xtype: i32, dimids: Vec<usize>) -> VarSpec {
     }
 }
 
-fn le<T: Copy>(values: &[T]) -> Vec<u8> {
+fn le<T: NcType>(values: &[T]) -> Vec<u8> {
     let n = core::mem::size_of_val(values);
+    // SAFETY: an `NcType` has no padding, so all `n` bytes of the values are initialized.
     unsafe { core::slice::from_raw_parts(values.as_ptr().cast::<u8>(), n) }.to_vec()
 }
 
@@ -213,7 +214,7 @@ fn write_rejects_unsupported_variable_type() {
         name: "n".to_string(),
         len: 2,
     }];
-    write_to_vec(&dims, &[spec("bad", 99, vec![0])], vec![le(&[0u8, 0])], 0);
+    write_to_vec(&dims, &[spec("bad", 99, vec![0])], vec![vec![0u8, 0]], 0);
 }
 
 #[test]

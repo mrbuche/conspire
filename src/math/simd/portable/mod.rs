@@ -8,25 +8,41 @@ type F64x8 = Simd<Scalar, 8>;
 // must only dispatch here once those features are detected at runtime; every
 // other target compiles without extra features and is sound at its own baseline.
 // The unaligned load/store offsets below are all guarded by a `+ LANES <= len`
-// check or a caller length invariant, matching what `_mm256_loadu_pd` assumes.
+// check, where `len` is within every slice, matching what `_mm256_loadu_pd` assumes.
 
+/// # Safety
+///
+/// The 8 values from `r` must be within `s`.
 #[inline(always)]
 unsafe fn ld8(s: &[Scalar], r: usize) -> F64x8 {
+    // SAFETY: the values are within `s`, and the read is unaligned.
     unsafe { s.as_ptr().add(r).cast::<F64x8>().read_unaligned() }
 }
 
+/// # Safety
+///
+/// The 4 values from `r` must be within `s`.
 #[inline(always)]
 unsafe fn ld4(s: &[Scalar], r: usize) -> F64x4 {
+    // SAFETY: the values are within `s`, and the read is unaligned.
     unsafe { s.as_ptr().add(r).cast::<F64x4>().read_unaligned() }
 }
 
+/// # Safety
+///
+/// The 8 values from `r` must be within `s`.
 #[inline(always)]
 unsafe fn st8(s: &mut [Scalar], r: usize, v: F64x8) {
+    // SAFETY: the values are within `s`, and the write is unaligned.
     unsafe { s.as_mut_ptr().add(r).cast::<F64x8>().write_unaligned(v) }
 }
 
+/// # Safety
+///
+/// The 4 values from `r` must be within `s`.
 #[inline(always)]
 unsafe fn st4(s: &mut [Scalar], r: usize, v: F64x4) {
+    // SAFETY: the values are within `s`, and the write is unaligned.
     unsafe { s.as_mut_ptr().add(r).cast::<F64x4>().write_unaligned(v) }
 }
 
@@ -35,10 +51,11 @@ unsafe fn st4(s: &mut [Scalar], r: usize, v: F64x4) {
     target_feature(enable = "avx2", enable = "fma")
 )]
 pub(super) unsafe fn axpy(target: &mut [Scalar], column: &[Scalar], w: Scalar) {
-    let len = target.len();
+    let len = target.len().min(column.len());
     let spread_8 = F64x8::splat(-w);
     let spread_4 = F64x4::splat(-w);
     let mut r = 0;
+    // SAFETY: `r + 8 <= len` or `r + 4 <= len`, and `len` is within both slices.
     unsafe {
         while r + 8 <= len {
             st8(target, r, ld8(column, r).mul_add(spread_8, ld8(target, r)));
@@ -64,10 +81,16 @@ pub(super) unsafe fn rank_one_quad(
     column: &[Scalar],
     u: [Scalar; 4],
 ) {
-    let len = column.len();
+    let len = column
+        .len()
+        .min(temp_0.len())
+        .min(temp_1.len())
+        .min(temp_2.len())
+        .min(temp_3.len());
     let u8 = u.map(F64x8::splat);
     let u4 = u.map(F64x4::splat);
     let mut r = 0;
+    // SAFETY: `r + 8 <= len` or `r + 4 <= len`, and `len` is within every slice.
     unsafe {
         while r + 8 <= len {
             let value = ld8(column, r);
@@ -109,12 +132,19 @@ pub(super) unsafe fn rank_two_quad(
     u: [Scalar; 4],
     w: [Scalar; 4],
 ) {
-    let len = column.len();
+    let len = column
+        .len()
+        .min(other.len())
+        .min(temp_0.len())
+        .min(temp_1.len())
+        .min(temp_2.len())
+        .min(temp_3.len());
     let u8 = u.map(F64x8::splat);
     let w8 = w.map(F64x8::splat);
     let u4 = u.map(F64x4::splat);
     let w4 = w.map(F64x4::splat);
     let mut r = 0;
+    // SAFETY: `r + 8 <= len` or `r + 4 <= len`, and `len` is within every slice.
     unsafe {
         while r + 8 <= len {
             let value = ld8(column, r);

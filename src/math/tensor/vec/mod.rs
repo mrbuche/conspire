@@ -37,6 +37,8 @@ where
 {
     /// Discards the configurations and unit of the vector, without copying.
     pub fn into_erased(self) -> TensorVector<<T as Erase>::Erased> {
+        // SAFETY: the erased vector has the layout of this one, entries and buffer, so reading
+        // it takes over the buffer, which `forget` then keeps from being freed twice.
         let erased = unsafe { read(self.erase()) };
         forget(self);
         erased

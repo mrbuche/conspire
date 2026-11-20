@@ -152,6 +152,9 @@ impl<const D: usize, I> From<TensorRank1Vec<D, I>> for Vector {
         let capacity = tensor_rank_1_vec.capacity() * D;
         let pointer = tensor_rank_1_vec.as_ptr() as *mut Scalar;
         forget(tensor_rank_1_vec);
+        // SAFETY: the entries are transparent over `D` scalars, so the buffer, which the vector
+        // gave up with `forget`, is `capacity` scalars of the same allocation and alignment, of
+        // which the first `length` are initialized.
         unsafe { Self(Vec::from_raw_parts(pointer, length, capacity)) }
     }
 }

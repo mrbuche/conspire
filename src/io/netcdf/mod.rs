@@ -127,6 +127,7 @@ fn swap_words<const N: usize>(src: &[u8], dst: &mut [u8], swap: impl Fn([u8; N])
     }
 }
 
+// SAFETY: the type has no padding, is `SIZE` wide, and every bit pattern is a valid value.
 unsafe impl NcType for i32 {
     const XTYPE: i32 = format::NC_INT;
     const SIZE: usize = 4;
@@ -136,6 +137,7 @@ unsafe impl NcType for i32 {
     }
 }
 
+// SAFETY: the type has no padding, is `SIZE` wide, and every bit pattern is a valid value.
 unsafe impl NcType for f32 {
     const XTYPE: i32 = format::NC_FLOAT;
     const SIZE: usize = 4;
@@ -145,6 +147,7 @@ unsafe impl NcType for f32 {
     }
 }
 
+// SAFETY: the type has no padding, is `SIZE` wide, and every bit pattern is a valid value.
 unsafe impl NcType for f64 {
     const XTYPE: i32 = format::NC_DOUBLE;
     const SIZE: usize = 8;

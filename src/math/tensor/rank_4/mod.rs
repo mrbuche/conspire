@@ -259,6 +259,7 @@ impl<I, J, K, U> From<TensorRank4<3, I, J, K, Reference, U>>
     for TensorRank4<3, I, J, K, Intermediate, U>
 {
     fn from(tensor_rank_4: TensorRank4<3, I, J, K, Reference, U>) -> Self {
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
         unsafe {
             transmute::<
                 TensorRank4<3, I, J, K, Reference, U>,
@@ -272,6 +273,7 @@ impl<J, L, U> From<TensorRank4<3, Current, J, Current, L, U>>
     for TensorRank4<3, Intermediate, J, Intermediate, L, U>
 {
     fn from(tensor_rank_4: TensorRank4<3, Current, J, Current, L, U>) -> Self {
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
         unsafe {
             transmute::<
                 TensorRank4<3, Current, J, Current, L, U>,
@@ -285,6 +287,7 @@ impl<I, K, U> From<TensorRank4<3, I, Reference, K, Reference, U>>
     for TensorRank4<3, I, Intermediate, K, Intermediate, U>
 {
     fn from(tensor_rank_4: TensorRank4<3, I, Reference, K, Reference, U>) -> Self {
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
         unsafe {
             transmute::<
                 TensorRank4<3, I, Reference, K, Reference, U>,
@@ -298,6 +301,7 @@ impl<K, U> From<TensorRank4<3, Reference, Reference, K, Reference, U>>
     for TensorRank4<3, Intermediate, Intermediate, K, Intermediate, U>
 {
     fn from(tensor_rank_4: TensorRank4<3, Reference, Reference, K, Reference, U>) -> Self {
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
         unsafe {
             transmute::<
                 TensorRank4<3, Reference, Reference, K, Reference, U>,

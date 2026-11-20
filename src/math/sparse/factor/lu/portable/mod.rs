@@ -10,8 +10,12 @@ const LANES: usize = CHUNK / 4;
 // Unaligned quarter-row load/store, matching `avx::trisolve`'s `_mm256_loadu_pd`.
 // Free `#[inline(always)]` fns rather than closures so they fold into the
 // caller's `+avx2,+fma` context.
+/// # Safety
+///
+/// The 4 values of quarter `l` of row `r` must be within `tile`.
 #[inline(always)]
 unsafe fn ld(tile: &[Scalar], r: usize, l: usize) -> Half {
+    // SAFETY: the values are within `tile`, and the read is unaligned.
     unsafe {
         tile.as_ptr()
             .add(r * CHUNK + 4 * l)
@@ -20,8 +24,12 @@ unsafe fn ld(tile: &[Scalar], r: usize, l: usize) -> Half {
     }
 }
 
+/// # Safety
+///
+/// The 4 values of quarter `l` of row `r` must be within `tile`.
 #[inline(always)]
 unsafe fn st(tile: &mut [Scalar], r: usize, l: usize, v: Half) {
+    // SAFETY: the values are within `tile`, and the write is unaligned.
     unsafe {
         tile.as_mut_ptr()
             .add(r * CHUNK + 4 * l)
@@ -50,6 +58,9 @@ pub(super) unsafe fn trisolve(
     consumed: usize,
     width: usize,
 ) {
+    // SAFETY: the rows that are touched are below `width`, as `consumed <= width`, and `tile`
+    // holds `width` rows of `CHUNK` entries, which the caller checks, so each quarter of a row
+    // is within it. The reads of `panel` are indexed, so they are checked.
     unsafe {
         let mut c = 0;
         while c + 4 <= consumed {
