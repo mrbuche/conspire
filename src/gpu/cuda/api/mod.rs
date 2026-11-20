@@ -36,6 +36,8 @@ pub(super) struct Api {
         *mut *mut c_void,
         *mut *mut c_void,
     ) -> c_int,
+    pub(super) function_attribute: unsafe extern "C" fn(*mut c_int, c_int, *mut c_void) -> c_int,
+    pub(super) occupancy: unsafe extern "C" fn(*mut c_int, *mut c_void, c_int, usize) -> c_int,
     error_string: unsafe extern "C" fn(c_int, *mut *const c_char) -> c_int,
 }
 
@@ -67,6 +69,8 @@ impl Api {
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
             launch: driver.function("cuLaunchKernel")?,
+            function_attribute: driver.function("cuFuncGetAttribute")?,
+            occupancy: driver.function("cuOccupancyMaxActiveBlocksPerMultiprocessor")?,
             error_string: driver.function("cuGetErrorString")?,
             _driver: driver,
         })

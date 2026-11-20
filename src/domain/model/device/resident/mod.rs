@@ -6,7 +6,7 @@ use crate::{
     },
     fem::element::ErrorRecord,
     gpu::{
-        Application, Buffer, Device, Function, GpuError, Module,
+        Application, Buffer, Device, Function, GpuError, Module, Resources,
         kernels::{block_forces, ptx},
     },
     math::{Tensor, TensorRank1Vec},
@@ -52,6 +52,7 @@ impl Error for DeviceError {}
 
 /// A block of a model on the device.
 struct BlockOnDevice {
+    forces_name: String,
     forces_kernel: Function,
     gather_kernel: Function,
     items: u32,
@@ -79,7 +80,8 @@ impl BlockOnDevice {
         Ok(Self {
             forces_kernel: module
                 .function(&name)
-                .map_err(|_| GpuError::NoKernel(name))?,
+                .map_err(|_| GpuError::NoKernel(name.clone()))?,
+            forces_name: name,
             gather_kernel: module.function("gather")?,
             items: index(layout.items)?,
             plane: index(layout.plane())?,
@@ -193,6 +195,23 @@ impl Resident {
             )?;
         }
         self.device.synchronize()
+    }
+    /// What the kernels of each block need of a multiprocessor of the device, for the blocks of
+    /// threads that they are launched in: the kernel of the forces of the elements, and then the
+    /// second pass.
+    pub fn resources(&self) -> Result<Vec<(String, Resources)>, GpuError> {
+        let mut resources = Vec::new();
+        for block in &self.blocks {
+            resources.push((
+                block.forces_name.clone(),
+                block.forces_kernel.resources(THREADS_PER_BLOCK)?,
+            ));
+            resources.push((
+                "gather".to_string(),
+                block.gather_kernel.resources(THREADS_PER_BLOCK)?,
+            ));
+        }
+        Ok(resources)
     }
     /// The first error that the last computation found, with the block that it is in, which is
     /// the first block that has one, and in it the first element, since the blocks add in order.

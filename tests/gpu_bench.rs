@@ -133,6 +133,22 @@ where
         let setup = start.elapsed().as_secs_f64() * 1e3;
         let found = resident.nodal_forces(model, current).map_err(describe)?;
         agree(&components(&found), &expected, 1e-10)?;
+        let mut reported = Vec::new();
+        for (name, resources) in resident.resources().map_err(describe)? {
+            if !reported.contains(&name) {
+                println!(
+                    "{:>30}  {name}: {} registers, {} bytes of local memory, {} blocks of {} threads on a multiprocessor, {:.0}% of {} threads",
+                    "",
+                    resources.registers,
+                    resources.local_bytes,
+                    resources.blocks_per_multiprocessor,
+                    resources.threads_per_block,
+                    100.0 * resources.occupancy(),
+                    resources.threads_per_multiprocessor,
+                );
+                reported.push(name);
+            }
+        }
         resident.set_coordinates(current).map_err(describe)?;
         let kernels = time_of(repetitions, || resident.run().map_err(describe))?;
         let transfers = time_of(repetitions, || {
