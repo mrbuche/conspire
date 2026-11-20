@@ -1,7 +1,15 @@
 use super::StabilizedElement;
 use crate::{
-    fem::element::{ElementNodalReferenceCoordinates, FiniteElement},
-    math::assert::{Assert, AssertionError},
+    constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
+    fem::element::{
+        ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
+        solid::{ElementNodalForcesSolid, elastic::ElasticElement},
+    },
+    math::{
+        Tensor,
+        assert::{Assert, AssertionError},
+    },
+    units::Stress,
 };
 use core::array::from_fn;
 
@@ -19,6 +27,60 @@ fn bent() -> Hexahedron {
         ]
     });
     ElementNodalReferenceCoordinates::<8>::from(nodes).into()
+}
+
+fn alternating(element: &Hexahedron) -> ElementNodalCoordinates<8> {
+    let reference = <Hexahedron as FiniteElement<1, 3, 8, 8>>::parametric_reference();
+    let nodes: [[f64; 3]; 8] = from_fn(|a| {
+        let sign = if a % 2 == 0 { 1.0 } else { -1.0 };
+        let xi = &reference[a];
+        [
+            1.1 * xi[0].value() + 0.02 * sign,
+            0.9 * xi[1].value() - 0.01 * sign,
+            1.2 * xi[2].value() + 0.015 * sign,
+        ]
+    });
+    assert!(element.hourglass_forces(Stress::pascals(1.0), &nodes.into())[0][0].value() != 0.0);
+    nodes.into()
+}
+
+#[test]
+fn the_forces_from_the_values_are_the_forces_of_the_element_to_the_bit()
+-> Result<(), AssertionError> {
+    let element = bent();
+    let values = element.values();
+    let coordinates = alternating(&element);
+    let rubber = NeoHookean {
+        shear_modulus: Stress::pascals(3.0e9),
+        bulk_modulus: Stress::pascals(13.0e9),
+    };
+    let steel = SaintVenantKirchhoff {
+        shear_modulus: Stress::pascals(80.0e9),
+        bulk_modulus: Stress::pascals(160.0e9),
+    };
+    let bits = |forces: ElementNodalForcesSolid<8>| {
+        forces
+            .iter()
+            .flat_map(|force| force.iter().map(|component| component.value().to_bits()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        bits(Hexahedron::nodal_forces_from_values(
+            |k| values[k],
+            &rubber,
+            &coordinates
+        )?),
+        bits(element.nodal_forces(&rubber, &coordinates)?)
+    );
+    assert_eq!(
+        bits(Hexahedron::nodal_forces_from_values(
+            |k| values[k],
+            &steel,
+            &coordinates
+        )?),
+        bits(element.nodal_forces(&steel, &coordinates)?)
+    );
+    Ok(())
 }
 
 #[test]

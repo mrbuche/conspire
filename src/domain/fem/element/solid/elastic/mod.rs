@@ -131,6 +131,35 @@ where
     }
 }
 
+impl<const N: usize> StabilizedElement<N> {
+    /// The nodal forces of the element that has the values, which `value` gives by their
+    /// position, as [`values`](Self::values) makes them. They are the forces that the element
+    /// has, by the same code, but the hourglass matrix is read from `value` as it is used and
+    /// is not made into an element, so that a device, which has little memory for each thread,
+    /// does not hold the 64 entries of it at once.
+    pub fn nodal_forces_from_values<C>(
+        value: impl Fn(usize) -> f64,
+        constitutive_model: &C,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> Result<ElementNodalForcesSolid<N>, FiniteElementError>
+    where
+        C: Elastic,
+        Self: SolidFiniteElement<1, 3, N, N>,
+    {
+        let element = Self::from_values(|k| if k < Self::HOURGLASS { value(k) } else { 0.0 });
+        Ok(nodal_forces::<_, _, _, _, _, 1, _>(
+            &element,
+            constitutive_model,
+            element.gradient_vectors(),
+            nodal_coordinates,
+        )? + Self::hourglass_forces_from(
+            |a, b| Quantity::new(value(Self::HOURGLASS + a * N + b)),
+            constitutive_model.shear_modulus(),
+            nodal_coordinates,
+        ))
+    }
+}
+
 impl<C, const N: usize> ElasticElement<C> for StabilizedElement<N>
 where
     C: Elastic,

@@ -11,13 +11,8 @@ use conspire::{
         },
     },
     fem::element::{
-        ErrorRecord, FiniteElementError, Recomputed, StandardGradientOperators,
-        linear::LinearElement,
-        solid::{
-            ElementNodalForcesSolid,
-            elastic::{ElasticElement, ElasticFiniteElement},
-        },
-        stabilized::StabilizedElement,
+        ErrorRecord, Recomputed, StandardGradientOperators, linear::LinearElement,
+        solid::elastic::ElasticFiniteElement, stabilized::StabilizedElement,
     },
     math::{ScalarList, Tensor},
 };
@@ -190,8 +185,6 @@ unsafe fn block_forces_stabilized<M>(
     number_of_parameters: u32,
 ) where
     M: Elastic + FromParameters,
-    StabilizedElement<8>:
-        ElasticElement<M, Forces = ElementNodalForcesSolid<8>, Error = FiniteElementError>,
 {
     const N: usize = 8;
     let item = thread();
@@ -201,9 +194,6 @@ unsafe fn block_forces_stabilized<M>(
         let model = M::from_parameters(unsafe {
             from_raw_parts(parameters, number_of_parameters as usize)
         });
-        // SAFETY: the value is one of those that the element has.
-        let element =
-            StabilizedElement::<N>::from_values(|k| unsafe { *values.add(k * items + item) });
         let mut positions = [[0.0; 3]; N];
         positions.iter_mut().enumerate().for_each(|(a, position)| {
             // SAFETY: the node is one that the coordinates have.
@@ -214,7 +204,13 @@ unsafe fn block_forces_stabilized<M>(
             });
         });
         let mut nodal_forces = [[0.0; 3]; N];
-        match element.nodal_forces(&model, &positions.into()) {
+        let computed = StabilizedElement::<N>::nodal_forces_from_values(
+            // SAFETY: the value is one of those that the element has.
+            |k| unsafe { *values.add(k * items + item) },
+            &model,
+            &positions.into(),
+        );
+        match computed {
             Ok(computed) => computed.iter().enumerate().for_each(|(a, force)| {
                 force
                     .iter()

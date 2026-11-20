@@ -10,7 +10,9 @@ impl<const N: usize> StabilizedElement<N> {
     /// gradient of each node, then the volume, then the hourglass matrix by rows.
     ///
     /// The volumes of the nodes are not among them, as the forces do not use them.
-    pub const VALUES: usize = 3 * N + 1 + N * N;
+    pub const VALUES: usize = Self::HOURGLASS + N * N;
+    /// The position of the first entry of the hourglass matrix, after the mean gradient and the volume.
+    pub(crate) const HOURGLASS: usize = 3 * N + 1;
     /// The values of the element, in the order that [`from_values`](Self::from_values) takes them.
     pub fn values(&self) -> Vec<f64> {
         let mut values = Vec::with_capacity(Self::VALUES);
