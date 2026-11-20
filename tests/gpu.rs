@@ -15,6 +15,7 @@ use conspire::{
             ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
             Recomputed,
             linear::{Hexahedron, Tetrahedron},
+            quadratic::Hexahedron as QuadraticHexahedron,
             solid::{ElementNodalForcesSolid, elastic::ElasticElement},
         },
         solid::elastic::ElasticElements,
@@ -192,6 +193,13 @@ fn a_block_of_another_shape_is_described_the_same_way() {
     assert_eq!(blocks[0].layout.nodes_per_item, 4);
     assert_eq!(blocks[0].derivatives.len(), 4 * 3);
     assert_eq!(blocks[0].weights.len(), 1);
+}
+
+#[test]
+fn blocks_of_elements_of_any_order_are_described_the_same_way() {
+    fn is_described<B: DeviceBlocks>() {}
+    is_described::<Grid>();
+    is_described::<Block<NeoHookean, QuadraticHexahedron, 27, 3, 27, 27, Quantity<Density>>>();
 }
 
 fn element_forces<M>(

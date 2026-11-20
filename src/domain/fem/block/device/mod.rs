@@ -1,19 +1,18 @@
 use super::Block;
 use crate::{
-    constitutive::{FromParameters, solid::elastic::Elastic},
+    constitutive::FromParameters,
     domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout},
-    fem::element::{Recomputed, linear::LinearElement, solid::elastic::ElasticFiniteElement},
+    fem::element::{FiniteElement, IntegrationData, Recomputed},
     math::Tensor,
 };
 
-impl<C, const G: usize, const N: usize, R, H> DeviceBlocks
-    for Block<C, LinearElement<G, N>, G, 3, N, N, R, H>
+impl<C, E, const G: usize, const N: usize, R, H> DeviceBlocks for Block<C, E, G, 3, N, N, R, H>
 where
-    C: Elastic + FromParameters,
-    LinearElement<G, N>: ElasticFiniteElement<C, G, 3, N, N>,
+    C: FromParameters,
+    E: FiniteElement<G, 3, N, N> + IntegrationData<G, N>,
 {
     fn device_blocks(&self, blocks: &mut Vec<DeviceBlock>) {
-        let (derivatives, weights) = Recomputed::<3, G, N>::tables::<LinearElement<G, N>>();
+        let (derivatives, weights) = Recomputed::<3, G, N>::tables::<E>();
         blocks.push(DeviceBlock {
             model: C::NAME,
             parameters: self.constitutive_model().parameters(),
