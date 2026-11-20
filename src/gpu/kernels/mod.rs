@@ -35,13 +35,13 @@ impl Display for Application {
 }
 
 /// The PTX of the kernels of an application, with the operations fused if `fused`.
-pub(super) fn ptx(application: Application, fused: bool) -> Result<Cow<'static, str>, GpuError> {
+pub(crate) fn ptx(application: Application, fused: bool) -> Result<Cow<'static, str>, GpuError> {
     prepare(application, application.built(), fused)
 }
 
 /// The name of the kernel for the elements of a block of a model.
 #[cfg(feature = "elements")]
-pub(super) fn block_forces(model: &str, points: usize, nodes: usize) -> String {
+pub(crate) fn block_forces(model: &str, points: usize, nodes: usize) -> String {
     format!("block_forces_{model}_g{points}_n{nodes}")
 }
 

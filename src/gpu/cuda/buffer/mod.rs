@@ -1,6 +1,11 @@
 use super::{Argument, DevicePointer, Result, context::Context};
 use alloc::sync::Arc;
-use core::{ffi::c_void, marker::PhantomData, mem::size_of_val, ptr::from_ref};
+use core::{
+    ffi::c_void,
+    marker::PhantomData,
+    mem::{size_of, size_of_val},
+    ptr::from_ref,
+};
 
 /// Values on the device.
 pub struct Buffer<T> {
@@ -51,6 +56,25 @@ impl<T: Copy> Buffer<T> {
                 )
             },
             "cuMemcpyDtoH",
+        )
+    }
+}
+
+impl<T> Buffer<T> {
+    /// Sets every 32 bits of the buffer to `value`, for values that are whole words of 32 bits.
+    pub fn fill(&self, value: u32) -> Result<()> {
+        const {
+            assert!(
+                size_of::<T>() != 0 && size_of::<T>().is_multiple_of(4),
+                "a buffer is filled by words of 32 bits"
+            )
+        };
+        self.context.bind()?;
+        let words = self.len * size_of::<T>() / 4;
+        self.context.api.check(
+            // SAFETY: the buffer is `words` words of 32 bits, or one value if it is empty.
+            unsafe { (self.context.api.fill)(self.pointer, value, words.max(1)) },
+            "cuMemsetD32",
         )
     }
 }

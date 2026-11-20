@@ -43,6 +43,13 @@ fn no_error_is_after_every_record_and_is_not_one() {
 }
 
 #[test]
+fn a_word_with_every_bit_set_is_no_error() {
+    let word = u64::from(u32::MAX) | (u64::from(u32::MAX) << 32);
+    assert_eq!(ErrorRecord::from_bits(word), ErrorRecord::NONE);
+    assert!(!ErrorRecord::from_bits(word).is_error());
+}
+
+#[test]
 fn the_record_of_an_error_has_its_point_and_its_code() {
     let error = FiniteElementError::new(Some(5), ConstitutiveError::InvalidJacobian(-1.0));
     let record = ErrorRecord::of(42, &error);

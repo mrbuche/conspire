@@ -12,19 +12,23 @@ use conspire::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
         element::{
-            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
-            Recomputed,
-            linear::{Hexahedron, Tetrahedron},
+            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
+            FiniteElementError, Recomputed,
+            linear::{Hexahedron, LinearElement, Tetrahedron},
             quadratic::Hexahedron as QuadraticHexahedron,
-            solid::{ElementNodalForcesSolid, elastic::ElasticElement},
+            solid::{
+                ElementNodalForcesSolid,
+                elastic::{ElasticElement, ElasticFiniteElement},
+            },
         },
-        solid::elastic::ElasticElements,
+        solid::{NodalForcesSolid, elastic::ElasticElements},
     },
-    gpu::{DeviceBlock, DeviceBlocks},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, GpuError, Resident},
     math::{Quantity, Tensor, assert::AssertionError},
     units::{Density, Stress},
 };
-use core::{array::from_fn, ops::Range};
+use core::{array::from_fn, fmt::Display, ops::Range};
+use std::env::var_os;
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
@@ -295,5 +299,334 @@ fn the_second_pass_from_the_layout_gives_the_nodal_forces_of_the_model_to_the_bi
         }
     }
     assert!(largest > 1e3, "the forces are {largest}, which is nothing");
+    Ok(())
+}
+
+fn skip<T>(why: &str) -> Option<T> {
+    assert!(
+        var_os("CONSPIRE_REQUIRE_GPU").is_none(),
+        "CONSPIRE_REQUIRE_GPU is set and {why}"
+    );
+    eprintln!("skipped: {why}");
+    None
+}
+
+fn describe(error: impl Display) -> AssertionError {
+    error.to_string().into()
+}
+
+fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Resident> {
+    match Resident::new(0, model, fused) {
+        Ok(resident) => Some(resident),
+        Err(GpuError::Unavailable(message)) => skip(&format!("there is no device: {message}")),
+        Err(GpuError::KernelsNotBuilt(application)) => {
+            skip(&format!("the kernels of the {application} are not built"))
+        }
+        Err(error) => panic!("{error}"),
+    }
+}
+
+fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
+    forces
+        .iter()
+        .flat_map(|force| force.iter().map(|component| component.value()))
+        .collect()
+}
+
+fn agree(found: &[f64], expected: &[f64], tolerance: f64) -> Result<(), AssertionError> {
+    assert_eq!(found.len(), expected.len());
+    let largest = expected
+        .iter()
+        .fold(0.0_f64, |largest, x| largest.max(x.abs()));
+    let worst = found
+        .iter()
+        .zip(expected)
+        .fold(0.0_f64, |worst, (found, expected)| {
+            worst.max((found - expected).abs())
+        });
+    assert!(largest > 1e3, "the forces are {largest}, which is nothing");
+    if worst <= tolerance * largest {
+        Ok(())
+    } else {
+        Err(format!("the forces differ by {worst} of up to {largest}").into())
+    }
+}
+
+#[test]
+fn a_model_of_two_blocks_has_the_forces_of_the_host_on_a_device() -> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let current = deformed(&coordinates);
+    let expected = components(&model.nodal_forces(&current)?);
+    for fused in [false, true] {
+        let Some(resident) = on_device(&model, fused) else {
+            return Ok(());
+        };
+        eprintln!("{}", resident.device_name());
+        let found = resident.nodal_forces(&model, &current).map_err(describe)?;
+        agree(&components(&found), &expected, 1e-10)?;
+    }
+    Ok(())
+}
+
+fn recomputed_element_forces(
+    block: &DeviceBlock,
+    model: &SaintVenantKirchhoff,
+    connectivity: &[[usize; 8]],
+    reference: &[[f64; 3]],
+    current: &NodalCoordinates<3>,
+) -> Result<Vec<f64>, AssertionError> {
+    let (derivatives, weights) = Recomputed::<3, 8, 8>::tables::<Hexahedron>();
+    let items = block.layout.items;
+    let mut forces = vec![0.0; 3 * block.layout.plane()];
+    for (item, nodes) in connectivity.iter().enumerate() {
+        let data = Recomputed::new(
+            from_fn::<[f64; 3], 8, _>(|a| reference[nodes[a]]).into(),
+            &derivatives,
+            &weights,
+        );
+        let computed = <Hexahedron as ElasticFiniteElement<SaintVenantKirchhoff, 8, 3, 8, 8>>::nodal_forces_from(
+            &data,
+            model,
+            &from_fn::<[f64; 3], 8, _>(|a| {
+                from_fn(|i| current[nodes[a]][i].value())
+            }).into(),
+        )?;
+        for (a, force) in computed.iter().enumerate() {
+            for (i, component) in force.iter().enumerate() {
+                forces[(i * 8 + a) * items + item] = component.value();
+            }
+        }
+    }
+    Ok(forces)
+}
+
+#[test]
+fn a_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_device()
+-> Result<(), AssertionError> {
+    let coordinates = lattice();
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let (below, above) = (slab(0..2), slab(2..LAYERS));
+    let model: Model<Blocks<Steel, Steel>, 3> = (
+        Blocks(
+            Steel::from((steel(), density(), below.clone(), &reference)),
+            Steel::from((steel(), density(), above.clone(), &reference)),
+        ),
+        reference,
+    )
+        .into();
+    let current = deformed(&coordinates);
+    let Some(resident) = on_device(&model, false) else {
+        return Ok(());
+    };
+    resident.compute(&current).map_err(describe)?;
+    assert!(resident.first_error().map_err(describe)?.is_none());
+    let found = components(&resident.download().map_err(describe)?);
+    let mut blocks = Vec::new();
+    model.device_blocks(&mut blocks);
+    let mut expected = vec![[0.0; 3]; coordinates.len()];
+    for (block, connectivity) in blocks.iter().zip([&below, &above]) {
+        let forces =
+            recomputed_element_forces(block, &steel(), connectivity, &coordinates, &current)?;
+        gather(block, &forces, &mut expected);
+    }
+    let expected = expected.iter().flatten().copied().collect::<Vec<_>>();
+    assert_eq!(found.len(), expected.len());
+    found
+        .iter()
+        .zip(&expected)
+        .enumerate()
+        .for_each(|(k, (found, expected))| {
+            assert_eq!(
+                found.to_bits(),
+                expected.to_bits(),
+                "{found} and {expected} at {k}"
+            );
+        });
+    Ok(())
+}
+
+fn disjoint<const G: usize, const N: usize>(count: usize) -> (Vec<[usize; N]>, Vec<[f64; 3]>)
+where
+    LinearElement<G, N>: FiniteElement<G, 3, N, N>,
+{
+    let parametric = <LinearElement<G, N> as FiniteElement<G, 3, N, N>>::parametric_reference();
+    let (mut connectivity, mut coordinates) = (Vec::new(), Vec::new());
+    for element in 0..count {
+        let mut nodes = [0; N];
+        for (a, xi) in parametric.iter().enumerate() {
+            let xi: [f64; 3] = from_fn(|k| xi[k].value());
+            nodes[a] = coordinates.len();
+            let wobble = |i: usize| 0.03 * (1.7 * a as f64 + i as f64 + element as f64).sin();
+            coordinates.push([
+                4.0 * element as f64 + 1.1 * xi[0] + 0.2 * xi[1] - 0.1 * xi[2] + wobble(0),
+                0.05 * xi[0] + 0.9 * xi[1] + 0.15 * xi[2] + wobble(1),
+                -0.1 * xi[0] + 0.12 * xi[1] + 1.2 * xi[2] + wobble(2),
+            ]);
+        }
+        connectivity.push(nodes);
+    }
+    (connectivity, coordinates)
+}
+
+macro_rules! shape {
+    ($name:ident, $constitutive:ty, $model:expr, $points:literal, $nodes:literal) => {
+        #[test]
+        fn $name() -> Result<(), AssertionError> {
+            type Shape = Block<
+                $constitutive,
+                LinearElement<$points, $nodes>,
+                $points,
+                3,
+                $nodes,
+                $nodes,
+                Quantity<Density>,
+            >;
+            let (connectivity, coordinates) = disjoint::<$points, $nodes>(7);
+            let reference = NodalReferenceCoordinates::from(coordinates.clone());
+            let model: Model<Shape, 3> = (
+                Shape::from(($model, density(), connectivity, &reference)),
+                reference,
+            )
+                .into();
+            let current = deformed(&coordinates);
+            let expected = components(&model.nodal_forces(&current)?);
+            for fused in [false, true] {
+                let Some(resident) = on_device(&model, fused) else {
+                    return Ok(());
+                };
+                let found = resident.nodal_forces(&model, &current).map_err(describe)?;
+                agree(&components(&found), &expected, 1e-10)?;
+            }
+            Ok(())
+        }
+    };
+}
+
+shape!(
+    neo_hookean_hexahedra_are_computed_on_a_device,
+    NeoHookean,
+    rubber(),
+    8,
+    8
+);
+shape!(
+    neo_hookean_tetrahedra_of_one_point_are_computed_on_a_device,
+    NeoHookean,
+    rubber(),
+    1,
+    4
+);
+shape!(
+    neo_hookean_tetrahedra_of_four_points_are_computed_on_a_device,
+    NeoHookean,
+    rubber(),
+    4,
+    4
+);
+shape!(
+    neo_hookean_wedges_are_computed_on_a_device,
+    NeoHookean,
+    rubber(),
+    6,
+    6
+);
+shape!(
+    neo_hookean_pyramids_are_computed_on_a_device,
+    NeoHookean,
+    rubber(),
+    8,
+    5
+);
+shape!(
+    steel_hexahedra_are_computed_on_a_device,
+    SaintVenantKirchhoff,
+    steel(),
+    8,
+    8
+);
+shape!(
+    steel_tetrahedra_of_one_point_are_computed_on_a_device,
+    SaintVenantKirchhoff,
+    steel(),
+    1,
+    4
+);
+shape!(
+    steel_tetrahedra_of_four_points_are_computed_on_a_device,
+    SaintVenantKirchhoff,
+    steel(),
+    4,
+    4
+);
+shape!(
+    steel_wedges_are_computed_on_a_device,
+    SaintVenantKirchhoff,
+    steel(),
+    6,
+    6
+);
+shape!(
+    steel_pyramids_are_computed_on_a_device,
+    SaintVenantKirchhoff,
+    steel(),
+    8,
+    5
+);
+
+#[test]
+fn an_element_with_an_error_is_reported_as_the_host_reports_it() -> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let mut current = deformed(&coordinates);
+    current[0] = [0.9, 0.9, 0.9].into();
+    let Err(expected) = model.nodal_forces(&current) else {
+        return Err("the host finds an error".into());
+    };
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    resident.compute(&current).map_err(describe)?;
+    let Some((block, record)) = resident.first_error().map_err(describe)? else {
+        return Err("the device finds an error".into());
+    };
+    assert_eq!(Some(block), expected.block.or(Some(0)));
+    assert_eq!(Some(record.item()), expected.item);
+    assert_eq!(Some(record.point()), expected.point);
+    let Err(error) = resident.nodal_forces(&model, &current) else {
+        return Err("the device finds an error".into());
+    };
+    assert!(matches!(error, DeviceError::Element(_)));
+    assert_eq!(error.to_string(), expected.to_string());
+    Ok(())
+}
+
+#[test]
+fn the_forces_of_a_call_do_not_depend_on_the_calls_before_it() -> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let shifted = coordinates
+        .iter()
+        .map(|&[x, y, z]| [x + 0.01, y, z])
+        .collect::<Vec<_>>();
+    let (first, second) = (deformed(&coordinates), deformed(&shifted));
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    let forces = |current| {
+        resident
+            .nodal_forces(&model, current)
+            .map(|forces| components(&forces))
+            .map_err(describe)
+    };
+    let (a, b, again) = (forces(&first)?, forces(&second)?, forces(&first)?);
+    assert_ne!(a, b);
+    assert_eq!(
+        a.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        again.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
     Ok(())
 }

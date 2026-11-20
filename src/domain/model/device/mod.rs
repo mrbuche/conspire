@@ -1,3 +1,9 @@
+#[cfg(feature = "fem")]
+mod resident;
+
+#[cfg(feature = "fem")]
+pub use resident::{DeviceError, Resident};
+
 use super::{Blocks, Model};
 use crate::domain::block::device::{DeviceBlock, DeviceBlocks};
 

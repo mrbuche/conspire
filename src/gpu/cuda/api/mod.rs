@@ -18,6 +18,7 @@ pub(super) struct Api {
     pub(super) free: unsafe extern "C" fn(DevicePointer) -> c_int,
     pub(super) upload: unsafe extern "C" fn(DevicePointer, *const c_void, usize) -> c_int,
     pub(super) download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
+    pub(super) fill: unsafe extern "C" fn(DevicePointer, c_uint, usize) -> c_int,
     pub(super) module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
     pub(super) module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub(super) module_function:
@@ -61,6 +62,7 @@ impl Api {
             free: driver.function("cuMemFree_v2")?,
             upload: driver.function("cuMemcpyHtoD_v2")?,
             download: driver.function("cuMemcpyDtoH_v2")?,
+            fill: driver.function("cuMemsetD32_v2")?,
             module_load: driver.function("cuModuleLoadData")?,
             module_unload: driver.function("cuModuleUnload")?,
             module_function: driver.function("cuModuleGetFunction")?,
