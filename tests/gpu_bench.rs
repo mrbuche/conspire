@@ -29,7 +29,10 @@ use conspire::{
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
-        element::linear::{Hexahedron, LinearElement},
+        element::{
+            linear::{Hexahedron, LinearElement},
+            stabilized::linear::Hexahedron as StabilizedHexahedron,
+        },
         solid::{
             NodalForcesSolid,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
@@ -43,6 +46,7 @@ use std::{env::var, hint::black_box, str::FromStr, time::Instant};
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
+type StabilizedGrid = Block<NeoHookean, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
 
 fn variable<T: FromStr>(name: &str) -> Option<T> {
     var(name).ok().and_then(|value| value.parse().ok())
@@ -188,8 +192,22 @@ fn single_block() -> Result<(), AssertionError> {
             &deformed(&coordinates),
             repetitions,
         )?;
+        let (model, coordinates) = stabilized_grid(cells);
+        compare(
+            &format!("{} stabilized", cells.pow(3)),
+            &model,
+            &deformed(&coordinates),
+            repetitions,
+        )?;
     }
     Ok(())
+}
+
+fn stabilized_grid(cells: usize) -> (Model<StabilizedGrid, 3>, Vec<[f64; 3]>) {
+    let coordinates = lattice(cells, cells);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let block = StabilizedGrid::from((rubber(), density(), slab(cells, 0..cells), &reference));
+    ((block, reference).into(), coordinates)
 }
 
 macro_rules! shape {
@@ -219,11 +237,37 @@ macro_rules! shape {
     }};
 }
 
+macro_rules! stabilized {
+    ($count:expr, $label:literal, $constitutive:ty, $model:expr) => {{
+        type Shape = Block<$constitutive, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
+        let (connectivity, coordinates) = disjoint::<8, 8>($count);
+        let reference = NodalReferenceCoordinates::from(coordinates.clone());
+        let model: Model<Shape, 3> = (
+            Shape::from(($model, density(), connectivity, &reference)),
+            reference,
+        )
+            .into();
+        compare(
+            concat!($label, " stabilized n8"),
+            &model,
+            &deformed(&coordinates),
+            repetitions(),
+        )
+    }};
+}
+
 #[test]
 #[ignore]
 fn element_shapes() -> Result<(), AssertionError> {
     println!("\nthreads: {}", threads());
     let count = variable("ELEMENTS").unwrap_or(200_000);
+    stabilized!(count, "neo_hookean", NeoHookean, rubber())?;
+    stabilized!(
+        count,
+        "saint_venant_kirchhoff",
+        SaintVenantKirchhoff,
+        steel()
+    )?;
     shape!(count, "neo_hookean", NeoHookean, rubber(), 8, 8)?;
     shape!(count, "neo_hookean", NeoHookean, rubber(), 1, 4)?;
     shape!(count, "neo_hookean", NeoHookean, rubber(), 4, 4)?;
