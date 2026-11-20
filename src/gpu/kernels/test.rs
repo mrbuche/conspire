@@ -49,7 +49,11 @@ fn kernels_that_are_not_built_are_an_error() {
 #[test]
 fn the_kernels_that_are_built_are_embedded() {
     match ptx(Application::Elements, false) {
-        Ok(ptx) => assert!(ptx.contains(".visible .entry squares"), "{ptx}"),
+        Ok(ptx) => {
+            for name in ["squares", "gather"] {
+                assert!(ptx.contains(&format!(".visible .entry {name}(")), "{name}");
+            }
+        }
         Err(GpuError::KernelsNotBuilt(application)) => {
             eprintln!("skipped: the kernels of the {application} are not built");
         }
@@ -103,4 +107,20 @@ fn the_ptx_has_no_trap_but_that_of_a_panic_and_no_call_but_to_one() {
     ptx.lines()
         .filter(|line| line.trim_start().starts_with("call"))
         .for_each(|line| assert!(line.contains("panicking"), "{line}"));
+}
+
+#[test]
+fn the_second_pass_is_additions_only_with_no_call_no_trap_and_no_local_memory() {
+    let Ok(ptx) = ptx(Application::Elements, false) else {
+        return eprintln!("skipped: the kernels of the elements are not built");
+    };
+    let start = ptx
+        .find(".visible .entry gather(")
+        .expect("the kernel is there");
+    let end = ptx[start..].find("\n}\n").expect("the kernel ends");
+    let gather = &ptx[start..start + end];
+    for absent in ["call", "trap;", ".local", "mul.rn.f64", "mul.f64", "fma."] {
+        assert!(!gather.contains(absent), "{absent} is in the second pass");
+    }
+    assert!(gather.contains("add.rn.f64"));
 }
