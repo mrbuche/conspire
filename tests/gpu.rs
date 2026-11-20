@@ -1,5 +1,11 @@
 #![cfg(all(feature = "gpu", feature = "fem"))]
 
+mod common;
+
+use common::{
+    agree, components, deformed, density, describe, disjoint, lattice, on_device, rubber, slab,
+    steel,
+};
 use conspire::{
     constitutive::{
         FromParameters,
@@ -12,8 +18,8 @@ use conspire::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
         element::{
-            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
-            FiniteElementError, Recomputed,
+            ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
+            Recomputed,
             linear::{Hexahedron, LinearElement, Tetrahedron},
             quadratic::Hexahedron as QuadraticHexahedron,
             solid::{
@@ -21,14 +27,13 @@ use conspire::{
                 elastic::{ElasticElement, ElasticFiniteElement},
             },
         },
-        solid::{NodalForcesSolid, elastic::ElasticElements},
+        solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError, GpuError, Resident},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError},
     math::{Quantity, Tensor, assert::AssertionError},
-    units::{Density, Stress},
+    units::Density,
 };
-use core::{array::from_fn, fmt::Display, ops::Range};
-use std::env::var_os;
+use core::array::from_fn;
 
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
@@ -36,76 +41,6 @@ type Tetrahedra = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density
 
 const COLUMNS: usize = 3;
 const LAYERS: usize = 4;
-
-fn density() -> Quantity<Density> {
-    Density::kilograms_per_cubic_meter(7.8e3)
-}
-
-fn rubber() -> NeoHookean {
-    NeoHookean {
-        shear_modulus: Stress::pascals(3.0e9),
-        bulk_modulus: Stress::pascals(13.0e9),
-    }
-}
-
-fn steel() -> SaintVenantKirchhoff {
-    SaintVenantKirchhoff {
-        shear_modulus: Stress::pascals(80.0e9),
-        bulk_modulus: Stress::pascals(160.0e9),
-    }
-}
-
-fn slab(layers: Range<usize>) -> Vec<[usize; 8]> {
-    let index = |i: usize, j: usize, k: usize| (k * (COLUMNS + 1) + j) * (COLUMNS + 1) + i;
-    layers
-        .flat_map(|k| {
-            (0..COLUMNS).flat_map(move |j| {
-                (0..COLUMNS).map(move |i| {
-                    [
-                        index(i, j, k),
-                        index(i + 1, j, k),
-                        index(i + 1, j + 1, k),
-                        index(i, j + 1, k),
-                        index(i, j, k + 1),
-                        index(i + 1, j, k + 1),
-                        index(i + 1, j + 1, k + 1),
-                        index(i, j + 1, k + 1),
-                    ]
-                })
-            })
-        })
-        .collect()
-}
-
-fn lattice() -> Vec<[f64; 3]> {
-    (0..=LAYERS)
-        .flat_map(|k| {
-            (0..=COLUMNS).flat_map(move |j| {
-                (0..=COLUMNS).map(move |i| {
-                    [
-                        i as f64 / COLUMNS as f64,
-                        j as f64 / COLUMNS as f64,
-                        k as f64 / LAYERS as f64,
-                    ]
-                })
-            })
-        })
-        .collect()
-}
-
-fn deformed(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
-    coordinates
-        .iter()
-        .map(|&[x, y, z]| {
-            [
-                x + 3e-2 * (3.0 * y).sin(),
-                y + 2e-2 * (2.0 * z).sin(),
-                z + 4e-2 * (4.0 * x).sin(),
-            ]
-        })
-        .collect::<Vec<_>>()
-        .into()
-}
 
 struct TwoBlocks {
     model: Model<Blocks<Grid, Steel>, 3>,
@@ -115,9 +50,9 @@ struct TwoBlocks {
 }
 
 fn two_blocks() -> TwoBlocks {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = coordinates.clone().into();
-    let (below, above) = (slab(0..2), slab(2..LAYERS));
+    let (below, above) = (slab(COLUMNS, 0..2), slab(COLUMNS, 2..LAYERS));
     let blocks = Blocks(
         Grid::from((rubber(), density(), below.clone(), &reference)),
         Steel::from((steel(), density(), above.clone(), &reference)),
@@ -173,7 +108,7 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
 
 #[test]
 fn a_block_of_another_shape_is_described_the_same_way() {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates);
     let connectivity = vec![
         [0, 1, 2, 6],
@@ -302,56 +237,6 @@ fn the_second_pass_from_the_layout_gives_the_nodal_forces_of_the_model_to_the_bi
     Ok(())
 }
 
-fn skip<T>(why: &str) -> Option<T> {
-    assert!(
-        var_os("CONSPIRE_REQUIRE_GPU").is_none(),
-        "CONSPIRE_REQUIRE_GPU is set and {why}"
-    );
-    eprintln!("skipped: {why}");
-    None
-}
-
-fn describe(error: impl Display) -> AssertionError {
-    error.to_string().into()
-}
-
-fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Resident> {
-    match Resident::new(0, model, fused) {
-        Ok(resident) => Some(resident),
-        Err(GpuError::Unavailable(message)) => skip(&format!("there is no device: {message}")),
-        Err(GpuError::KernelsNotBuilt(application)) => {
-            skip(&format!("the kernels of the {application} are not built"))
-        }
-        Err(error) => panic!("{error}"),
-    }
-}
-
-fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
-    forces
-        .iter()
-        .flat_map(|force| force.iter().map(|component| component.value()))
-        .collect()
-}
-
-fn agree(found: &[f64], expected: &[f64], tolerance: f64) -> Result<(), AssertionError> {
-    assert_eq!(found.len(), expected.len());
-    let largest = expected
-        .iter()
-        .fold(0.0_f64, |largest, x| largest.max(x.abs()));
-    let worst = found
-        .iter()
-        .zip(expected)
-        .fold(0.0_f64, |worst, (found, expected)| {
-            worst.max((found - expected).abs())
-        });
-    assert!(largest > 1e3, "the forces are {largest}, which is nothing");
-    if worst <= tolerance * largest {
-        Ok(())
-    } else {
-        Err(format!("the forces differ by {worst} of up to {largest}").into())
-    }
-}
-
 #[test]
 fn a_model_of_two_blocks_has_the_forces_of_the_host_on_a_device() -> Result<(), AssertionError> {
     let TwoBlocks {
@@ -405,9 +290,9 @@ fn recomputed_element_forces(
 #[test]
 fn a_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_device()
 -> Result<(), AssertionError> {
-    let coordinates = lattice();
+    let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
-    let (below, above) = (slab(0..2), slab(2..LAYERS));
+    let (below, above) = (slab(COLUMNS, 0..2), slab(COLUMNS, 2..LAYERS));
     let model: Model<Blocks<Steel, Steel>, 3> = (
         Blocks(
             Steel::from((steel(), density(), below.clone(), &reference)),
@@ -445,29 +330,6 @@ fn a_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_d
             );
         });
     Ok(())
-}
-
-fn disjoint<const G: usize, const N: usize>(count: usize) -> (Vec<[usize; N]>, Vec<[f64; 3]>)
-where
-    LinearElement<G, N>: FiniteElement<G, 3, N, N>,
-{
-    let parametric = <LinearElement<G, N> as FiniteElement<G, 3, N, N>>::parametric_reference();
-    let (mut connectivity, mut coordinates) = (Vec::new(), Vec::new());
-    for element in 0..count {
-        let mut nodes = [0; N];
-        for (a, xi) in parametric.iter().enumerate() {
-            let xi: [f64; 3] = from_fn(|k| xi[k].value());
-            nodes[a] = coordinates.len();
-            let wobble = |i: usize| 0.03 * (1.7 * a as f64 + i as f64 + element as f64).sin();
-            coordinates.push([
-                4.0 * element as f64 + 1.1 * xi[0] + 0.2 * xi[1] - 0.1 * xi[2] + wobble(0),
-                0.05 * xi[0] + 0.9 * xi[1] + 0.15 * xi[2] + wobble(1),
-                -0.1 * xi[0] + 0.12 * xi[1] + 1.2 * xi[2] + wobble(2),
-            ]);
-        }
-        connectivity.push(nodes);
-    }
-    (connectivity, coordinates)
 }
 
 macro_rules! shape {
@@ -600,6 +462,27 @@ fn an_element_with_an_error_is_reported_as_the_host_reports_it() -> Result<(), A
     };
     assert!(matches!(error, DeviceError::Element(_)));
     assert_eq!(error.to_string(), expected.to_string());
+    Ok(())
+}
+
+#[test]
+fn running_again_with_the_coordinates_that_the_device_has_gives_the_same_forces()
+-> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let current = deformed(&coordinates);
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    resident.set_coordinates(&current).map_err(describe)?;
+    let mut bits = Vec::new();
+    for _ in 0..2 {
+        resident.run().map_err(describe)?;
+        let forces = components(&resident.download().map_err(describe)?);
+        bits.push(forces.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+    }
+    assert_eq!(bits[0], bits[1]);
     Ok(())
 }
 
