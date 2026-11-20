@@ -18,12 +18,15 @@ use core::{
 #[repr(transparent)]
 pub struct TensorVector<T>(Vec<T>);
 
-impl<T> Erase for TensorVector<T>
+// SAFETY: the vector is transparent over its `Vec`, and the entries have the layout of their erasure.
+unsafe impl<T> Erase for TensorVector<T>
 where
     T: Erase + Tensor,
 {
     type Erased = TensorVector<<T as Erase>::Erased>;
     fn erase(&self) -> &Self::Erased {
+        // SAFETY: the vector is transparent over a `Vec` of entries, which `T: Erase` says have
+        // the layout of the entries of the erased vector, so the buffer is the same.
         unsafe { &*(self as *const Self as *const Self::Erased) }
     }
 }

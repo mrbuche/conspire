@@ -507,10 +507,11 @@ impl CscLu {
 fn trisolve(tile: &mut [Scalar], panel: &[Scalar], m: usize, consumed: usize, width: usize) {
     #[cfg(target_arch = "x86_64")]
     if simd::isa() == simd::Isa::Avx2 {
+        assert!(consumed == 0 || (consumed <= width && width * CHUNK <= tile.len()));
         // SAFETY: `Isa::Avx2` is produced only after `is_x86_feature_detected!`
         // confirms avx2 + fma, so the backend's target-feature precondition
-        // holds; it stays within `tile` / `panel` bounds for the given `m`,
-        // `consumed`, `width`.
+        // holds; the assertion is the bound of `tile` that it stays within, and
+        // it indexes `panel`, so that is checked.
         return unsafe { trisolve_backend(tile, panel, m, consumed, width) };
     }
     #[cfg(all(feature = "nightly", not(target_arch = "x86_64")))]

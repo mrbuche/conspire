@@ -1,4 +1,4 @@
-use super::{CscMatrix, SparseError, Vector};
+use super::{CHUNK, CscMatrix, SparseError, Vector, trisolve};
 use crate::math::assert::Assert;
 use crate::math::assert::AssertionError;
 
@@ -235,4 +235,13 @@ fn refactor_scaled_dim_9() -> Result<(), AssertionError> {
     let matrix = matrix_dim_9_scaled(scale);
     lu.refactor(&matrix).expect("Refactorization failed.");
     Assert::default().eq_within_tols(&(&matrix * &lu.solve(&(&b * scale))), &(&b * scale))
+}
+
+#[test]
+#[should_panic]
+fn a_tile_that_is_too_short_for_its_rows_is_not_read_past() {
+    let width = 8;
+    let mut tile = vec![1.0; CHUNK];
+    let panel = vec![1.0; width * width];
+    trisolve(&mut tile, &panel, width, width, width);
 }

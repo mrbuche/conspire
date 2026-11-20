@@ -289,7 +289,8 @@ impl<const D: usize, I, U> Sub<&Vector> for TensorRank1<D, I, U> {
     }
 }
 
-impl<const D: usize, I, U> Erase for TensorRank1<D, I, U> {
+// SAFETY: only the labels differ from the erasure, and they are zero-sized.
+unsafe impl<const D: usize, I, U> Erase for TensorRank1<D, I, U> {
     type Erased = TensorRank1<D, Reference, Dimensionless>;
     fn erase(&self) -> &Self::Erased {
         self.canonical()

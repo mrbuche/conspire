@@ -532,7 +532,8 @@ impl<const D: usize, I, J, K, L, U> Hessian for TensorRank4<D, I, J, K, L, U> {
     }
 }
 
-impl<const D: usize, I, J, K, L, U> Erase for TensorRank4<D, I, J, K, L, U> {
+// SAFETY: only the labels differ from the erasure, and they are zero-sized.
+unsafe impl<const D: usize, I, J, K, L, U> Erase for TensorRank4<D, I, J, K, L, U> {
     type Erased = TensorRank4<D, Reference, Reference, Reference, Reference, Dimensionless>;
     fn erase(&self) -> &Self::Erased {
         self.canonical()

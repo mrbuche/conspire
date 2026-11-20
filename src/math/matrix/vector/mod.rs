@@ -372,7 +372,8 @@ impl DivAssign<&Scalar> for Vector {
     }
 }
 
-impl Erase for Vector {
+// SAFETY: the type is its own erasure.
+unsafe impl Erase for Vector {
     type Erased = Self;
     fn erase(&self) -> &Self {
         self

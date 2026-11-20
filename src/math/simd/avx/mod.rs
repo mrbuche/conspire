@@ -5,9 +5,10 @@ use core::arch::x86_64::{
 
 #[target_feature(enable = "avx2", enable = "fma")]
 pub(super) unsafe fn axpy(target: &mut [Scalar], column: &[Scalar], w: Scalar) {
-    let len = target.len();
+    let len = target.len().min(column.len());
     let spread = _mm256_set1_pd(w);
     let mut r = 0;
+    // SAFETY: `r + 4 <= len`, and `len` is within both slices, so each load and store is.
     unsafe {
         while r + 4 <= len {
             let entry = target.as_mut_ptr().add(r);
@@ -34,12 +35,18 @@ pub(super) unsafe fn rank_one_quad(
     column: &[Scalar],
     u: [Scalar; 4],
 ) {
-    let len = column.len();
+    let len = column
+        .len()
+        .min(temp_0.len())
+        .min(temp_1.len())
+        .min(temp_2.len())
+        .min(temp_3.len());
     let u_0 = _mm256_set1_pd(u[0]);
     let u_1 = _mm256_set1_pd(u[1]);
     let u_2 = _mm256_set1_pd(u[2]);
     let u_3 = _mm256_set1_pd(u[3]);
     let mut r = 0;
+    // SAFETY: `r + 4 <= len`, and `len` is within every slice, so each load and store is.
     unsafe {
         while r + 4 <= len {
             let value = _mm256_loadu_pd(column.as_ptr().add(r));
@@ -82,7 +89,13 @@ pub(super) unsafe fn rank_two_quad(
     u: [Scalar; 4],
     w: [Scalar; 4],
 ) {
-    let len = column.len();
+    let len = column
+        .len()
+        .min(other.len())
+        .min(temp_0.len())
+        .min(temp_1.len())
+        .min(temp_2.len())
+        .min(temp_3.len());
     let u_0 = _mm256_set1_pd(u[0]);
     let u_1 = _mm256_set1_pd(u[1]);
     let u_2 = _mm256_set1_pd(u[2]);
@@ -92,6 +105,7 @@ pub(super) unsafe fn rank_two_quad(
     let w_2 = _mm256_set1_pd(w[2]);
     let w_3 = _mm256_set1_pd(w[3]);
     let mut r = 0;
+    // SAFETY: `r + 4 <= len`, and `len` is within every slice, so each load and store is.
     unsafe {
         while r + 4 <= len {
             let value = _mm256_loadu_pd(column.as_ptr().add(r));

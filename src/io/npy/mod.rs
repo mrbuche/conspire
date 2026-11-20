@@ -2,28 +2,36 @@
 mod test;
 
 use crate::io::Write;
-use core::{mem::size_of, str::from_utf8};
+use core::{
+    mem::{size_of, zeroed},
+    slice::{from_raw_parts, from_raw_parts_mut},
+    str::from_utf8,
+};
 use std::{
     fs::File,
     io::{self, BufReader, BufWriter, Error, ErrorKind, Read, Result},
     path::Path,
 };
 
-pub trait NpyType: Copy {
+/// # Safety
+///
+/// `SIZE` must equal `size_of::<Self>()`, `Self` must have no padding, and every bit pattern
+/// of that width must be a valid `Self`, as the bytes of values are read and written as they are.
+pub unsafe trait NpyType: Copy {
     const DESCR: &'static str;
     const SIZE: usize;
     fn write_le(self, buffer: &mut Vec<u8>);
     fn read_le(bytes: &[u8]) -> Self;
     #[cfg(target_endian = "little")]
     fn read_from<R: Read>(file: &mut R, count: usize) -> Result<Vec<Self>> {
-        let mut data = Vec::<Self>::with_capacity(count);
-        unsafe {
-            let bytes =
-                core::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, count * Self::SIZE);
-            file.read_exact(bytes)
-                .map_err(|_| invalid("truncated .npy data".into()))?;
-            data.set_len(count);
-        }
+        // SAFETY: every bit pattern, the zero one included, is a valid `Self`.
+        let mut data = vec![unsafe { zeroed::<Self>() }; count];
+        // SAFETY: the values are initialized, have no padding and are `count * SIZE` bytes, and
+        // every bit pattern that is read into them is a valid `Self`.
+        let bytes =
+            unsafe { from_raw_parts_mut(data.as_mut_ptr().cast::<u8>(), count * Self::SIZE) };
+        file.read_exact(bytes)
+            .map_err(|_| invalid("truncated .npy data".into()))?;
         Ok(data)
     }
     #[cfg(target_endian = "big")]
@@ -39,9 +47,9 @@ pub trait NpyType: Copy {
     }
     #[cfg(target_endian = "little")]
     fn write_le_all<W: io::Write>(data: &[Self], file: &mut W) -> Result<()> {
-        let bytes = unsafe {
-            core::slice::from_raw_parts(data.as_ptr() as *const u8, core::mem::size_of_val(data))
-        };
+        // SAFETY: the values have no padding, so the `size_of_val` bytes of the slice are all
+        // initialized.
+        let bytes = unsafe { from_raw_parts(data.as_ptr() as *const u8, size_of_val(data)) };
         file.write_all(bytes)
     }
     #[cfg(target_endian = "big")]
@@ -49,7 +57,7 @@ pub trait NpyType: Copy {
         file.write_all(&Self::write_le_bytes(data))
     }
     fn write_le_bytes(data: &[Self]) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(core::mem::size_of_val(data));
+        let mut buffer = Vec::with_capacity(size_of_val(data));
         for &value in data {
             value.write_le(&mut buffer);
         }
@@ -59,7 +67,9 @@ pub trait NpyType: Copy {
 
 macro_rules! npy_type {
     ($type:ty, $descr:literal) => {
-        impl NpyType for $type {
+        // SAFETY: the integer and float types have no padding, are `size_of` wide, and every bit
+        // pattern of that width is a valid value.
+        unsafe impl NpyType for $type {
             const DESCR: &'static str = $descr;
             const SIZE: usize = size_of::<$type>();
             fn write_le(self, buffer: &mut Vec<u8>) {
