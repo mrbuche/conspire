@@ -63,3 +63,44 @@ fn the_error_of_kernels_that_are_not_built_names_them_and_how_to_build_them() {
     assert!(message.contains("elements"), "{message}");
     assert!(message.contains("kernels/build.sh elements"), "{message}");
 }
+
+#[cfg(feature = "elements")]
+#[test]
+fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_host_looks_for() {
+    use super::block_forces;
+    use crate::constitutive::{
+        FromParameters,
+        solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
+    };
+    let Ok(ptx) = ptx(Application::Elements, false) else {
+        return eprintln!("skipped: the kernels of the elements are not built");
+    };
+    for model in [NeoHookean::NAME, SaintVenantKirchhoff::NAME] {
+        for (points, nodes) in [(1, 4), (4, 4), (8, 8), (6, 6), (8, 5)] {
+            let name = block_forces(model, points, nodes);
+            assert!(
+                ptx.contains(&format!(".visible .entry {name}(")),
+                "{name} is not in the PTX"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_ptx_has_no_trap_but_that_of_a_panic_and_no_call_but_to_one() {
+    let Ok(ptx) = ptx(Application::Elements, false) else {
+        return eprintln!("skipped: the kernels of the elements are not built");
+    };
+    let traps = ptx.matches("trap;").count();
+    assert!(
+        traps <= 1,
+        "{traps} traps: a function that a device does not have is reached"
+    );
+    assert!(
+        !ptx.contains(".extern"),
+        "the PTX needs what it does not have"
+    );
+    ptx.lines()
+        .filter(|line| line.trim_start().starts_with("call"))
+        .for_each(|line| assert!(line.contains("panicking"), "{line}"));
+}

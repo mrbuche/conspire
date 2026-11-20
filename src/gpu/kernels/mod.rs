@@ -39,6 +39,12 @@ pub(super) fn ptx(application: Application, fused: bool) -> Result<Cow<'static, 
     prepare(application, application.built(), fused)
 }
 
+/// The name of the kernel for the elements of a block of a model.
+#[cfg(feature = "elements")]
+pub(super) fn block_forces(model: &str, points: usize, nodes: usize) -> String {
+    format!("block_forces_{model}_g{points}_n{nodes}")
+}
+
 fn prepare(application: Application, ptx: &str, fused: bool) -> Result<Cow<'_, str>, GpuError> {
     if ptx.trim().is_empty() {
         Err(GpuError::KernelsNotBuilt(application))
