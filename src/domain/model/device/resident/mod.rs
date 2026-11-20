@@ -52,6 +52,7 @@ impl Error for DeviceError {}
 
 /// A block of a model on the device.
 struct BlockOnDevice {
+    kind: DeviceKind,
     forces_name: String,
     forces_kernel: Function,
     gather_kernel: Function,
@@ -61,6 +62,7 @@ struct BlockOnDevice {
     number_of_parameters: u32,
     derivatives: Buffer<f64>,
     weights: Buffer<f64>,
+    values: Buffer<f64>,
     connectivity: Buffer<u32>,
     parameters: Buffer<f64>,
     offsets: Buffer<u32>,
@@ -72,18 +74,16 @@ struct BlockOnDevice {
 impl BlockOnDevice {
     fn new(device: &Device, module: &Module, block: &DeviceBlock) -> Result<Self, GpuError> {
         let layout = &block.layout;
-        if block.kind != DeviceKind::Full {
-            return Err(GpuError::Cuda(format!(
-                "a block of elements of one point with hourglass control, which {} is for, is not run on a device yet",
-                block_forces_stabilized(block.model, layout.nodes_per_item)
-            )));
-        }
-        let name = block_forces(block.model, block.points, layout.nodes_per_item);
+        let name = match block.kind {
+            DeviceKind::Full => block_forces(block.model, block.points, layout.nodes_per_item),
+            DeviceKind::Stabilized => block_forces_stabilized(block.model, layout.nodes_per_item),
+        };
         let index = |value: usize| {
             u32::try_from(value)
                 .map_err(|_| GpuError::Cuda("a block is too large for a device".to_string()))
         };
         Ok(Self {
+            kind: block.kind,
             forces_kernel: module
                 .function(&name)
                 .map_err(|_| GpuError::NoKernel(name.clone()))?,
@@ -95,6 +95,7 @@ impl BlockOnDevice {
             number_of_parameters: index(block.parameters.len())?,
             derivatives: device.buffer_of(&block.derivatives)?,
             weights: device.buffer_of(&block.weights)?,
+            values: device.buffer_of(&block.values)?,
             connectivity: device.buffer_of(&layout.connectivity)?,
             parameters: device.buffer_of(&block.parameters)?,
             offsets: device.buffer_of(&layout.offsets)?,
@@ -169,23 +170,40 @@ impl Resident {
         self.nodal_forces.fill(0)?;
         for block in &self.blocks {
             block.record.fill(u32::MAX)?;
-            self.device.launch(
-                &block.forces_kernel,
-                block.items as usize,
-                THREADS_PER_BLOCK,
-                &[
-                    &block.items,
-                    &self.reference_coordinates,
-                    &block.derivatives,
-                    &block.weights,
-                    &block.connectivity,
-                    &self.coordinates,
-                    &block.forces,
-                    &block.record,
-                    &block.parameters,
-                    &block.number_of_parameters,
-                ],
-            )?;
+            match block.kind {
+                DeviceKind::Full => self.device.launch(
+                    &block.forces_kernel,
+                    block.items as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.items,
+                        &self.reference_coordinates,
+                        &block.derivatives,
+                        &block.weights,
+                        &block.connectivity,
+                        &self.coordinates,
+                        &block.forces,
+                        &block.record,
+                        &block.parameters,
+                        &block.number_of_parameters,
+                    ],
+                )?,
+                DeviceKind::Stabilized => self.device.launch(
+                    &block.forces_kernel,
+                    block.items as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.items,
+                        &block.values,
+                        &block.connectivity,
+                        &self.coordinates,
+                        &block.forces,
+                        &block.record,
+                        &block.parameters,
+                        &block.number_of_parameters,
+                    ],
+                )?,
+            }
             self.device.launch(
                 &block.gather_kernel,
                 block.nodes as usize,
