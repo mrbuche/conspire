@@ -1,6 +1,7 @@
 #[cfg(feature = "gpu")]
 mod device;
 pub mod linear;
+mod values;
 
 use crate::{
     fem::element::{

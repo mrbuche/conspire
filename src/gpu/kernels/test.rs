@@ -90,6 +90,26 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
     }
 }
 
+#[cfg(feature = "elements")]
+#[test]
+fn the_kernels_of_every_model_for_elements_of_one_point_with_hourglass_control_are_in_the_ptx() {
+    use super::block_forces_stabilized;
+    use crate::constitutive::{
+        FromParameters,
+        solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
+    };
+    let Ok(ptx) = ptx(Application::Elements, false) else {
+        return eprintln!("skipped: the kernels of the elements are not built");
+    };
+    for model in [NeoHookean::NAME, SaintVenantKirchhoff::NAME] {
+        let name = block_forces_stabilized(model, 8);
+        assert!(
+            ptx.contains(&format!(".visible .entry {name}(")),
+            "{name} is not in the PTX"
+        );
+    }
+}
+
 #[test]
 fn the_ptx_has_no_trap_but_that_of_a_panic_and_no_call_but_to_one() {
     let Ok(ptx) = ptx(Application::Elements, false) else {

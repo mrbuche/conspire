@@ -11,8 +11,13 @@ use conspire::{
         },
     },
     fem::element::{
-        ErrorRecord, Recomputed, StandardGradientOperators, linear::LinearElement,
-        solid::elastic::ElasticFiniteElement,
+        ErrorRecord, FiniteElementError, Recomputed, StandardGradientOperators,
+        linear::LinearElement,
+        solid::{
+            ElementNodalForcesSolid,
+            elastic::{ElasticElement, ElasticFiniteElement},
+        },
+        stabilized::StabilizedElement,
     },
     math::{ScalarList, Tensor},
 };
@@ -158,6 +163,79 @@ unsafe fn block_forces<M, const G: usize, const N: usize>(
     }
 }
 
+/// The nodal forces of each of `items` elements of a block of elements of one integration point
+/// with hourglass control, one element to a thread, with what each has of its own read from its
+/// `values`, and the forces made as the host makes them, by the same code. The element is the
+/// hexahedron of eight nodes.
+///
+/// The value `k` of an element `item` is `values[k * items + item]`, which are
+/// [`StabilizedElement::VALUES`] of them. The nodes, the forces and the `record` are those of
+/// [`block_forces`].
+///
+/// # Safety
+///
+/// `coordinates` must have the nodes that `connectivity`, which must be `8 * items` of them,
+/// names, `values` must be `StabilizedElement::<8>::VALUES * items` values, `forces` must be
+/// `3 * 8 * items` values, `record` must be one aligned value, and `parameters` must be
+/// `number_of_parameters` values that make a model.
+#[inline(always)]
+unsafe fn block_forces_stabilized<M>(
+    items: u32,
+    values: *const f64,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    forces: *mut f64,
+    record: *mut u64,
+    parameters: *const f64,
+    number_of_parameters: u32,
+) where
+    M: Elastic + FromParameters,
+    StabilizedElement<8>:
+        ElasticElement<M, Forces = ElementNodalForcesSolid<8>, Error = FiniteElementError>,
+{
+    const N: usize = 8;
+    let item = thread();
+    let items = items as usize;
+    if item < items {
+        // SAFETY: there are as many parameters as the model takes.
+        let model = M::from_parameters(unsafe {
+            from_raw_parts(parameters, number_of_parameters as usize)
+        });
+        // SAFETY: the value is one of those that the element has.
+        let element =
+            StabilizedElement::<N>::from_values(|k| unsafe { *values.add(k * items + item) });
+        let mut positions = [[0.0; 3]; N];
+        positions.iter_mut().enumerate().for_each(|(a, position)| {
+            // SAFETY: the node is one that the coordinates have.
+            let node = unsafe { *connectivity.add(a * items + item) } as usize;
+            position.iter_mut().enumerate().for_each(|(i, position)| {
+                // SAFETY: the node has three coordinates.
+                *position = unsafe { *coordinates.add(3 * node + i) }
+            });
+        });
+        let mut nodal_forces = [[0.0; 3]; N];
+        match element.nodal_forces(&model, &positions.into()) {
+            Ok(computed) => computed.iter().enumerate().for_each(|(a, force)| {
+                force
+                    .iter()
+                    .enumerate()
+                    .for_each(|(i, component)| nodal_forces[a][i] = component.value())
+            }),
+            Err(error) => {
+                // SAFETY: `record` is one aligned value, which the threads only take the least.
+                unsafe { AtomicU64::from_ptr(record) }
+                    .fetch_min(ErrorRecord::of(item, &error).bits(), Ordering::Relaxed);
+            }
+        }
+        nodal_forces.iter().enumerate().for_each(|(a, force)| {
+            force.iter().enumerate().for_each(|(i, &component)| {
+                // SAFETY: the index is within the forces that there are.
+                unsafe { *forces.add((i * N + a) * items + item) = component }
+            })
+        });
+    }
+}
+
 /// The second pass of the forces: the forces on `nodes` nodes, each the sum of the forces of the
 /// elements that have it, in the order of the elements, added to the forces that it has.
 ///
@@ -282,6 +360,50 @@ macro_rules! kernels {
         $( kernel!($model, $name, $points, $nodes); )*
     };
 }
+
+/// A kernel for the elements of one point with hourglass control of a block of a model, with
+/// `$nodes` nodes, named `block_forces_<name>_stabilized_n<nodes>`.
+macro_rules! stabilized {
+    ($model:ty, $name:literal, $nodes:literal) => {
+        const _: () = {
+            assert!(
+                same(<$model as FromParameters>::NAME, $name),
+                "the name of the kernels is not the name of the model"
+            );
+            /// # Safety
+            ///
+            /// As for [`block_forces_stabilized`].
+            #[unsafe(export_name = concat!("block_forces_", $name, "_stabilized_n", $nodes))]
+            pub unsafe extern "ptx-kernel" fn kernel(
+                items: u32,
+                values: *const f64,
+                connectivity: *const u32,
+                coordinates: *const f64,
+                forces: *mut f64,
+                record: *mut u64,
+                parameters: *const f64,
+                number_of_parameters: u32,
+            ) {
+                // SAFETY: as for the function that this calls.
+                unsafe {
+                    block_forces_stabilized::<$model>(
+                        items,
+                        values,
+                        connectivity,
+                        coordinates,
+                        forces,
+                        record,
+                        parameters,
+                        number_of_parameters,
+                    )
+                }
+            }
+        };
+    };
+}
+
+stabilized!(NeoHookean, "neo_hookean", 8);
+stabilized!(SaintVenantKirchhoff, "saint_venant_kirchhoff", 8);
 
 kernels! {
     models: [

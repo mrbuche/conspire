@@ -1,13 +1,13 @@
 use crate::{
     domain::{
         ElementModelError, Model, NodalCoordinates,
-        block::device::{DeviceBlock, DeviceBlocks},
+        block::device::{DeviceBlock, DeviceBlocks, DeviceKind},
         solid::{NodalForcesSolid, elastic::ElasticElements},
     },
     fem::element::ErrorRecord,
     gpu::{
         Application, Buffer, Device, Function, GpuError, Module, Resources,
-        kernels::{block_forces, ptx},
+        kernels::{block_forces, block_forces_stabilized, ptx},
     },
     math::{Tensor, TensorRank1Vec},
     units::Length,
@@ -72,6 +72,12 @@ struct BlockOnDevice {
 impl BlockOnDevice {
     fn new(device: &Device, module: &Module, block: &DeviceBlock) -> Result<Self, GpuError> {
         let layout = &block.layout;
+        if block.kind != DeviceKind::Full {
+            return Err(GpuError::Cuda(format!(
+                "a block of elements of one point with hourglass control, which {} is for, is not run on a device yet",
+                block_forces_stabilized(block.model, layout.nodes_per_item)
+            )));
+        }
         let name = block_forces(block.model, block.points, layout.nodes_per_item);
         let index = |value: usize| {
             u32::try_from(value)
