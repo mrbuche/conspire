@@ -21,11 +21,12 @@ jobs:
           - physics
           - constitutive
           - elements
-          - gpu
           - cbm
           - fem
           - vem
           - all
+          - gpu
+          - gpu,fem
         os: [macos-latest, ubuntu-latest, windows-latest]
         toolchain: [stable, beta]
     runs-on: ${{ matrix.os }}

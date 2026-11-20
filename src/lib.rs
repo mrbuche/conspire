@@ -56,7 +56,7 @@ pub mod geometry;
 
 #[cfg(feature = "gpu")]
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod gpu;
+pub mod gpu;
 
 #[cfg(feature = "io")]
 pub mod io;

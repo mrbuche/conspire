@@ -8,14 +8,15 @@ mod kernels;
 #[cfg(test)]
 mod test;
 
-#[allow(unused_imports)]
-pub(crate) use cuda::{Argument, Buffer, Device, Function, Module};
+#[cfg(feature = "elements")]
+pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout};
+pub use cuda::{Argument, Buffer, Device, Function, Module};
+pub use kernels::Application;
 
 use core::{
     error::Error,
     fmt::{self, Debug, Display, Formatter},
 };
-use kernels::Application;
 
 /// Possible errors encountered on a device.
 pub enum GpuError {
