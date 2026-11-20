@@ -156,15 +156,6 @@ impl<const D: usize, I> From<TensorRank1Vec<D, I>> for Vector {
     }
 }
 
-impl<const D: usize, I, J> From<TensorRank2<D, I, J>> for Vector {
-    fn from(tensor_rank_2: TensorRank2<D, I, J>) -> Self {
-        let length = D * D;
-        let capacity = length;
-        let pointer = tensor_rank_2.as_ptr() as *mut Scalar;
-        unsafe { Self(Vec::from_raw_parts(pointer, length, capacity)) }
-    }
-}
-
 impl FromIterator<Scalar> for Vector {
     fn from_iter<Ii: IntoIterator<Item = Scalar>>(into_iterator: Ii) -> Self {
         Self(Vec::from_iter(into_iterator))
