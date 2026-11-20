@@ -1,6 +1,6 @@
-use super::{DevicePointer, Result, context::Context};
+use super::{Argument, DevicePointer, Result, context::Context};
 use alloc::sync::Arc;
-use core::{marker::PhantomData, mem::size_of_val};
+use core::{ffi::c_void, marker::PhantomData, mem::size_of_val, ptr::from_ref};
 
 /// Values on the device.
 pub struct Buffer<T> {
@@ -8,6 +8,14 @@ pub struct Buffer<T> {
     pub(super) pointer: DevicePointer,
     pub(super) len: usize,
     pub(super) element: PhantomData<T>,
+}
+
+// SAFETY: a kernel takes a buffer as the address on the device, which is the value that is
+// pointed at, and which the buffer, that is borrowed, keeps alive.
+unsafe impl<T> Argument for Buffer<T> {
+    fn pointer(&self) -> *mut c_void {
+        from_ref(&self.pointer).cast_mut().cast()
+    }
 }
 
 impl<T: Copy> Buffer<T> {

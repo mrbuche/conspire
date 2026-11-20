@@ -14,6 +14,8 @@ for application in $applications; do
     cargo +nightly build --release --example kernels_"$application" --target nvptx64-nvidia-cuda \
         --no-default-features --features kernels
     built=target/nvptx64-nvidia-cuda/release/examples/kernels_$application.ptx
+    sources=target/nvptx64-nvidia-cuda/release/examples/kernels_$application.d
+    listing=src/gpu/kernels/$application.d
     echo "$application:"
     grep -o "^\.visible \.entry [A-Za-z0-9_]*" "$built" | sed 's/^\.visible \.entry /  /'
     if [ -n "$check" ]; then
@@ -26,6 +28,7 @@ for application in $applications; do
     else
         mkdir -p "$(dirname "$output")"
         cp "$built" "$output"
+        cp "$sources" "$listing"
         echo "wrote $output"
     fi
 done

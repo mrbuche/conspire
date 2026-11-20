@@ -18,6 +18,23 @@ pub(super) struct Api {
     pub(super) free: unsafe extern "C" fn(DevicePointer) -> c_int,
     pub(super) upload: unsafe extern "C" fn(DevicePointer, *const c_void, usize) -> c_int,
     pub(super) download: unsafe extern "C" fn(*mut c_void, DevicePointer, usize) -> c_int,
+    pub(super) module_load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> c_int,
+    pub(super) module_unload: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) module_function:
+        unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> c_int,
+    pub(super) launch: unsafe extern "C" fn(
+        *mut c_void,
+        c_uint,
+        c_uint,
+        c_uint,
+        c_uint,
+        c_uint,
+        c_uint,
+        c_uint,
+        *mut c_void,
+        *mut *mut c_void,
+        *mut *mut c_void,
+    ) -> c_int,
     error_string: unsafe extern "C" fn(c_int, *mut *const c_char) -> c_int,
 }
 
@@ -44,6 +61,10 @@ impl Api {
             free: driver.function("cuMemFree_v2")?,
             upload: driver.function("cuMemcpyHtoD_v2")?,
             download: driver.function("cuMemcpyDtoH_v2")?,
+            module_load: driver.function("cuModuleLoadData")?,
+            module_unload: driver.function("cuModuleUnload")?,
+            module_function: driver.function("cuModuleGetFunction")?,
+            launch: driver.function("cuLaunchKernel")?,
             error_string: driver.function("cuGetErrorString")?,
             _driver: driver,
         })

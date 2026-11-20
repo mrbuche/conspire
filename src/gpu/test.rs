@@ -1,4 +1,7 @@
-use super::{Device, GpuError};
+use super::{
+    Device, GpuError, Module,
+    kernels::{self, Application},
+};
 use std::{env::var_os, thread::scope};
 
 fn skip<T>(why: &str) -> Option<T> {
@@ -14,6 +17,16 @@ fn device() -> Option<Device> {
     match Device::new(0) {
         Ok(device) => Some(device),
         Err(GpuError::Unavailable(message)) => skip(&format!("there is no device: {message}")),
+        Err(error) => panic!("{error}"),
+    }
+}
+
+fn kernels_on(device: &Device, fused: bool) -> Option<Module> {
+    match kernels::ptx(Application::Elements, fused) {
+        Ok(ptx) => Some(device.module_from_ptx(&ptx).unwrap()),
+        Err(GpuError::KernelsNotBuilt(application)) => {
+            skip(&format!("the kernels of the {application} are not built"))
+        }
         Err(error) => panic!("{error}"),
     }
 }
@@ -47,6 +60,55 @@ fn a_buffer_outlives_its_device() {
     let mut found = vec![0.0; 3];
     buffer.download(&mut found).unwrap();
     assert_eq!(found, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn the_squares_kernel_gives_the_squares_with_and_without_fused_operations() {
+    let Some(device) = device() else { return };
+    for fused in [true, false] {
+        let Some(module) = kernels_on(&device, fused) else {
+            return;
+        };
+        let squares = module.function("squares").unwrap();
+        let count = 5000_u32;
+        let output = device.buffer::<f64>(count as usize).unwrap();
+        device
+            .launch(&squares, count as usize, 128, &[&output, &count])
+            .unwrap();
+        device.synchronize().unwrap();
+        let mut values = vec![0.0; count as usize];
+        output.download(&mut values).unwrap();
+        values.iter().enumerate().for_each(|(index, &value)| {
+            assert_eq!(value, ((index + 1) * (index + 1)) as f64, "{index}");
+        });
+    }
+}
+
+#[test]
+fn a_kernel_that_is_not_there_is_an_error() {
+    let Some(device) = device() else { return };
+    let Some(module) = kernels_on(&device, true) else {
+        return;
+    };
+    assert!(matches!(
+        module.function("not_a_kernel"),
+        Err(GpuError::Cuda(_))
+    ));
+}
+
+#[test]
+fn a_buffer_and_a_kernel_outlive_their_device() {
+    let Some(device) = device() else { return };
+    let Some(module) = kernels_on(&device, true) else {
+        return;
+    };
+    let squares = module.function("squares").unwrap();
+    let output = device.buffer::<f64>(10).unwrap();
+    drop(module);
+    drop(device);
+    let mut values = vec![-1.0; 10];
+    output.download(&mut values).unwrap();
+    drop(squares);
 }
 
 #[test]

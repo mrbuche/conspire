@@ -1,7 +1,9 @@
-use super::{GpuError, Result, api::Api, buffer::Buffer, context::Context};
-use alloc::sync::Arc;
+use super::{
+    Argument, Function, GpuError, Module, Result, api::Api, buffer::Buffer, context::Context,
+};
+use alloc::{ffi::CString, sync::Arc};
 use core::{
-    ffi::{CStr, c_char, c_int},
+    ffi::{CStr, c_char, c_int, c_uint},
     marker::PhantomData,
     mem::size_of,
     ptr::null_mut,
@@ -105,5 +107,57 @@ impl Device {
         let buffer = self.buffer(values.len())?;
         buffer.upload(values)?;
         Ok(buffer)
+    }
+    /// Loads kernels that are PTX, such as those that Rust code is built to, which the driver
+    /// compiles for this device when they are loaded.
+    pub fn module_from_ptx(&self, ptx: &str) -> Result<Module> {
+        self.context.bind()?;
+        let image =
+            CString::new(ptx).map_err(|_| GpuError::Cuda("the PTX has a nul in it".to_string()))?;
+        let mut handle = null_mut();
+        self.context.api.check(
+            // SAFETY: the image is a C string of PTX, which the driver compiles and loads.
+            unsafe { (self.context.api.module_load)(&mut handle, image.as_ptr().cast()) },
+            "cuModuleLoadData",
+        )?;
+        Ok(Module::new(self.context.clone(), handle))
+    }
+    /// Launches `threads` threads of a kernel in blocks of `block`, and returns without waiting.
+    pub fn launch(
+        &self,
+        function: &Function,
+        threads: usize,
+        block: usize,
+        arguments: &[&dyn Argument],
+    ) -> Result<()> {
+        if threads == 0 {
+            return Ok(());
+        }
+        self.context.bind()?;
+        let mut pointers = arguments
+            .iter()
+            .map(|argument| argument.pointer())
+            .collect::<Vec<_>>();
+        let grid = threads.div_ceil(block) as c_uint;
+        self.context.api.check(
+            // SAFETY: the pointers point at values that live through the call, and the kernel
+            // takes the arguments that it is given.
+            unsafe {
+                (self.context.api.launch)(
+                    function.handle,
+                    grid,
+                    1,
+                    1,
+                    block as c_uint,
+                    1,
+                    1,
+                    0,
+                    null_mut(),
+                    pointers.as_mut_ptr(),
+                    null_mut(),
+                )
+            },
+            "cuLaunchKernel",
+        )
     }
 }
