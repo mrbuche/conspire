@@ -3,7 +3,11 @@ repos:
     rev: v6.0.0
     hooks:
     -   id: check-yaml
+    -   id: check-toml
     -   id: check-added-large-files
+    -   id: check-merge-conflict
+    -   id: check-shebang-scripts-are-executable
+        exclude: '\.rs$'
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
 -   repo: https://github.com/backplane/pre-commit-rust-hooks
@@ -81,4 +85,34 @@ repos:
     -   id: clippy
         args: ['--features', 'gpu', '--tests', '--', '-D',  'warnings']
         name: cargo clippy gpu tests
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'math', '--', '-D',  'warnings']
+        name: cargo clippy math without std
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'math', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy math without std tests
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'mechanics', '--', '-D',  'warnings']
+        name: cargo clippy mechanics without std
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'mechanics', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy mechanics without std tests
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'constitutive', '--', '-D',  'warnings']
+        name: cargo clippy constitutive without std
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'constitutive', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy constitutive without std tests
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'elements', '--', '-D',  'warnings']
+        name: cargo clippy elements without std
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'elements', '--tests', '--', '-D',  'warnings']
+        name: cargo clippy elements without std tests
+    -   id: clippy
+        args: ['--no-default-features', '--features', 'elements', '--target', 'nvptx64-nvidia-cuda', '--', '-D',  'warnings']
+        name: cargo clippy elements device
+    -   id: clippy
+        args: ['--release', '--example', 'kernels_elements', '--target', 'nvptx64-nvidia-cuda', '--no-default-features', '--features', 'kernels', '--', '-D',  'warnings']
+        name: cargo clippy kernels device
     -   id: fmt
