@@ -18,13 +18,16 @@ pub struct TensorList<T, const N: usize>([T; N])
 where
     T: Tensor;
 
-impl<T, const N: usize> Erase for TensorList<T, N>
+// SAFETY: the list is transparent over its array, and the entries have the layout of their erasure.
+unsafe impl<T, const N: usize> Erase for TensorList<T, N>
 where
     T: Erase + Tensor,
     <T as Erase>::Erased: Tensor,
 {
     type Erased = TensorList<<T as Erase>::Erased, N>;
     fn erase(&self) -> &Self::Erased {
+        // SAFETY: the list is transparent over an array of entries, which `T: Erase` says have
+        // the layout of the entries of the erased list.
         unsafe { &*(self as *const Self as *const Self::Erased) }
     }
 }

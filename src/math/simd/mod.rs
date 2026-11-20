@@ -4,6 +4,9 @@ mod avx;
 #[cfg(feature = "nightly")]
 mod portable;
 
+#[cfg(all(test, any(not(feature = "nightly"), target_arch = "x86_64")))]
+mod test;
+
 use crate::math::Scalar;
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -116,8 +119,8 @@ pub(crate) fn axpy(target: &mut [Scalar], column: &[Scalar], w: Scalar) {
     if isa() == Isa::Avx2 {
         // SAFETY: `Isa::Avx2` is produced only after `is_x86_feature_detected!`
         // confirms avx2 + fma, so the backend kernel's target-feature
-        // precondition holds. It reads `column.len()` elements and writes the
-        // same count into `target`.
+        // precondition holds. It touches no more elements than the shorter
+        // of the two slices has, as the scalar version does.
         return unsafe { backend::axpy(target, column, w) };
     }
     #[cfg(all(feature = "nightly", not(target_arch = "x86_64")))]
@@ -141,8 +144,8 @@ pub(crate) fn rank_one_quad(
     #[cfg(target_arch = "x86_64")]
     if isa() == Isa::Avx2 {
         // SAFETY: `Isa::Avx2` implies avx2 + fma were detected, satisfying the
-        // backend's target-feature precondition. Each `temp_*` is at least
-        // `column.len()` long (caller invariant), which is all the kernel touches.
+        // backend's target-feature precondition. The kernel touches no more
+        // elements than the shortest of the slices has, as the scalar version does.
         return unsafe { backend::rank_one_quad(temp_0, temp_1, temp_2, temp_3, column, u) };
     }
     #[cfg(all(feature = "nightly", not(target_arch = "x86_64")))]
@@ -169,8 +172,8 @@ pub(crate) fn rank_two_quad(
     #[cfg(target_arch = "x86_64")]
     if isa() == Isa::Avx2 {
         // SAFETY: `Isa::Avx2` implies avx2 + fma were detected, satisfying the
-        // backend's target-feature precondition. Each `temp_*` is at least
-        // `column.len()` long and `other` at least `column.len()` (caller invariant).
+        // backend's target-feature precondition. The kernel touches no more
+        // elements than the shortest of the slices has, as the scalar version does.
         return unsafe {
             backend::rank_two_quad(temp_0, temp_1, temp_2, temp_3, column, other, u, w)
         };

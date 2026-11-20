@@ -78,6 +78,8 @@ pub(super) fn transpose<const D: usize, T: Copy>(c_order: Vec<T>, nel: [usize; D
     }
     let mut out: Vec<T> = Vec::with_capacity(total);
     if total > 0 {
+        // SAFETY: `out` has room for `total` entries, and the strides give each of the `total`
+        // positions of the grid its own offset below that, so all of them are written, once.
         unsafe {
             transpose_block(&c_order, out.as_mut_ptr(), 0, 0, nel, &c_stride, &f_stride);
             out.set_len(total);
@@ -86,6 +88,9 @@ pub(super) fn transpose<const D: usize, T: Copy>(c_order: Vec<T>, nel: [usize; D
     out
 }
 
+/// # Safety
+///
+/// `dst` must be valid for writes at the offset `f_stride` gives each position of the block.
 unsafe fn transpose_block<const D: usize, T: Copy>(
     src: &[T],
     dst: *mut T,
@@ -105,6 +110,8 @@ unsafe fn transpose_block<const D: usize, T: Copy>(
         lo[axis] = half;
         let mut hi = len;
         hi[axis] = len[axis] - half;
+        // SAFETY: the halves are the positions of the block, split along `axis`, each at the
+        // offsets of its own corner, so they write where the block does.
         unsafe {
             transpose_block(src, dst, c_off, f_off, lo, c_stride, f_stride);
             transpose_block(
@@ -123,6 +130,7 @@ unsafe fn transpose_block<const D: usize, T: Copy>(
     let mut idx = [0usize; D];
     let (mut c, mut f) = (c_off, f_off);
     for _ in 0..volume {
+        // SAFETY: `f` is the offset of a position of the block, which the caller makes valid.
         unsafe {
             *dst.add(f) = src[c];
         }

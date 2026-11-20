@@ -126,14 +126,21 @@ pub trait ContractWith<Rhs> {
 /// Contracting tensors of different units gives a quantity whose unit is the
 /// product, which is not always one this library names. Generic code that only
 /// wants the number contracts the erased views instead.
-pub trait Erase {
+///
+/// # Safety
+///
+/// `Erased` must have the layout of `Self`: the same data, differing at most in the labels of
+/// configurations and unit, which are zero-sized. Collections of tensors view their entries
+/// through `Erased` by casting.
+pub unsafe trait Erase {
     /// The tensor with its configurations and unit discarded.
     type Erased: Tensor;
     /// Views the tensor with its configurations and unit discarded.
     fn erase(&self) -> &Self::Erased;
 }
 
-impl Erase for TensorRank0 {
+// SAFETY: the type is its own erasure.
+unsafe impl Erase for TensorRank0 {
     type Erased = Self;
     fn erase(&self) -> &Self {
         self

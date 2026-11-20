@@ -152,15 +152,9 @@ impl<const D: usize, I> From<TensorRank1Vec<D, I>> for Vector {
         let capacity = tensor_rank_1_vec.capacity() * D;
         let pointer = tensor_rank_1_vec.as_ptr() as *mut Scalar;
         forget(tensor_rank_1_vec);
-        unsafe { Self(Vec::from_raw_parts(pointer, length, capacity)) }
-    }
-}
-
-impl<const D: usize, I, J> From<TensorRank2<D, I, J>> for Vector {
-    fn from(tensor_rank_2: TensorRank2<D, I, J>) -> Self {
-        let length = D * D;
-        let capacity = length;
-        let pointer = tensor_rank_2.as_ptr() as *mut Scalar;
+        // SAFETY: the entries are transparent over `D` scalars, so the buffer, which the vector
+        // gave up with `forget`, is `capacity` scalars of the same allocation and alignment, of
+        // which the first `length` are initialized.
         unsafe { Self(Vec::from_raw_parts(pointer, length, capacity)) }
     }
 }
@@ -381,7 +375,8 @@ impl DivAssign<&Scalar> for Vector {
     }
 }
 
-impl Erase for Vector {
+// SAFETY: the type is its own erasure.
+unsafe impl Erase for Vector {
     type Erased = Self;
     fn erase(&self) -> &Self {
         self

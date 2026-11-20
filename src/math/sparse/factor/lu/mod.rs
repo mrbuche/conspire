@@ -505,17 +505,19 @@ impl CscLu {
 /// tile of CHUNK target columns, as a dense unit-lower triangular solve
 /// vectorized across the targets.
 fn trisolve(tile: &mut [Scalar], panel: &[Scalar], m: usize, consumed: usize, width: usize) {
+    assert!(consumed == 0 || (consumed <= width && width * CHUNK <= tile.len()));
     #[cfg(target_arch = "x86_64")]
     if simd::isa() == simd::Isa::Avx2 {
         // SAFETY: `Isa::Avx2` is produced only after `is_x86_feature_detected!`
         // confirms avx2 + fma, so the backend's target-feature precondition
-        // holds; it stays within `tile` / `panel` bounds for the given `m`,
-        // `consumed`, `width`.
+        // holds; the assertion is the bound of `tile` that it stays within, and
+        // it indexes `panel`, so that is checked.
         return unsafe { trisolve_backend(tile, panel, m, consumed, width) };
     }
     #[cfg(all(feature = "nightly", not(target_arch = "x86_64")))]
     // SAFETY: on a non-x86_64 target `portable::trisolve` enables no features
-    // beyond the platform baseline.
+    // beyond the platform baseline, and the assertion is the bound of `tile`
+    // that it stays within.
     return unsafe { portable::trisolve(tile, panel, m, consumed, width) };
     #[cfg(not(all(feature = "nightly", not(target_arch = "x86_64"))))]
     trisolve_scalar(tile, panel, m, consumed, width);

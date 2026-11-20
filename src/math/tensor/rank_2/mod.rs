@@ -651,7 +651,8 @@ impl<const D: usize, I, J, U> Rank2 for TensorRank2<D, I, J, U> {
     }
 }
 
-impl<const D: usize, I, J, U> Erase for TensorRank2<D, I, J, U> {
+// SAFETY: only the labels differ from the erasure, and they are zero-sized.
+unsafe impl<const D: usize, I, J, U> Erase for TensorRank2<D, I, J, U> {
     type Erased = TensorRank2<D, Reference, Reference, Dimensionless>;
     fn erase(&self) -> &Self::Erased {
         self.canonical()
@@ -868,6 +869,7 @@ impl<J, U> From<TensorRank2<3, Intermediate, J, U>> for TensorRank2<3, Current, 
 
 impl<J, U> From<&TensorRank2<3, Intermediate, J, U>> for &TensorRank2<3, Current, J, U> {
     fn from(tensor_rank_2: &TensorRank2<3, Intermediate, J, U>) -> Self {
+        // SAFETY: only the labels differ, and they are zero-sized, so the layouts are the same.
         unsafe {
             transmute::<&TensorRank2<3, Intermediate, J, U>, &TensorRank2<3, Current, J, U>>(
                 tensor_rank_2,

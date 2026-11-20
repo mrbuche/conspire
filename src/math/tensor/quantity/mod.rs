@@ -554,7 +554,8 @@ impl<'a, U> Sum<&'a Quantity<U>> for Quantity<U> {
     }
 }
 
-impl<U> Erase for Quantity<U> {
+// SAFETY: the erasure is the number that the quantity is transparent over.
+unsafe impl<U> Erase for Quantity<U> {
     type Erased = TensorRank0;
     fn erase(&self) -> &Self::Erased {
         &self.0

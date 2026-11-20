@@ -30,6 +30,7 @@ where
     ) -> Vec<Quantity<Length>>,
 {
     let surface = (D == 3).then(|| {
+        // SAFETY: `D == 3`, which this is only run for, so it is the same type.
         let coordinates: &Coordinates<3> =
             unsafe { &*(&*coordinates as *const Coordinates<D>).cast() };
         Surface::new(connectivity, coordinates)
@@ -46,6 +47,8 @@ where
         flip_edges(connectivity, coordinates);
         tangential_smooth(connectivity, coordinates);
         if let Some(surface) = &surface {
+            // SAFETY: there is a surface only if `D == 3`, so it is the same type, and `surface`
+            // holds a copy of the coordinates, not a borrow of them.
             let coordinates: &mut Coordinates<3> =
                 unsafe { &mut *(coordinates as *mut Coordinates<D>).cast() };
             surface.reproject(coordinates);

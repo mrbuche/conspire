@@ -18,6 +18,7 @@ use core::{
 
 /// A fixed-size nested collection of different tensors.
 #[derive(Clone, Debug, PartialEq)]
+#[repr(C)]
 pub struct TensorTuple<T1, T2>(pub T1, pub T2)
 where
     T1: Tensor,
@@ -97,7 +98,8 @@ where
     }
 }
 
-impl<T1, T2> Erase for TensorTuple<T1, T2>
+// SAFETY: the tuple is `repr(C)`, so its fields are laid out in order, and they have the layout of their erasures.
+unsafe impl<T1, T2> Erase for TensorTuple<T1, T2>
 where
     T1: Erase + Tensor,
     T2: Erase + Tensor,
@@ -106,6 +108,8 @@ where
 {
     type Erased = TensorTuple<<T1 as Erase>::Erased, <T2 as Erase>::Erased>;
     fn erase(&self) -> &Self::Erased {
+        // SAFETY: the tuple is `repr(C)` over two fields that `T1: Erase` and `T2: Erase` say have
+        // the layout of the fields of the erased tuple.
         unsafe { &*(self as *const Self as *const Self::Erased) }
     }
 }

@@ -14,6 +14,9 @@ pub(super) unsafe fn trisolve(
     consumed: usize,
     width: usize,
 ) {
+    // SAFETY: the rows that are touched are below `width`, as `consumed <= width`, and `tile`
+    // holds `width` rows of `CHUNK` entries, which the caller checks, so each access of four
+    // entries within a row is in bounds. The reads of `panel` are indexed, so they are checked.
     unsafe {
         let mut c = 0;
         while c + 4 <= consumed {

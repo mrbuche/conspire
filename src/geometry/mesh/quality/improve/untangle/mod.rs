@@ -83,10 +83,13 @@ fn project_to_surface<const D: usize>(
     elements: &[&[usize]],
     point: &Coordinate<D>,
 ) -> Coordinate<D> {
+    // SAFETY: this is only called for a point of a mesh with `D == 3`, as the nodes that it is
+    // for are the boundary, which is only filled when the surface is used, which needs `D == 3`.
     let query: &Coordinate<3> = unsafe { &*(point as *const Coordinate<D>).cast() };
     let projected = surface
         .bvh()
         .closest_point(query, surface.mesh().coordinates(), elements)
         .map_or_else(|| query.clone(), |(projected, _)| projected);
+    // SAFETY: `D == 3`, as above, so this is a `Coordinate<3>` that is copied as the same type.
     unsafe { transmute_copy(&projected) }
 }
