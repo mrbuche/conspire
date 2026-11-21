@@ -4,7 +4,7 @@ mod test;
 use super::{
     CAP, Gradient, MARGIN, chunk_size,
     element::{Bound, Frame, Part, bounded},
-    kind::KINDS,
+    kind::kind_of,
     surface::{Plane, Surface},
 };
 use crate::{
@@ -104,7 +104,7 @@ impl Energy<'_> {
                             .map(|(hex, &kind)| {
                                 let nodes =
                                     hex.iter().map(|&node| coordinates[node].clone()).collect();
-                                let kind = &KINDS[kind as usize];
+                                let kind = &kind_of(kind);
                                 kind.points
                                     .iter()
                                     .map(|point| {
@@ -172,7 +172,7 @@ impl Energy<'_> {
         }
         let nodes = hex.iter().map(|&node| coordinates[node].clone()).collect();
         let scale = self.scales[at];
-        let kind = &KINDS[self.kinds[at] as usize];
+        let kind = &kind_of(self.kinds[at]);
         if derivative {
             bounded(kind, self.theta, scale, &nodes, true)
         } else {
@@ -362,7 +362,7 @@ pub(super) fn scales(
                         .iter()
                         .zip(kinds)
                         .map(|(hex, &kind)| {
-                            let edges = KINDS[kind as usize].edges;
+                            let edges = kind_of(kind).edges;
                             edges
                                 .iter()
                                 .map(|&[a, b]| (&coordinates[hex[a]] - &coordinates[hex[b]]).norm())
