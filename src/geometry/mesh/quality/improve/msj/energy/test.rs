@@ -1,7 +1,7 @@
 use super::super::{
     Gradient, SERIAL,
     element::bounded,
-    kind::KINDS,
+    kind::kind_of,
     test::{distorted, grid, offset, terms, typed},
 };
 use super::{Energy, Reach, displacements, scales};
@@ -225,7 +225,7 @@ fn the_decayed_bound_never_exceeds_what_the_moved_hexahedron_still_has() {
     let nodes = distorted(0.15, 2.0);
     let (sj, _, _) = {
         let (_, _, (margin, shortest)) = bounded(
-            &KINDS[0],
+            &kind_of(0),
             Quantity::new(0.0),
             Quantity::new(1.0),
             &typed(&nodes),
@@ -235,7 +235,7 @@ fn the_decayed_bound_never_exceeds_what_the_moved_hexahedron_still_has() {
     };
     assert!(sj > 0.3);
     let theta = Quantity::new(sj - 0.2);
-    let (_, _, bound) = bounded(&KINDS[0], theta, Quantity::new(1.0), &typed(&nodes), true);
+    let (_, _, bound) = bounded(&kind_of(0), theta, Quantity::new(1.0), &typed(&nodes), true);
     let base: Coordinates<3> = nodes.to_vec().into();
     let bounds = [bound];
     let hex = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -267,7 +267,7 @@ fn the_decayed_bound_never_exceeds_what_the_moved_hexahedron_still_has() {
         skipped += 1;
         let (lower, shorter) = reach.decayed(0, distance);
         let (_, _, (margin, shortest)) =
-            bounded(&KINDS[0], theta, Quantity::new(1.0), &typed(&moved), true);
+            bounded(&kind_of(0), theta, Quantity::new(1.0), &typed(&moved), true);
         assert!(margin >= lower && shortest >= shorter, "seed {seed}");
     }
     assert_eq!(skipped, 200);
