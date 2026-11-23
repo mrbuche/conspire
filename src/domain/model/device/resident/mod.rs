@@ -1,3 +1,6 @@
+mod dynamics;
+
+use self::dynamics::Dynamics;
 use crate::{
     domain::{
         ElementModelError, Model, NodalCoordinates,
@@ -10,7 +13,6 @@ use crate::{
         kernels::{block_forces, block_forces_stabilized, ptx},
     },
     math::{Tensor, TensorRank1Vec},
-    units::Length,
 };
 use core::{
     error::Error,
@@ -117,6 +119,8 @@ pub struct Resident {
     coordinates: Buffer<f64>,
     nodal_forces: Buffer<f64>,
     blocks: Vec<BlockOnDevice>,
+    fused: bool,
+    dynamics: Option<Dynamics>,
     _module: Module,
 }
 
@@ -142,6 +146,8 @@ impl Resident {
             coordinates: device.buffer(reference.len())?,
             nodal_forces: device.buffer(reference.len())?,
             blocks,
+            fused,
+            dynamics: None,
             _module: module,
             device,
         })
@@ -167,9 +173,21 @@ impl Resident {
     }
     /// Computes the nodal forces for the coordinates that the device has, and waits for them.
     pub fn run(&self) -> Result<(), GpuError> {
+        self.forget_errors()?;
+        self.launch_forces()?;
+        self.device.synchronize()
+    }
+    /// Clears the errors that the elements have found.
+    fn forget_errors(&self) -> Result<(), GpuError> {
+        self.blocks
+            .iter()
+            .try_for_each(|block| block.record.fill(u32::MAX))
+    }
+    /// Starts the computation of the nodal forces for the coordinates that the device has, and
+    /// does not wait for it, so that what follows it on the device is in order after it.
+    fn launch_forces(&self) -> Result<(), GpuError> {
         self.nodal_forces.fill(0)?;
         for block in &self.blocks {
-            block.record.fill(u32::MAX)?;
             match block.kind {
                 DeviceKind::Full => self.device.launch(
                     &block.forces_kernel,
@@ -218,7 +236,7 @@ impl Resident {
                 ],
             )?;
         }
-        self.device.synchronize()
+        Ok(())
     }
     /// What the kernels of each block need of a multiprocessor of the device, for the blocks of
     /// threads that they are launched in: the kernel of the forces of the elements, and then the
@@ -284,9 +302,9 @@ impl Resident {
     }
 }
 
-fn flatten<I>(coordinates: &TensorRank1Vec<3, I, Length>) -> Vec<f64> {
-    coordinates
+fn flatten<I, U>(components: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
+    components
         .iter()
-        .flat_map(|coordinate| coordinate.iter().map(|component| component.value()))
+        .flat_map(|node| node.iter().map(|component| component.value()))
         .collect()
 }

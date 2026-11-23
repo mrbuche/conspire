@@ -144,3 +144,61 @@ fn the_second_pass_is_additions_only_with_no_call_no_trap_and_no_local_memory() 
     }
     assert!(gather.contains("add.rn.f64"));
 }
+
+fn kernel<'a>(ptx: &'a str, name: &str) -> &'a str {
+    let start = ptx
+        .find(&format!(".visible .entry {name}("))
+        .expect("the kernel is there");
+    let end = ptx[start..].find("\n}\n").expect("the kernel ends");
+    &ptx[start..start + end]
+}
+
+#[test]
+fn the_kernels_of_the_steps_are_embedded_under_their_names() {
+    match ptx(Application::Dynamics, false) {
+        Ok(ptx) => {
+            for name in ["kick_drift", "accelerate"] {
+                assert!(ptx.contains(&format!(".visible .entry {name}(")), "{name}");
+            }
+        }
+        Err(GpuError::KernelsNotBuilt(application)) => {
+            eprintln!("skipped: the kernels of the {application} are not built");
+        }
+        Err(error) => panic!("{error}"),
+    }
+}
+
+#[test]
+fn the_kernels_of_the_steps_have_no_call_no_trap_and_no_local_memory() {
+    let Ok(ptx) = ptx(Application::Dynamics, false) else {
+        return eprintln!("skipped: the kernels of the steps are not built");
+    };
+    for name in ["kick_drift", "accelerate"] {
+        for absent in ["call", "trap;", ".local", "fma."] {
+            assert!(!kernel(&ptx, name).contains(absent), "{absent} in {name}");
+        }
+    }
+}
+
+#[test]
+fn the_first_half_of_a_step_is_the_operations_of_the_integrator_each_rounded() {
+    let Ok(ptx) = ptx(Application::Dynamics, false) else {
+        return eprintln!("skipped: the kernels of the steps are not built");
+    };
+    let kick_drift = kernel(&ptx, "kick_drift");
+    assert_eq!(kick_drift.matches("mul.rn.f64").count(), 3);
+    assert_eq!(kick_drift.matches("add.rn.f64").count(), 2);
+    assert!(!kick_drift.contains("div."));
+}
+
+#[test]
+fn the_accelerations_are_a_division_and_the_second_half_of_a_step() {
+    let Ok(ptx) = ptx(Application::Dynamics, false) else {
+        return eprintln!("skipped: the kernels of the steps are not built");
+    };
+    let accelerate = kernel(&ptx, "accelerate");
+    assert_eq!(accelerate.matches("div.rn.f64").count(), 1);
+    assert_eq!(accelerate.matches("mul.rn.f64").count(), 2);
+    assert_eq!(accelerate.matches("add.rn.f64").count(), 1);
+    assert!(accelerate.contains("neg.f64"));
+}

@@ -113,8 +113,10 @@ jobs:
         run: cargo clippy --no-default-features --features elements --target nvptx64-nvidia-cuda -- -D warnings
       - name: Kernels
         run: sh kernels/build.sh
-      - name: Clippy kernels
+      - name: Clippy kernels elements
         run: cargo clippy --release --example kernels_elements --target nvptx64-nvidia-cuda --no-default-features --features kernels -- -D warnings
+      - name: Clippy kernels dynamics
+        run: cargo clippy --release --example kernels_dynamics --target nvptx64-nvidia-cuda --no-default-features --features kernels -- -D warnings
       - name: Test kernels
         run: cargo test --features elements,gpu --lib gpu::kernels
   Autodiff:

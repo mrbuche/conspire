@@ -140,6 +140,21 @@ fn the_errors_of_a_model_on_a_device_say_what_and_where() {
 }
 
 #[test]
+fn the_errors_of_a_run_of_dynamics_say_what_and_where() {
+    let message = GpuError::Element {
+        block: 1,
+        item: 4,
+        point: 3,
+    }
+    .to_string();
+    for part in ["point 3", "element 4", "block 1", "run of dynamics"] {
+        assert!(message.contains(part), "{message}");
+    }
+    let message = GpuError::Invalid("a run is started".to_string()).to_string();
+    assert!(message.contains("a run is started"), "{message}");
+}
+
+#[test]
 fn a_device_is_used_from_many_threads() {
     let Some(device) = device() else { return };
     scope(|scope| {

@@ -8,7 +8,7 @@ use conspire::{
         solid::NodalForcesSolid,
     },
     gpu::{DeviceBlocks, GpuError, Resident},
-    math::{Quantity, Tensor, assert::AssertionError},
+    math::{Quantity, Tensor, TensorRank1Vec, assert::AssertionError},
     units::{Density, Stress},
 };
 use core::{array::from_fn, fmt::Display, ops::Range};
@@ -132,10 +132,18 @@ pub fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Re
 }
 
 pub fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
-    forces
+    flat(forces)
+}
+
+pub fn flat<I, U>(nodes: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
+    nodes
         .iter()
-        .flat_map(|force| force.iter().map(|component| component.value()))
+        .flat_map(|node| node.iter().map(|component| component.value()))
         .collect()
+}
+
+pub fn bits(values: &[f64]) -> Vec<u64> {
+    values.iter().map(|value| value.to_bits()).collect()
 }
 
 pub fn agree(found: &[f64], expected: &[f64], tolerance: f64) -> Result<(), AssertionError> {

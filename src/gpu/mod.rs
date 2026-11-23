@@ -4,6 +4,7 @@
 //! machine without it gets [`GpuError::Unavailable`] instead of a program that does not start.
 
 mod cuda;
+mod dynamics;
 pub(crate) mod kernels;
 #[cfg(test)]
 mod test;
@@ -13,6 +14,7 @@ pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, De
 #[cfg(feature = "fem")]
 pub use crate::domain::{DeviceError, Resident};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
+pub use dynamics::held_flags;
 pub use kernels::Application;
 
 use core::{
@@ -38,6 +40,18 @@ pub enum GpuError {
         /// The integration point of the element.
         point: usize,
     },
+    /// An element of a block has an error in a run of dynamics on the device, whose steps are not
+    /// stopped when it does, so the state after them is of no use.
+    Element {
+        /// The block, in the order of the model.
+        block: usize,
+        /// The element of the block.
+        item: usize,
+        /// The integration point of the element.
+        point: usize,
+    },
+    /// A run of dynamics is not one that the model can take.
+    Invalid(String),
     /// The driver reported an error.
     Cuda(String),
 }
@@ -58,6 +72,11 @@ impl Display for GpuError {
                 f,
                 "The device found an error at integration point {point} of element {item} of block {block}, and the host does not."
             ),
+            Self::Element { block, item, point } => write!(
+                f,
+                "Integration point {point} of element {item} of block {block} has an error in the run of dynamics on the device."
+            ),
+            Self::Invalid(message) => write!(f, "The run of dynamics is not valid: {message}."),
             Self::Cuda(message) => write!(f, "CUDA: {message}"),
         }
     }
