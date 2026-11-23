@@ -1,12 +1,8 @@
-//! A CUDA device.
-//!
-//! The driver is opened when a device is made, not linked, so that a build needs no CUDA, and a
-//! machine without it gets [`GpuError::Unavailable`] instead of a program that does not start.
+#[cfg(test)]
+mod test;
 
 mod cuda;
 mod kernels;
-#[cfg(test)]
-mod test;
 
 #[allow(unused_imports)]
 pub(crate) use cuda::{Argument, Buffer, Device, Function, Module};

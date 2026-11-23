@@ -1,5 +1,3 @@
-//! The PTX of the kernels, as it is given to the driver.
-
 #[cfg(test)]
 mod test;
 
