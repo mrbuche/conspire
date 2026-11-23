@@ -1,3 +1,5 @@
+src/gpu/kernels/*.d
+src/gpu/kernels/*.ptx
 target/
 
 .claude/

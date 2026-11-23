@@ -5,6 +5,10 @@
     feature(core_float_math, prelude_import),
     allow(internal_features)
 )]
+#![cfg_attr(
+    all(not(feature = "std"), target_arch = "nvptx64"),
+    feature(stdarch_nvptx)
+)]
 #![cfg_attr(feature = "nightly", feature(portable_simd))]
 #![warn(
     clippy::alloc_instead_of_core,
@@ -49,6 +53,10 @@ pub use domain::fem;
 
 #[cfg(feature = "geometry")]
 pub mod geometry;
+
+#[cfg(feature = "gpu")]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod gpu;
 
 #[cfg(feature = "io")]
 pub mod io;

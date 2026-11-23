@@ -1,0 +1,45 @@
+#[cfg(test)]
+mod test;
+
+mod cuda;
+mod kernels;
+
+#[allow(unused_imports)]
+pub(crate) use cuda::{Argument, Buffer, Device, Function, Module};
+
+use core::{
+    error::Error,
+    fmt::{self, Debug, Display, Formatter},
+};
+use kernels::Application;
+
+/// Possible errors encountered on a device.
+pub enum GpuError {
+    /// There is no CUDA, or no such device.
+    Unavailable(String),
+    /// The kernels of an application were not built, so there is nothing to run on the device.
+    KernelsNotBuilt(Application),
+    /// The driver reported an error.
+    Cuda(String),
+}
+
+impl Display for GpuError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unavailable(message) => write!(f, "No CUDA device is available: {message}."),
+            Self::KernelsNotBuilt(application) => write!(
+                f,
+                "The kernels of the {application} are not built: run kernels/build.sh {application}."
+            ),
+            Self::Cuda(message) => write!(f, "CUDA: {message}"),
+        }
+    }
+}
+
+impl Debug for GpuError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "\n{self}\n")
+    }
+}
+
+impl Error for GpuError {}

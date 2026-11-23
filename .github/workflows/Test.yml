@@ -21,6 +21,7 @@ jobs:
           - physics
           - constitutive
           - elements
+          - gpu
           - cbm
           - fem
           - vem
