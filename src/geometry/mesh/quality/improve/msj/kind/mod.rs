@@ -11,7 +11,6 @@ use std::sync::LazyLock;
 pub(super) type Weights = [[Scalar; 8]; 3];
 
 pub(super) struct Point {
-    pub(super) sparse: [Vec<(usize, Scalar)>; 3],
     pub(super) weights: Weights,
 }
 
@@ -48,13 +47,7 @@ pub(super) static HEXAHEDRON_POINTS: LazyLock<[Point; 9]> = LazyLock::new(|| {
                     low.iter().for_each(|&node| row[node] -= 0.25)
                 })
         }
-        let sparse = from_fn(|i| {
-            (0..8)
-                .filter(|&node| weights[i][node] != 0.0)
-                .map(|node| (node, weights[i][node]))
-                .collect()
-        });
-        Point { sparse, weights }
+        Point { weights }
     })
 });
 
@@ -81,13 +74,7 @@ fn corner_points<const N: usize>(table: &[(usize, [usize; 3])]) -> [Point; N] {
             row[node] += 1.0;
             row[corner] -= 1.0;
         });
-        let sparse = from_fn(|i| {
-            (0..8)
-                .filter(|&node| weights[i][node] != 0.0)
-                .map(|node| (node, weights[i][node]))
-                .collect()
-        });
-        Point { sparse, weights }
+        Point { weights }
     })
 }
 
@@ -109,19 +96,19 @@ pub(super) const TETRAHEDRON: u8 = 1;
 pub(super) const WEDGE: u8 = 2;
 pub(super) const PYRAMID: u8 = 3;
 
-pub(super) static KINDS: LazyLock<[Kind; 4]> = LazyLock::new(|| {
-    [
-        Kind {
+pub(super) fn kind_of(kind: u8) -> Kind {
+    match kind {
+        HEXAHEDRON => Kind {
             edges: &EDGES,
             normalization: 1.0,
             points: &*HEXAHEDRON_POINTS,
         },
-        Kind {
+        TETRAHEDRON => Kind {
             edges: &[[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]],
             normalization: SQRT_2,
             points: &*TETRAHEDRON_POINTS,
         },
-        Kind {
+        WEDGE => Kind {
             edges: &[
                 [0, 1],
                 [1, 2],
@@ -136,7 +123,7 @@ pub(super) static KINDS: LazyLock<[Kind; 4]> = LazyLock::new(|| {
             normalization: 2.0 / 3.0_f64.sqrt(),
             points: &*WEDGE_POINTS,
         },
-        Kind {
+        PYRAMID => Kind {
             edges: &[
                 [0, 1],
                 [1, 2],
@@ -150,5 +137,6 @@ pub(super) static KINDS: LazyLock<[Kind; 4]> = LazyLock::new(|| {
             normalization: SQRT_2,
             points: &*PYRAMID_POINTS,
         },
-    ]
-});
+        _ => unreachable!("there are four kinds of element"),
+    }
+}

@@ -132,5 +132,5 @@ jobs:
           toolchain: nightly
       - name: Enzyme
         run: rustup component add enzyme
-      - name: Test
+      - name: Build
         run: cargo build --release --features all

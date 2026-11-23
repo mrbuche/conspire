@@ -1,11 +1,22 @@
-//! The PTX of the kernels, as it is given to the driver.
-
 #[cfg(test)]
 mod test;
 
 use super::GpuError;
 use alloc::borrow::Cow;
 use core::fmt::{self, Display, Formatter};
+
+/// The PTX of an application, which is embedded if the build script found it, as the directory of
+/// the kernels says, and is empty if it is not built, which is an error that says which to build.
+macro_rules! embed {
+    ($constant:ident, $application:literal) => {
+        #[cfg(conspire_ptx = $application)]
+        const $constant: &str = include_str!(concat!($application, ".ptx"));
+        #[cfg(not(conspire_ptx = $application))]
+        const $constant: &str = "";
+    };
+}
+
+embed!(ELEMENTS, "elements");
 
 /// A set of kernels, which is built and loaded on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,7 +34,7 @@ impl Application {
     }
     const fn built(self) -> &'static str {
         match self {
-            Self::Elements => include_str!(concat!(env!("OUT_DIR"), "/elements.ptx")),
+            Self::Elements => ELEMENTS,
         }
     }
 }
