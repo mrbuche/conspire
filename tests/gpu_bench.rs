@@ -26,18 +26,28 @@
 //! it is the time of a long run of steps from when the run is started, so the setup, which is
 //! large, is left out and reported. The forces alone are timed next to it, so that the step less
 //! the forces is what the update and the launches cost. `CELLS` for `steps` is `10,22,46,90` by
-//! default, and `HOST=0` leaves out the host, which is slow on the large grids.
+//! default, and `HOST=0` leaves out the host, which is slow on the large grids. Under the fused
+//! row it takes the state of the run, the coordinates, the velocities and the accelerations, into
+//! nodes that are kept and into nodes that are made for it, and says how many steps each is,
+//! which is how many to take between observations to keep what they cost small.
+//!
+//! The forces of the other tests are also timed as a call that puts them into nodes that are kept,
+//! next to the call that makes nodes, with the parts of both. `transfers` times the host around a
+//! transfer, before and with a device open, and the copies that a device does by size, with
+//! `TRANSFER_MB` the sizes, `1,8,64,256` by default.
 
 mod common;
 
 use common::{
     RATE, Work, agree, close, components, deformed, density, describe, disjoint, flat, imposed_by,
-    lattice, on_device, rubber, schedule_of, slab, steel, targets_at, time_at, volume_loads_on,
+    lattice, on_device, rubber, schedule_of, skip, slab, steel, targets_at, time_at,
+    volume_loads_on,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
+        NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, ConstrainAt, Displacement, LoadAt, Solid},
         element::{
@@ -50,7 +60,7 @@ use conspire::{
             mass::LumpedMassElements,
         },
     },
-    gpu::{DeviceBlocks, Resident},
+    gpu::{Device, DeviceBlocks, GpuError, Resident},
     math::{Quantity, Tensor, assert::AssertionError, integrate::VelocityVerlet},
     units::{Density, Length, Time},
 };
@@ -176,6 +186,38 @@ where
             black_box(resident.nodal_forces(model, current).map_err(describe)?);
             Ok::<(), AssertionError>(())
         })?;
+        // The call that puts the forces into nodes that are kept, which makes no nodes for them,
+        // and the parts of the two calls, each timed alone: the coordinates, which are copied up
+        // from the memory of the nodes; the kernels; the check for an error; and the forces,
+        // which are copied down into nodes that are made for them and into nodes that are kept.
+        let mut kept = NodalForcesSolid::<3>::zero(current.len());
+        let into = time_of(repetitions, || {
+            resident
+                .nodal_forces_into(model, current, &mut kept)
+                .map_err(describe)?;
+            black_box(&kept);
+            Ok::<(), AssertionError>(())
+        })?;
+        let setting = time_of(repetitions, || {
+            resident.set_coordinates(current).map_err(describe)
+        })?;
+        let checking = time_of(repetitions, || {
+            black_box(resident.first_error().map_err(describe)?);
+            Ok::<(), AssertionError>(())
+        })?;
+        let downloading = time_of(repetitions, || {
+            black_box(resident.download().map_err(describe)?);
+            Ok::<(), AssertionError>(())
+        })?;
+        let downloading_into = time_of(repetitions, || {
+            resident.download_into(&mut kept).map_err(describe)?;
+            black_box(&kept);
+            Ok::<(), AssertionError>(())
+        })?;
+        println!(
+            "{:>30}  a call of {transfers:.3} ms, or {into:.3} ms into nodes that are kept: setting the coordinates {setting:.3}, the kernels {kernels:.3}, the errors {checking:.3}, downloading {downloading:.3}, or {downloading_into:.3} into nodes that are kept",
+            "",
+        );
         println!(
             "{:>30}  {} {:>7}: kernels {kernels:9.3} ms {:7.2} ns/element | with transfers {transfers:9.3} ms | setup {setup:8.1} ms | {:5.1}x serial {:5.1}x threads",
             "",
@@ -452,16 +494,28 @@ where
     ])
 }
 
-// The cost of a step on a device, and of the setup of a run, and of the forces alone, in
-// milliseconds; or nothing if there is no device. The state after the first steps is checked
-// against `expected`, which the host made.
+// What a run on a device costs, in milliseconds.
+struct Cost {
+    // A step.
+    step: f64,
+    // The setup of a run.
+    setup: f64,
+    // The forces alone.
+    forces: f64,
+    // Taking the state of the run, into nodes that are kept and into nodes that are made.
+    observing_into: f64,
+    observing: f64,
+}
+
+// The cost of a run on a device; or nothing if there is no device. The state after the first
+// steps is checked against `expected`, which the host made.
 fn on_a_device<B, L>(
     work: &Work<B>,
     loads: &L,
     moved: bool,
     fused: bool,
     expected: (&[Vec<f64>; 3], usize),
-) -> Result<Option<(f64, f64, f64)>, AssertionError>
+) -> Result<Option<Cost>, AssertionError>
 where
     B: DeviceBlocks + ElasticElements<3> + LumpedMassElements<3>,
     L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
@@ -508,9 +562,33 @@ where
         resident.steps(STEP, steps, &schedule).map_err(describe)?;
         step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
     }
+    // Taking the state of the run, which a run that is observed does at each observation, so
+    // that how many steps it costs says how many to take between them: into nodes that are kept,
+    // which a run that observes often does, and into nodes that are made for it.
+    let nodes = work.coordinates.len();
+    let mut kept = (
+        NodalCoordinates::<3>::zero(nodes),
+        NodalVelocities::<3>::zero(nodes),
+        NodalAccelerations::<3>::zero(nodes),
+    );
+    let observing_into = time_of(repetitions(), || {
+        resident
+            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+            .map_err(describe)
+    })?;
+    let observing = time_of(repetitions(), || {
+        black_box(resident.dynamics_state().map_err(describe)?);
+        Ok::<(), AssertionError>(())
+    })?;
     resident.set_coordinates(&start).map_err(describe)?;
     let forces = time_of(repetitions(), || resident.run().map_err(describe))?;
-    Ok(Some((step, setup, forces)))
+    Ok(Some(Cost {
+        step,
+        setup,
+        forces,
+        observing_into,
+        observing,
+    }))
 }
 
 // Times a variant of the run on a grid, and prints a row for each way of running it. A device
@@ -556,10 +634,14 @@ where
         "", "ms/step", "Melement/s", "vs threads", "setup ms"
     );
     let row = |name: &str, step: f64, setup: f64| {
+        let against = if host {
+            format!("{:>9.2}x", threaded / step)
+        } else {
+            format!("{:>10}", "-")
+        };
         println!(
-            "{name:>22} {step:>11.3} {:>12.1} {:>9.2}x {setup:>10.1}",
-            rate(step),
-            threaded / step
+            "{name:>22} {step:>11.3} {:>12.1} {against} {setup:>10.1}",
+            rate(step)
         );
     };
     if host {
@@ -567,9 +649,7 @@ where
         row("threads", threaded, 0.0);
     }
     for fused in [false, true] {
-        let Some((step, setup, forces)) =
-            on_a_device(work, loads, moved, fused, (&expected, short))?
-        else {
+        let Some(cost) = on_a_device(work, loads, moved, fused, (&expected, short))? else {
             return Ok(false);
         };
         let name = if fused {
@@ -577,12 +657,96 @@ where
         } else {
             "device unfused"
         };
-        row(name, step, setup);
+        row(name, cost.step, cost.setup);
         if fused {
-            row("  forces alone", forces, 0.0);
+            row("  forces alone", cost.forces, 0.0);
+            println!(
+                "{:>22} the state of the run: {:.3} ms into nodes that are kept, which is {:.1} steps, and {:.3} ms into nodes that are made, which is {:.1} steps",
+                "",
+                cost.observing_into,
+                cost.observing_into / cost.step,
+                cost.observing,
+                cost.observing / cost.step,
+            );
         }
     }
     Ok(true)
+}
+
+// The sizes of the transfers in megabytes, from `TRANSFER_MB`.
+fn transfer_sizes() -> Vec<usize> {
+    var("TRANSFER_MB")
+        .ok()
+        .map(|sizes| {
+            sizes
+                .split(',')
+                .filter_map(|size| size.parse().ok())
+                .collect()
+        })
+        .unwrap_or_else(|| vec![1, 8, 64, 256])
+}
+
+// What the host does around a transfer of the nodes of a grid of `nodes` nodes: making nodes to
+// download into, and writing into nodes that were just made and into nodes that were written
+// before. `when` says whether a device is open, which is part of what the host does it in.
+fn on_the_host(when: &str, nodes: usize) -> Result<(), AssertionError> {
+    let making = time_of(repetitions(), || {
+        black_box(NodalCoordinates::<3>::zero(black_box(nodes)));
+        Ok::<(), AssertionError>(())
+    })?;
+    let source = vec![[0.5_f64; 3]; nodes];
+    let fresh = time_of(repetitions(), || {
+        let mut values = vec![[0.0_f64; 3]; nodes];
+        values
+            .as_flattened_mut()
+            .copy_from_slice(source.as_flattened());
+        black_box(values);
+        Ok::<(), AssertionError>(())
+    })?;
+    let mut reused = vec![[0.0_f64; 3]; nodes];
+    let again = time_of(repetitions(), || {
+        reused
+            .as_flattened_mut()
+            .copy_from_slice(source.as_flattened());
+        black_box(&reused);
+        Ok::<(), AssertionError>(())
+    })?;
+    println!(
+        "the host, {nodes} nodes, {when}: making nodes {making:.2} ms, writing nodes {fresh:.2} ms into new ones and {again:.2} ms into ones written before"
+    );
+    Ok(())
+}
+
+// Why the nodes are given to a device from where they are and taken from it into nodes that are
+// kept: with a device open, memory that has not been used before is several times slower to
+// touch, and what the copies themselves can do is that of the link.
+#[test]
+#[ignore]
+fn transfers() -> Result<(), AssertionError> {
+    let nodes = lattice(90, 90).len();
+    on_the_host("before a device is opened", nodes)?;
+    let device = match Device::new(0) {
+        Ok(device) => device,
+        Err(GpuError::Unavailable(message)) => {
+            skip::<()>(&format!("there is no device: {message}"));
+            return Ok(());
+        }
+        Err(error) => return Err(describe(error)),
+    };
+    println!("\n{}, GB/s", device.name());
+    println!("{:>6} | {:>9} {:>9}", "MB", "up", "down");
+    for megabytes in transfer_sizes() {
+        let count = megabytes * 1_000_000 / 8;
+        let rate = |milliseconds: f64| count as f64 * 8.0 / (milliseconds * 1e-3) / 1e9;
+        let buffer = device.buffer::<f64>(count).map_err(describe)?;
+        let mut host = vec![1.0_f64; count];
+        let up = time_of(repetitions(), || buffer.upload(&host).map_err(describe))?;
+        let down = time_of(repetitions(), || {
+            buffer.download(&mut host).map_err(describe)
+        })?;
+        println!("{megabytes:>6} | {:>9.2} {:>9.2}", rate(up), rate(down));
+    }
+    on_the_host("with a device open", nodes)
 }
 
 #[test]
