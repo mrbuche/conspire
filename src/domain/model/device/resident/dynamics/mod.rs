@@ -1,4 +1,4 @@
-use super::{Resident, THREADS_PER_BLOCK, flatten};
+use super::{Resident, THREADS_PER_BLOCK};
 use crate::{
     domain::{
         NodalAccelerations, NodalCoordinates, NodalVelocities, solid::mass::NodalLumpedMasses,
@@ -147,7 +147,7 @@ impl Resident {
         self.set_coordinates(coordinates)?;
         self.dynamics = Some(Dynamics {
             kernels,
-            velocities: self.device.buffer_of(&flatten(velocities))?,
+            velocities: self.device.buffer_of(velocities.as_flat())?,
             accelerations: self.device.buffer(3 * self.nodes)?,
             masses: self
                 .device
@@ -216,7 +216,11 @@ impl Resident {
         self.device.synchronize()?;
         self.errors()
     }
-    /// The coordinates, velocities and accelerations of the run of dynamics.
+    /// The coordinates, velocities and accelerations of the run of dynamics, in new nodes.
+    ///
+    /// A run that takes them many times is better to keep nodes and use
+    /// [`dynamics_state_into`](Self::dynamics_state_into): with a device open, memory that has
+    /// not been used before is several times slower to touch than memory that has.
     pub fn dynamics_state(
         &self,
     ) -> Result<
@@ -227,17 +231,32 @@ impl Resident {
         ),
         GpuError,
     > {
+        let mut state = (
+            NodalCoordinates::zero(self.nodes),
+            NodalVelocities::zero(self.nodes),
+            NodalAccelerations::zero(self.nodes),
+        );
+        self.dynamics_state_into(&mut state.0, &mut state.1, &mut state.2)?;
+        Ok(state)
+    }
+    /// The coordinates, velocities and accelerations of the run of dynamics, put into nodes that
+    /// have the nodes of the model, and whatever they held does not matter.
+    pub fn dynamics_state_into(
+        &self,
+        coordinates: &mut NodalCoordinates<3>,
+        velocities: &mut NodalVelocities<3>,
+        accelerations: &mut NodalAccelerations<3>,
+    ) -> Result<(), GpuError> {
         let dynamics = self.started()?;
-        let download = |buffer: &Buffer<f64>| -> Result<Vec<[f64; 3]>, GpuError> {
-            let mut values = vec![0.0; 3 * self.nodes];
-            buffer.download(&mut values)?;
-            Ok(values.as_chunks::<3>().0.to_vec())
-        };
-        Ok((
-            download(&self.coordinates)?.into(),
-            download(&dynamics.velocities)?.into(),
-            download(&dynamics.accelerations)?.into(),
-        ))
+        for nodes in [coordinates.len(), velocities.len(), accelerations.len()] {
+            assert_eq!(
+                nodes, self.nodes,
+                "a model is run with the nodes that it has"
+            );
+        }
+        self.coordinates.download(coordinates.as_flat_mut())?;
+        dynamics.velocities.download(velocities.as_flat_mut())?;
+        dynamics.accelerations.download(accelerations.as_flat_mut())
     }
     fn started(&self) -> Result<&Dynamics, GpuError> {
         self.dynamics

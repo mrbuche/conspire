@@ -3,8 +3,8 @@
 mod common;
 
 use common::{
-    agree, components, deformed, density, describe, disjoint, lattice, on_device, rubber, slab,
-    steel,
+    agree, bits, components, deformed, density, describe, disjoint, lattice, on_device, rubber,
+    slab, steel,
 };
 use conspire::{
     constitutive::{
@@ -28,7 +28,7 @@ use conspire::{
             },
             stabilized::linear::Hexahedron as StabilizedHexahedron,
         },
-        solid::elastic::ElasticElements,
+        solid::{NodalForcesSolid, elastic::ElasticElements},
     },
     gpu::{DeviceBlock, DeviceBlocks, DeviceError, DeviceKind},
     math::{Quantity, Tensor, assert::AssertionError},
@@ -291,6 +291,54 @@ fn a_model_of_two_blocks_has_the_forces_of_the_host_on_a_device() -> Result<(), 
         let found = resident.nodal_forces(&model, &current).map_err(describe)?;
         agree(&components(&found), &expected, 1e-10)?;
     }
+    Ok(())
+}
+
+#[test]
+fn forces_put_into_nodes_that_are_kept_are_the_forces_in_new_nodes_to_the_bit()
+-> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    let mut kept = NodalForcesSolid::<3>::zero(coordinates.len());
+    kept.as_flat_mut().fill(f64::NAN);
+    for scale in [1.0, 1.02, 0.98, 1.0] {
+        let scaled = coordinates
+            .iter()
+            .map(|&[x, y, z]| [scale * x, scale * y, scale * z])
+            .collect::<Vec<_>>();
+        let current = deformed(&scaled);
+        let new = resident.nodal_forces(&model, &current).map_err(describe)?;
+        resident
+            .nodal_forces_into(&model, &current, &mut kept)
+            .map_err(describe)?;
+        assert_eq!(bits(kept.as_flat()), bits(new.as_flat()), "scale {scale}");
+    }
+    Ok(())
+}
+
+#[test]
+fn an_element_with_an_error_is_the_same_error_into_nodes_that_are_kept()
+-> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    let mut current = deformed(&coordinates);
+    current[0] = [0.9, 0.9, 0.9].into();
+    let mut kept = NodalForcesSolid::<3>::zero(coordinates.len());
+    let Err(new) = resident.nodal_forces(&model, &current) else {
+        return Err("the device finds an error".into());
+    };
+    let Err(error) = resident.nodal_forces_into(&model, &current, &mut kept) else {
+        return Err("the device finds an error".into());
+    };
+    assert_eq!(error.to_string(), new.to_string());
     Ok(())
 }
 
