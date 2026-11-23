@@ -1,3 +1,5 @@
+#[cfg(feature = "gpu")]
+use crate::domain::boundary::DeviceForce;
 use crate::{
     domain::{
         ElementModel, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
@@ -124,6 +126,15 @@ impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> for DeadLoad {
         residual: &mut NodalForcesSolid<3>,
     ) -> Result<(), String> {
         self.subtract_from(nodal_coordinates, residual)
+    }
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        Some(vec![DeviceForce::Constant(
+            self.forces
+                .iter()
+                .flat_map(|force| force.iter().map(|component| component.value()))
+                .collect(),
+        )])
     }
 }
 
@@ -310,6 +321,16 @@ where
             .zip(self.forces(time, nodal_coordinates.len())?)
             .for_each(|(residual, force)| *residual -= force);
         Ok(())
+    }
+    #[cfg(feature = "gpu")]
+    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
+        Some(vec![DeviceForce::Weighted {
+            weights: self.weights.iter().map(|weight| weight.value()).collect(),
+            components: Box::new(|time| {
+                let density = (self.density)(time);
+                [density[0].value(), density[1].value(), density[2].value()]
+            }),
+        }])
     }
 }
 

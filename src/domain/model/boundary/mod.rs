@@ -7,6 +7,8 @@ pub use condition::{
     BoundaryConditions, Condition, Constrain, ConstrainAt, Enforcement, Fixed, Prescribed, Rows,
     Static, Timed,
 };
+#[cfg(feature = "gpu")]
+pub use loads::DeviceForce;
 pub use loads::{
     Conservative, ConservativeAt, Load, LoadAt, LoadStiffness, LoadStiffnessAt, Loads, PowerAt,
 };

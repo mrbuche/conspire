@@ -3,16 +3,20 @@
 mod common;
 
 use common::{
-    bits, components, deformed, density, describe, flat, lattice, on_device, slab, steel,
+    FIRST, LAST, bits, components, deformed, density, describe, flat, lattice, loads_on, on_device,
+    slab, static_forces, steel,
 };
 use conspire::{
     constitutive::solid::hyperelastic::SaintVenantKirchhoff,
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
         block::Block,
-        boundary::{BoundaryConditions, ConstrainAt, Displacement, Solid},
+        boundary::{BoundaryConditions, ConstrainAt, DeviceForce, Displacement, LoadAt, Solid},
         element::{linear::Hexahedron, stabilized::linear::Hexahedron as StabilizedHexahedron},
-        solid::{ElasticExplicitDynamics, Execution, Lumped, MassChoice, Unchecked},
+        solid::{
+            ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid, Unchecked,
+            elastic::ElasticElements,
+        },
     },
     gpu::{DeviceBlocks, GpuError, Resident},
     math::{
@@ -352,4 +356,89 @@ fn the_blocks_of_the_work_are_those_that_a_device_takes() {
     fn takes<B: DeviceBlocks>(_: &Model<B, 3>) {}
     takes(&steelwork().model);
     takes(&both_kinds().model);
+}
+
+fn time_of(row: usize) -> Quantity<Time> {
+    Time::seconds(row as f64 * DT)
+}
+
+#[test]
+fn the_loads_that_a_device_takes_are_the_forces_that_the_host_subtracts()
+-> Result<(), AssertionError> {
+    let work = steelwork();
+    let loads = loads_on(&work.model, &work.coordinates)?;
+    let current = deformed(&work.coordinates);
+    let forces = loads
+        .device_forces()
+        .ok_or("the loads are not ones that a device takes")?;
+    let [
+        DeviceForce::Constant(first),
+        DeviceForce::Weighted { .. },
+        DeviceForce::Constant(last),
+    ] = forces.as_slice()
+    else {
+        return Err("the loads are a constant force, a force of time, and a constant force".into());
+    };
+    assert_eq!(
+        bits(first),
+        bits(&components(&static_forces(&work.coordinates, FIRST)))
+    );
+    assert_eq!(
+        bits(last),
+        bits(&components(&static_forces(&work.coordinates, LAST)))
+    );
+    let start = work.model.nodal_forces(&current)?;
+    for row in [0, 1, 7, 100] {
+        let mut expected = start.clone();
+        loads.subtract_at(time_of(row), &current, &mut expected)?;
+        let mut found = components(&start);
+        for force in &forces {
+            match force {
+                DeviceForce::Constant(values) => found
+                    .iter_mut()
+                    .zip(values)
+                    .for_each(|(found, value)| *found -= value),
+                DeviceForce::Weighted {
+                    weights,
+                    components,
+                } => {
+                    let of_time = components(time_of(row));
+                    for (node, weight) in weights.iter().enumerate() {
+                        for (k, component) in of_time.iter().enumerate() {
+                            found[3 * node + k] -= weight * component;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(bits(&found), bits(&components(&expected)), "row {row}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_load_that_follows_the_body_is_not_one_that_a_device_takes() -> Result<(), AssertionError> {
+    struct Pressure;
+    impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> for Pressure {
+        fn subtract_at(
+            &self,
+            _: Quantity<Time>,
+            _: &NodalCoordinates<3>,
+            _: &mut NodalForcesSolid<3>,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+    }
+    let work = steelwork();
+    let loads = loads_on(&work.model, &work.coordinates)?;
+    assert!(Pressure.device_forces().is_none());
+    assert!(
+        (loads_on(&work.model, &work.coordinates)?, Pressure)
+            .device_forces()
+            .is_none()
+    );
+    assert!((Pressure, loads).device_forces().is_none());
+    let none = LoadAt::<NodalCoordinates<3>, NodalForcesSolid<3>>::device_forces(&());
+    assert!(none.ok_or("no loads are none")?.is_empty());
+    Ok(())
 }

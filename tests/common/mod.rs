@@ -3,9 +3,11 @@
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
-        Model, NodalCoordinates,
+        Model, NodalCoordinates, NodalReferenceCoordinates,
+        boundary::{LoadAt, Loads, Solid},
         element::{FiniteElement, linear::LinearElement},
         solid::NodalForcesSolid,
+        volume::NodalVolumeElements,
     },
     gpu::{DeviceBlocks, GpuError, Resident},
     math::{Quantity, Tensor, TensorRank1Vec, assert::AssertionError},
@@ -133,6 +135,36 @@ pub fn on_device<B: DeviceBlocks>(model: &Model<B, 3>, fused: bool) -> Option<Re
 
 pub fn components(forces: &NodalForcesSolid<3>) -> Vec<f64> {
     flat(forces)
+}
+
+pub fn loads_on<B: NodalVolumeElements>(
+    model: &Model<B, 3>,
+    coordinates: &[[f64; 3]],
+) -> Result<impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>, AssertionError> {
+    let reference = NodalReferenceCoordinates::from(coordinates.to_vec());
+    let forces = |scale| static_forces(coordinates, scale);
+    Ok(Loads::<Solid<3>>::new()
+        .nodal_forces(&reference, forces(FIRST))?
+        .body_force_with(&reference, &model.nodal_volumes(), |time| {
+            [
+                1.0e8 * (2.0e3 * time.value()).sin(),
+                -4.0e7 * (1.0 + 3.0e3 * time.value()),
+                2.0e7,
+            ]
+            .into()
+        })?
+        .nodal_forces(&reference, forces(LAST))?)
+}
+
+pub const FIRST: f64 = 2.0e5;
+pub const LAST: f64 = -7.0e4;
+
+pub fn static_forces(coordinates: &[[f64; 3]], scale: f64) -> NodalForcesSolid<3> {
+    coordinates
+        .iter()
+        .map(|&[x, y, z]| [scale * (1.0 + x), -scale * y, 0.5 * scale * (z - 0.3)])
+        .collect::<Vec<_>>()
+        .into()
 }
 
 pub fn flat<I, U>(nodes: &TensorRank1Vec<3, I, U>) -> Vec<f64> {
