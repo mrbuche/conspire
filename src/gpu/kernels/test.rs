@@ -145,13 +145,7 @@ fn the_second_pass_is_additions_only_with_no_call_no_trap_and_no_local_memory() 
     assert!(gather.contains("add.rn.f64"));
 }
 
-const STEPS: [&str; 5] = [
-    "kick_drift",
-    "accelerate",
-    "set_targets",
-    "subtract_constant",
-    "subtract_weighted",
-];
+const STEPS: [&str; 3] = ["kick_drift", "accelerate", "set_targets"];
 
 fn kernel<'a>(ptx: &'a str, name: &str) -> &'a str {
     let start = ptx
@@ -206,22 +200,19 @@ fn the_accelerations_are_a_division_and_the_second_half_of_a_step() {
     };
     let accelerate = kernel(&ptx, "accelerate");
     assert_eq!(accelerate.matches("div.rn.f64").count(), 1);
-    assert_eq!(accelerate.matches("mul.rn.f64").count(), 2);
     assert_eq!(accelerate.matches("add.rn.f64").count(), 1);
     assert!(accelerate.contains("neg.f64"));
 }
 
 #[test]
-fn a_load_is_subtracted_as_the_host_subtracts_it_each_operation_rounded() {
+fn the_loads_are_subtracted_in_the_accelerations_each_operation_rounded() {
     let Ok(ptx) = ptx(Application::Dynamics, false) else {
         return eprintln!("skipped: the kernels of the steps are not built");
     };
-    let constant = kernel(&ptx, "subtract_constant");
-    assert_eq!(constant.matches("sub.rn.f64").count(), 1);
-    assert!(!constant.contains("mul.rn.f64"));
-    let weighted = kernel(&ptx, "subtract_weighted");
-    assert_eq!(weighted.matches("mul.rn.f64").count(), 3);
-    assert_eq!(weighted.matches("sub.rn.f64").count(), 3);
+    let accelerate = kernel(&ptx, "accelerate");
+    assert!(accelerate.matches("mul.rn.f64").count() >= 3);
+    assert!(accelerate.matches("sub.rn.f64").count() >= 2);
+    assert!(!accelerate.contains("fma."));
 }
 
 #[test]

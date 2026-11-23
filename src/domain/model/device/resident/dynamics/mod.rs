@@ -12,8 +12,6 @@ struct Kernels {
     kick_drift: Function,
     accelerate: Function,
     set_targets: Function,
-    subtract_constant: Function,
-    subtract_weighted: Function,
 }
 
 /// The coordinates that are moved, and the rows of where they are held.
@@ -42,6 +40,11 @@ pub(super) struct Dynamics {
     held: Buffer<u32>,
     moved: Option<Moved>,
     loads: Vec<LoadOnDevice>,
+    /// What the kernel that makes the accelerations finds the loads by: whether each is a
+    /// function of the step, and the addresses of its values and of its table.
+    load_kinds: Buffer<u32>,
+    load_data: Buffer<u64>,
+    load_tables: Buffer<u64>,
     /// How many of the loads are a function of the step.
     weighted: usize,
     /// The rows that the tables hold.
@@ -89,8 +92,6 @@ impl Resident {
                     kick_drift: module.function("kick_drift")?,
                     accelerate: module.function("accelerate")?,
                     set_targets: module.function("set_targets")?,
-                    subtract_constant: module.function("subtract_constant")?,
-                    subtract_weighted: module.function("subtract_weighted")?,
                 }
             }
         };
@@ -125,6 +126,24 @@ impl Resident {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let kinds = loads
+            .iter()
+            .map(|load| u32::from(matches!(load, LoadOnDevice::Weighted { .. })))
+            .collect::<Vec<_>>();
+        let data = loads
+            .iter()
+            .map(|load| match load {
+                LoadOnDevice::Constant(forces) => forces.address(),
+                LoadOnDevice::Weighted { weights, .. } => weights.address(),
+            })
+            .collect::<Vec<_>>();
+        let tables = loads
+            .iter()
+            .map(|load| match load {
+                LoadOnDevice::Constant(_) => 0,
+                LoadOnDevice::Weighted { table, .. } => table.address(),
+            })
+            .collect::<Vec<_>>();
         self.set_coordinates(coordinates)?;
         self.dynamics = Some(Dynamics {
             kernels,
@@ -136,6 +155,9 @@ impl Resident {
             held: self.device.buffer_of(&flags)?,
             moved,
             loads,
+            load_kinds: self.device.buffer_of(&kinds)?,
+            load_data: self.device.buffer_of(&data)?,
+            load_tables: self.device.buffer_of(&tables)?,
             weighted: imposed.weighted(),
             rows,
             row: 0,
@@ -144,8 +166,7 @@ impl Resident {
         self.forget_errors()?;
         self.launch_targets(0)?;
         self.launch_forces()?;
-        self.launch_loads(0)?;
-        self.launch_accelerate(0.0, false)?;
+        self.launch_accelerate(0.0, false, 0)?;
         self.device.synchronize()?;
         self.errors()
     }
@@ -185,8 +206,7 @@ impl Resident {
                 )?;
                 self.launch_targets(row as u32)?;
                 self.launch_forces()?;
-                self.launch_loads(row as u32)?;
-                self.launch_accelerate(dt, true)?;
+                self.launch_accelerate(dt, true, row as u32)?;
             }
             if let Some(dynamics) = self.dynamics.as_mut() {
                 dynamics.row += batch;
@@ -274,31 +294,9 @@ impl Resident {
             None => Ok(()),
         }
     }
-    /// Starts the subtracting of the loads, in order, from the forces, with `row` of the tables.
-    fn launch_loads(&self, row: u32) -> Result<(), GpuError> {
-        let dynamics = self.started()?;
-        let (count, nodes) = (self.dofs()?, self.nodes as u32);
-        for load in &dynamics.loads {
-            match load {
-                LoadOnDevice::Constant(forces) => self.device.launch(
-                    &dynamics.kernels.subtract_constant,
-                    3 * self.nodes,
-                    THREADS_PER_BLOCK,
-                    &[&count, forces, &self.nodal_forces],
-                )?,
-                LoadOnDevice::Weighted { weights, table } => self.device.launch(
-                    &dynamics.kernels.subtract_weighted,
-                    self.nodes,
-                    THREADS_PER_BLOCK,
-                    &[&nodes, weights, table, &row, &self.nodal_forces],
-                )?,
-            }
-        }
-        Ok(())
-    }
-    /// Starts the accelerations that balance the forces, and the velocities another half step on
-    /// if `kick`.
-    fn launch_accelerate(&self, dt: f64, kick: bool) -> Result<(), GpuError> {
+    /// Starts the accelerations that balance the forces less the loads, which are subtracted in
+    /// order with `row` of the tables, and the velocities another half step on if `kick`.
+    fn launch_accelerate(&self, dt: f64, kick: bool, row: u32) -> Result<(), GpuError> {
         let dynamics = self.started()?;
         self.device.launch(
             &dynamics.kernels.accelerate,
@@ -313,6 +311,11 @@ impl Resident {
                 &dynamics.velocities,
                 &dt,
                 &u32::from(kick),
+                &(dynamics.loads.len() as u32),
+                &dynamics.load_kinds,
+                &dynamics.load_data,
+                &dynamics.load_tables,
+                &row,
             ],
         )
     }

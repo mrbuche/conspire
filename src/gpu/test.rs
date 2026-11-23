@@ -64,6 +64,17 @@ fn the_front_of_a_buffer_is_given_values_and_the_rest_is_left_as_it_was() {
 }
 
 #[test]
+fn buffers_that_are_alive_have_addresses_that_are_their_own() {
+    let Some(device) = device() else { return };
+    let (first, second) = (
+        device.buffer_of(&[1.0, 2.0]).unwrap(),
+        device.buffer_of(&[3.0, 4.0]).unwrap(),
+    );
+    assert_ne!(first.address(), 0);
+    assert_ne!(first.address(), second.address());
+}
+
+#[test]
 fn a_buffer_outlives_its_device() {
     let Some(device) = device() else { return };
     let buffer = device.buffer_of(&[1.0, 2.0, 3.0]).unwrap();
