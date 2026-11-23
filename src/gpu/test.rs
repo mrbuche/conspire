@@ -53,6 +53,17 @@ fn values_make_the_trip_to_the_device_and_back() {
 }
 
 #[test]
+fn the_front_of_a_buffer_is_given_values_and_the_rest_is_left_as_it_was() {
+    let Some(device) = device() else { return };
+    let buffer = device.buffer_of(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+    buffer.upload_front(&[7.0, 8.0]).unwrap();
+    buffer.upload_front(&[]).unwrap();
+    let mut found = vec![0.0; 4];
+    buffer.download(&mut found).unwrap();
+    assert_eq!(found, [7.0, 8.0, 3.0, 4.0]);
+}
+
+#[test]
 fn a_buffer_outlives_its_device() {
     let Some(device) = device() else { return };
     let buffer = device.buffer_of(&[1.0, 2.0, 3.0]).unwrap();

@@ -3,31 +3,67 @@ use crate::{
     domain::{
         NodalAccelerations, NodalCoordinates, NodalVelocities, solid::mass::NodalLumpedMasses,
     },
-    gpu::{Application, Buffer, Function, GpuError, held_flags, kernels::ptx},
+    gpu::{Application, Buffer, Function, GpuError, Imposed, ImposedLoad, Schedule, kernels::ptx},
     math::Tensor,
 };
 
-/// The state of a run of dynamics on the device, and the kernels that take its steps.
-pub(super) struct Dynamics {
+/// The kernels of the steps.
+struct Kernels {
     kick_drift: Function,
     accelerate: Function,
+    set_targets: Function,
+    subtract_constant: Function,
+    subtract_weighted: Function,
+}
+
+/// The coordinates that are moved, and the rows of where they are held.
+struct Moved {
+    count: u32,
+    dofs: Buffer<u32>,
+    table: Buffer<f64>,
+}
+
+/// An external force that is subtracted from the forces of the elements.
+enum LoadOnDevice {
+    Constant(Buffer<f64>),
+    Weighted {
+        weights: Buffer<f64>,
+        table: Buffer<f64>,
+    },
+}
+
+/// The state of a run of dynamics on the device, what is imposed on it,
+/// and the kernels that take its steps.
+pub(super) struct Dynamics {
+    kernels: Kernels,
     velocities: Buffer<f64>,
     accelerations: Buffer<f64>,
     masses: Buffer<f64>,
     held: Buffer<u32>,
+    moved: Option<Moved>,
+    loads: Vec<LoadOnDevice>,
+    /// How many of the loads are a function of the step.
+    weighted: usize,
+    /// The rows that the tables hold.
+    rows: usize,
+    /// The row of the state of the run.
+    row: usize,
 }
 
 impl Resident {
     /// Starts a run of dynamics from the coordinates and velocities, with the masses of the
-    /// nodes, and the degrees of freedom `held`, which are indexed as `3 * node + component`, and
-    /// have no velocity and no acceleration, as in dynamics on the host. The accelerations are
-    /// those of the forces on the coordinates.
+    /// nodes, and what is imposed on it; `schedule` says what is imposed at the start.
+    ///
+    /// The velocities are those given: dynamics on the host has the fixed degrees of freedom
+    /// without velocity, and the caller makes them so. The accelerations at the start are those
+    /// of the forces on the coordinates, less the loads.
     pub fn start_dynamics(
         &mut self,
         masses: &NodalLumpedMasses,
-        held: &[usize],
         coordinates: &NodalCoordinates<3>,
         velocities: &NodalVelocities<3>,
+        imposed: &Imposed,
+        schedule: &Schedule<'_>,
     ) -> Result<(), GpuError> {
         assert_eq!(
             masses.len(),
@@ -39,63 +75,123 @@ impl Resident {
             self.nodes,
             "a model is run with the nodes that it has"
         );
-        let dofs = 3 * self.nodes;
-        let flags = held_flags(dofs, held)?;
-        let mut velocities = flatten(velocities);
-        held.iter().for_each(|&dof| velocities[dof] = 0.0);
-        let (kick_drift, accelerate) = match self.dynamics.take() {
-            Some(dynamics) => (dynamics.kick_drift, dynamics.accelerate),
+        imposed.check(self.nodes)?;
+        schedule.check(imposed)?;
+        let flags = imposed.held_flags(self.nodes)?;
+        let rows = imposed.rows();
+        let kernels = match self.dynamics.take() {
+            Some(dynamics) => dynamics.kernels,
             None => {
                 let module = self
                     .device
                     .module_from_ptx(&ptx(Application::Dynamics, self.fused)?)?;
-                (
-                    module.function("kick_drift")?,
-                    module.function("accelerate")?,
-                )
+                Kernels {
+                    kick_drift: module.function("kick_drift")?,
+                    accelerate: module.function("accelerate")?,
+                    set_targets: module.function("set_targets")?,
+                    subtract_constant: module.function("subtract_constant")?,
+                    subtract_weighted: module.function("subtract_weighted")?,
+                }
             }
         };
+        let moved = if imposed.moved.is_empty() {
+            None
+        } else {
+            let count = imposed.moved.len();
+            let list = imposed
+                .moved
+                .iter()
+                .map(|&dof| dof as u32)
+                .collect::<Vec<_>>();
+            Some(Moved {
+                count: u32::try_from(count)
+                    .map_err(|_| GpuError::Cuda("too many coordinates are moved".to_string()))?,
+                dofs: self.device.buffer_of(&list)?,
+                table: self.device.buffer(count * rows)?,
+            })
+        };
+        let loads = imposed
+            .loads
+            .iter()
+            .map(|load| -> Result<LoadOnDevice, GpuError> {
+                Ok(match load {
+                    ImposedLoad::Constant(forces) => {
+                        LoadOnDevice::Constant(self.device.buffer_of(forces)?)
+                    }
+                    ImposedLoad::Weighted(weights) => LoadOnDevice::Weighted {
+                        weights: self.device.buffer_of(weights)?,
+                        table: self.device.buffer(3 * rows)?,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.set_coordinates(coordinates)?;
         self.dynamics = Some(Dynamics {
-            kick_drift,
-            accelerate,
-            velocities: self.device.buffer_of(&velocities)?,
-            accelerations: self.device.buffer(dofs)?,
+            kernels,
+            velocities: self.device.buffer_of(&flatten(velocities))?,
+            accelerations: self.device.buffer(3 * self.nodes)?,
             masses: self
                 .device
                 .buffer_of(&masses.iter().map(|mass| mass.value()).collect::<Vec<_>>())?,
             held: self.device.buffer_of(&flags)?,
+            moved,
+            loads,
+            weighted: imposed.weighted(),
+            rows,
+            row: 0,
         });
+        self.upload_tables(schedule, 0, 1)?;
         self.forget_errors()?;
+        self.launch_targets(0)?;
         self.launch_forces()?;
+        self.launch_loads(0)?;
         self.launch_accelerate(0.0, false)?;
         self.device.synchronize()?;
         self.errors()
     }
     /// Takes `steps` steps of velocity Verlet of size `dt`, on the device and without copying
-    /// anything between the device and the host, and waits for them.
+    /// anything between the device and the host but the tables of what is imposed, which are
+    /// copied for as many steps at a time as they hold; and waits for them.
     ///
     /// An element that has an error is not noticed until the steps are done, and then it is an
     /// error, and the state is of no use.
-    pub fn steps(&self, dt: f64, steps: usize) -> Result<(), GpuError> {
+    pub fn steps(
+        &mut self,
+        dt: f64,
+        steps: usize,
+        schedule: &Schedule<'_>,
+    ) -> Result<(), GpuError> {
         let dynamics = self.started()?;
-        let count = self.dofs()?;
+        let (rows, count) = (dynamics.rows, self.dofs()?);
+        schedule.check_for(dynamics.moved.is_some(), dynamics.weighted)?;
         self.forget_errors()?;
-        for _ in 0..steps {
-            self.device.launch(
-                &dynamics.kick_drift,
-                3 * self.nodes,
-                THREADS_PER_BLOCK,
-                &[
-                    &count,
-                    &self.coordinates,
-                    &dynamics.velocities,
-                    &dynamics.accelerations,
-                    &dt,
-                ],
-            )?;
-            self.launch_forces()?;
-            self.launch_accelerate(dt, true)?;
+        let mut done = 0;
+        while done < steps {
+            let batch = (steps - done).min(rows);
+            self.upload_tables(schedule, self.started()?.row + 1, batch)?;
+            for row in 0..batch {
+                let dynamics = self.started()?;
+                self.device.launch(
+                    &dynamics.kernels.kick_drift,
+                    3 * self.nodes,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &count,
+                        &self.coordinates,
+                        &dynamics.velocities,
+                        &dynamics.accelerations,
+                        &dt,
+                    ],
+                )?;
+                self.launch_targets(row as u32)?;
+                self.launch_forces()?;
+                self.launch_loads(row as u32)?;
+                self.launch_accelerate(dt, true)?;
+            }
+            if let Some(dynamics) = self.dynamics.as_mut() {
+                dynamics.row += batch;
+            }
+            done += batch;
         }
         self.device.synchronize()?;
         self.errors()
@@ -115,7 +211,7 @@ impl Resident {
         let download = |buffer: &Buffer<f64>| -> Result<Vec<[f64; 3]>, GpuError> {
             let mut values = vec![0.0; 3 * self.nodes];
             buffer.download(&mut values)?;
-            Ok(values.as_chunks().0.to_vec())
+            Ok(values.as_chunks::<3>().0.to_vec())
         };
         Ok((
             download(&self.coordinates)?.into(),
@@ -133,12 +229,79 @@ impl Resident {
         u32::try_from(3 * self.nodes)
             .map_err(|_| GpuError::Cuda("a model is too large for a device".to_string()))
     }
-    /// Starts the accelerations that balance the forces,
-    /// and the velocities another half step on if `kick`.
+    /// Gives the device the rows of the tables from `first`, `rows` of them, which start at row 0
+    /// of the tables.
+    fn upload_tables(
+        &self,
+        schedule: &Schedule<'_>,
+        first: usize,
+        rows: usize,
+    ) -> Result<(), GpuError> {
+        let dynamics = self.started()?;
+        if let Some(moved) = &dynamics.moved {
+            moved.table.upload_front(&schedule.target_rows(
+                moved.count as usize,
+                first,
+                rows,
+            )?)?;
+        }
+        let mut weighted = 0;
+        for load in &dynamics.loads {
+            if let LoadOnDevice::Weighted { table, .. } = load {
+                table.upload_front(&schedule.component_rows(weighted, first, rows))?;
+                weighted += 1;
+            }
+        }
+        Ok(())
+    }
+    /// Starts the setting of the coordinates that are moved to what they are held at in `row` of
+    /// the tables.
+    fn launch_targets(&self, row: u32) -> Result<(), GpuError> {
+        let dynamics = self.started()?;
+        match &dynamics.moved {
+            Some(moved) => self.device.launch(
+                &dynamics.kernels.set_targets,
+                moved.count as usize,
+                THREADS_PER_BLOCK,
+                &[
+                    &moved.count,
+                    &moved.dofs,
+                    &moved.table,
+                    &row,
+                    &self.coordinates,
+                ],
+            ),
+            None => Ok(()),
+        }
+    }
+    /// Starts the subtracting of the loads, in order, from the forces, with `row` of the tables.
+    fn launch_loads(&self, row: u32) -> Result<(), GpuError> {
+        let dynamics = self.started()?;
+        let (count, nodes) = (self.dofs()?, self.nodes as u32);
+        for load in &dynamics.loads {
+            match load {
+                LoadOnDevice::Constant(forces) => self.device.launch(
+                    &dynamics.kernels.subtract_constant,
+                    3 * self.nodes,
+                    THREADS_PER_BLOCK,
+                    &[&count, forces, &self.nodal_forces],
+                )?,
+                LoadOnDevice::Weighted { weights, table } => self.device.launch(
+                    &dynamics.kernels.subtract_weighted,
+                    self.nodes,
+                    THREADS_PER_BLOCK,
+                    &[&nodes, weights, table, &row, &self.nodal_forces],
+                )?,
+            }
+        }
+        Ok(())
+    }
+    /// Starts the accelerations that balance the forces, and the velocities another half step on
+    /// if `kick`.
     fn launch_accelerate(&self, dt: f64, kick: bool) -> Result<(), GpuError> {
         let dynamics = self.started()?;
         self.device.launch(
-            &dynamics.accelerate,
+            &dynamics.kernels.accelerate,
             3 * self.nodes,
             THREADS_PER_BLOCK,
             &[

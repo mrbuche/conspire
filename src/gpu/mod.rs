@@ -14,7 +14,7 @@ pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, De
 #[cfg(feature = "fem")]
 pub use crate::domain::{DeviceError, Resident};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
-pub use dynamics::held_flags;
+pub use dynamics::{Imposed, ImposedLoad, Schedule};
 pub use kernels::Application;
 
 use core::{

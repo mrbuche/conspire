@@ -145,6 +145,14 @@ fn the_second_pass_is_additions_only_with_no_call_no_trap_and_no_local_memory() 
     assert!(gather.contains("add.rn.f64"));
 }
 
+const STEPS: [&str; 5] = [
+    "kick_drift",
+    "accelerate",
+    "set_targets",
+    "subtract_constant",
+    "subtract_weighted",
+];
+
 fn kernel<'a>(ptx: &'a str, name: &str) -> &'a str {
     let start = ptx
         .find(&format!(".visible .entry {name}("))
@@ -157,7 +165,7 @@ fn kernel<'a>(ptx: &'a str, name: &str) -> &'a str {
 fn the_kernels_of_the_steps_are_embedded_under_their_names() {
     match ptx(Application::Dynamics, false) {
         Ok(ptx) => {
-            for name in ["kick_drift", "accelerate"] {
+            for name in STEPS {
                 assert!(ptx.contains(&format!(".visible .entry {name}(")), "{name}");
             }
         }
@@ -173,7 +181,7 @@ fn the_kernels_of_the_steps_have_no_call_no_trap_and_no_local_memory() {
     let Ok(ptx) = ptx(Application::Dynamics, false) else {
         return eprintln!("skipped: the kernels of the steps are not built");
     };
-    for name in ["kick_drift", "accelerate"] {
+    for name in STEPS {
         for absent in ["call", "trap;", ".local", "fma."] {
             assert!(!kernel(&ptx, name).contains(absent), "{absent} in {name}");
         }
@@ -201,4 +209,28 @@ fn the_accelerations_are_a_division_and_the_second_half_of_a_step() {
     assert_eq!(accelerate.matches("mul.rn.f64").count(), 2);
     assert_eq!(accelerate.matches("add.rn.f64").count(), 1);
     assert!(accelerate.contains("neg.f64"));
+}
+
+#[test]
+fn a_load_is_subtracted_as_the_host_subtracts_it_each_operation_rounded() {
+    let Ok(ptx) = ptx(Application::Dynamics, false) else {
+        return eprintln!("skipped: the kernels of the steps are not built");
+    };
+    let constant = kernel(&ptx, "subtract_constant");
+    assert_eq!(constant.matches("sub.rn.f64").count(), 1);
+    assert!(!constant.contains("mul.rn.f64"));
+    let weighted = kernel(&ptx, "subtract_weighted");
+    assert_eq!(weighted.matches("mul.rn.f64").count(), 3);
+    assert_eq!(weighted.matches("sub.rn.f64").count(), 3);
+}
+
+#[test]
+fn the_coordinates_that_are_moved_are_set_to_what_is_read_with_no_arithmetic() {
+    let Ok(ptx) = ptx(Application::Dynamics, false) else {
+        return eprintln!("skipped: the kernels of the steps are not built");
+    };
+    let set_targets = kernel(&ptx, "set_targets");
+    for absent in ["mul.rn.f64", "add.rn.f64", "sub.rn.f64", "div.", "fma."] {
+        assert!(!set_targets.contains(absent), "{absent}");
+    }
 }
