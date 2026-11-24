@@ -114,6 +114,7 @@ impl CudssSolver {
                     solver.columns.pointer as *mut c_void,
                     solver.values.pointer as *mut c_void,
                     api::TYPE_I32,
+                    api::TYPE_I32,
                     api::TYPE_F64,
                     mtype,
                     view,

@@ -41,6 +41,7 @@ pub(super) struct Api {
         c_int,
         c_int,
         c_int,
+        c_int,
     ) -> c_int,
     pub(super) matrix_destroy: unsafe extern "C" fn(Handle) -> c_int,
     pub(super) execute:
