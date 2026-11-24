@@ -30,8 +30,6 @@ pub(crate) mod volume;
 #[cfg(all(feature = "gpu", feature = "fem"))]
 pub use device::{DeviceError, Resident};
 
-#[cfg(feature = "gpu")]
-use crate::gpu::Device;
 use crate::{
     domain::{
         ElementModelError,
@@ -49,6 +47,8 @@ use crate::{
     },
     units::{Acceleration, Length, Velocity},
 };
+#[cfg(feature = "gpu")]
+use crate::{gpu::Device, math::Execution};
 use core::fmt::Debug;
 
 pub(crate) fn nodal_coordinates<const D: usize>(
@@ -212,7 +212,7 @@ where
         );
         #[cfg(feature = "gpu")]
         if let Some(device) = &self.device {
-            return solver.on_device(device);
+            return solver.on_device(device, Execution::Serial);
         }
         solver
     }

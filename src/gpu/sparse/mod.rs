@@ -1,11 +1,16 @@
 #[cfg(test)]
 mod test;
 
+mod fill;
+mod layout;
+
 use super::{CudssSolver, Device, Timings};
 use crate::math::{
-    Scalar, Tensor, Vector,
-    sparse::{CscMatrix, SparseBackend, SparseError, SparseSolver},
+    Execution, Scalar, Tensor, Vector,
+    sparse::{SparseBackend, SparseError, SparseSolver},
 };
+use fill::{MINIMUM_PER_THREAD, fill};
+use layout::Layout;
 use std::time::Instant;
 
 /// A sparse direct solver on a device, for repeated solves on a fixed sparsity pattern.
@@ -17,15 +22,18 @@ use std::time::Instant;
 /// Symmetric values are factored as symmetric, by LDLᵀ with pivoting, and the pattern must then be
 /// symmetric. Unlike a host solver there is no fallback to LU for a solve that breaks down: it is
 /// an error.
+///
+/// The values are asked of the source at the positions of the device, and on the threads that the
+/// [`Execution`] gives, which never changes them.
 pub struct DeviceSparseSolver {
-    /// The matrix, in the order of the host: by column, by row within a column.
-    matrix: CscMatrix,
-    /// For each entry of the matrix the device has, the position of its value in `matrix`.
-    gather: Vec<usize>,
-    /// The values of `matrix`, in order, as one solve reads them.
-    from_matrix: Vec<Scalar>,
+    /// The (row, column) that the source is asked for the value of each entry of the device.
+    positions: Vec<(usize, usize)>,
+    /// How many times each position is in the pattern, which its values are summed for.
+    counts: Vec<u32>,
     /// The values the device has, in the order of its rows.
-    to_device: Vec<Scalar>,
+    values: Vec<Scalar>,
+    /// How the values are computed.
+    execution: Execution,
     /// The solver on the device, which a matrix of no unknowns does without.
     solver: Option<CudssSolver>,
     /// Where the time of the last solve went.
@@ -43,42 +51,12 @@ impl DeviceSparseSolver {
         pattern: Vec<(usize, usize)>,
         symmetric: bool,
     ) -> Result<Self, SparseError> {
-        let matrix = CscMatrix::from_pattern(num, num, pattern);
-        if symmetric
-            && matrix
-                .iter()
-                .any(|(i, j, _)| matrix.column(i).all(|(row, _)| row != j))
-        {
-            return Err(SparseError::Unsymmetric);
-        }
-        let mut entries = matrix
-            .iter()
-            .enumerate()
-            .filter_map(|(position, (i, j, _))| {
-                if !symmetric {
-                    Some((i, j, position))
-                } else {
-                    (i >= j).then_some((j, i, position))
-                }
-            })
-            .collect::<Vec<_>>();
-        entries.sort_unstable();
-        let too_large = || SparseError::Device("the matrix is too large for 32-bit indices".into());
-        let mut row_starts = vec![0_i32; num + 1];
-        entries
-            .iter()
-            .try_for_each(|&(row, _, _)| {
-                row_starts[row + 1] = row_starts[row + 1].checked_add(1)?;
-                Some(())
-            })
-            .ok_or_else(too_large)?;
-        (0..num).for_each(|row| row_starts[row + 1] += row_starts[row]);
-        let columns = entries
-            .iter()
-            .map(|&(_, column, _)| i32::try_from(column).map_err(|_| too_large()))
-            .collect::<Result<Vec<_>, _>>()?;
-        let gather = entries.iter().map(|&(_, _, position)| position).collect();
-        let to_device = vec![0.0; entries.len()];
+        let Layout {
+            row_starts,
+            columns,
+            positions,
+            counts,
+        } = Layout::new(num, pattern, symmetric)?;
         let solver = if num == 0 {
             None
         } else {
@@ -88,51 +66,49 @@ impl DeviceSparseSolver {
             )
         };
         Ok(Self {
-            from_matrix: Vec::with_capacity(matrix.nonzeros()),
-            matrix,
-            gather,
-            to_device,
+            values: vec![0.0; positions.len()],
+            positions,
+            counts,
+            execution: Execution::Serial,
             solver,
             timings: Timings::default(),
         })
+    }
+    /// The same solver, computing the values of its matrix as the execution says.
+    pub fn with_execution(mut self, execution: Execution) -> Self {
+        self.execution = execution;
+        self
     }
     /// Where the time of the last solve went.
     pub fn timings(&self) -> Timings {
         self.timings
     }
-    /// The nonzero (row, column) positions this structure was built from.
-    pub fn pattern(&self) -> &[(usize, usize)] {
-        self.matrix.pattern()
-    }
     /// Solves a system of linear equations with values from a source, which is asked for the value
-    /// at each position of the pattern.
+    /// at each position of the pattern, and may be asked from several threads at once.
     pub fn solve(
         &mut self,
-        source: impl FnMut(usize, usize) -> Scalar,
+        source: impl Fn(usize, usize) -> Scalar + Sync,
         b: &Vector,
     ) -> Result<Vector, SparseError> {
         let Some(solver) = self.solver.as_mut() else {
             return Ok(Vector::zero(0));
         };
         let start = Instant::now();
-        self.matrix.fill(source);
-        let fill = start.elapsed().as_secs_f64();
-        let start = Instant::now();
-        self.from_matrix.clear();
-        self.from_matrix
-            .extend(self.matrix.iter().map(|(_, _, value)| *value));
-        self.to_device
-            .iter_mut()
-            .zip(&self.gather)
-            .for_each(|(value, &position)| *value = self.from_matrix[position]);
+        fill(
+            &self.positions,
+            &self.counts,
+            &source,
+            &mut self.values,
+            self.execution.threads(),
+            MINIMUM_PER_THREAD,
+        );
         let right_hand_side = b.iter().copied().collect::<Vec<_>>();
-        let gather = start.elapsed().as_secs_f64();
+        let fill = start.elapsed().as_secs_f64();
         let solution = solver
-            .solve(&self.to_device, &right_hand_side)
+            .solve(&self.values, &right_hand_side)
             .map_err(|error| SparseError::Device(error.to_string()))?;
         self.timings = Timings {
             fill,
-            gather,
             ..solver.timings()
         };
         Ok(Vector::from(solution))
@@ -146,40 +122,47 @@ struct OnDevice {
     size: usize,
     pattern: Vec<(usize, usize)>,
     symmetric: bool,
+    execution: Execution,
     solver: Option<DeviceSparseSolver>,
 }
 
 impl SparseBackend for OnDevice {
     fn solve(
         &mut self,
-        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        source: &(dyn Fn(usize, usize) -> Scalar + Sync),
         b: &Vector,
     ) -> Result<Vector, SparseError> {
         let solver = match &mut self.solver {
             Some(solver) => solver,
-            none => none.insert(DeviceSparseSolver::from_pattern(
-                &self.device,
-                self.size,
-                self.pattern.clone(),
-                self.symmetric,
-            )?),
+            none => {
+                let made = DeviceSparseSolver::from_pattern(
+                    &self.device,
+                    self.size,
+                    self.pattern.clone(),
+                    self.symmetric,
+                )?;
+                self.pattern = Vec::new();
+                none.insert(made.with_execution(self.execution))
+            }
         };
         solver.solve(source, b)
     }
 }
 
 impl SparseSolver {
-    /// The same solver, doing its solves on a device, by cuDSS.
+    /// The same solver, doing its solves on a device, by cuDSS, with the values of its matrix
+    /// computed as the execution says.
     ///
     /// The device is first asked at the first solve, so that a device or a library that is not
     /// there, a pattern that is not symmetric when it is declared so, or a matrix the device cannot
     /// factor, is the error of a solve. The solves have no fallback to the host.
-    pub fn on_device(self, device: &Device) -> Self {
+    pub fn on_device(self, device: &Device, execution: Execution) -> Self {
         let backend = OnDevice {
             device: device.clone(),
             size: self.size(),
             pattern: self.pattern().to_vec(),
             symmetric: self.is_symmetric(),
+            execution,
             solver: None,
         };
         self.with_backend(backend)

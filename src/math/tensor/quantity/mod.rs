@@ -29,7 +29,7 @@ impl<T> Is<T> for T {}
 
 /// A scalar carrying a physical unit.
 #[repr(transparent)]
-pub struct Quantity<U = Dimensionless>(TensorRank0, PhantomData<U>);
+pub struct Quantity<U = Dimensionless>(TensorRank0, PhantomData<fn() -> U>);
 
 impl<U> Quantity<U> {
     /// Associated function for const type conversion.

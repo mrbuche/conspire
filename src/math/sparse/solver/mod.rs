@@ -14,12 +14,12 @@ use core::cell::{Ref, RefCell};
 /// a device.
 ///
 /// The source gives the value at each position of the pattern the solver was made from, and
-/// duplicate positions are summed by the backend.
+/// duplicate positions are summed by the backend. It may be asked from several threads at once.
 pub trait SparseBackend {
     /// Solves for the values a source gives and a right-hand side.
     fn solve(
         &mut self,
-        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        source: &(dyn Fn(usize, usize) -> Scalar + Sync),
         b: &Vector,
     ) -> Result<Vector, SparseError>;
 }
@@ -122,7 +122,8 @@ impl SparseSolver {
         Some(cached.is_minimum(constraints))
     }
     /// Solve a system of linear equations with values from a source,
-    /// refactoring the cached factorization when possible.
+    /// refactoring the cached factorization when possible. A backend may ask
+    /// the source from several threads at once.
     ///
     /// A symmetric solver uses its LDLᵀ factorization, solving by LU for any
     /// solve in which a pivot degrades; LU carries no inertia, so see
@@ -130,12 +131,11 @@ impl SparseSolver {
     /// falling back.
     pub fn solve(
         &self,
-        source: impl FnMut(usize, usize) -> Scalar,
+        source: impl Fn(usize, usize) -> Scalar + Sync,
         b: &Vector,
     ) -> Result<Vector, SparseError> {
         if let Some(backend) = &self.backend {
-            let mut source = source;
-            return backend.borrow_mut().solve(&mut source, b);
+            return backend.borrow_mut().solve(&source, b);
         }
         let mut matrix = self.matrix.borrow_mut();
         matrix.fill(source);

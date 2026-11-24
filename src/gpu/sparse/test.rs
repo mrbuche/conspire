@@ -1,6 +1,6 @@
 use super::{Device, DeviceSparseSolver};
 use crate::math::{
-    Scalar, Tensor, Vector,
+    Execution, Scalar, Tensor, Vector,
     assert::{Assert, AssertionError},
     sparse::{SparseError, SparseSolver},
 };
@@ -160,6 +160,27 @@ mod symmetric {
             loose().eq_within_tols(&x, &host.solve(laplacian(shift), &b)?)?;
         }
         Ok(())
+    }
+
+    #[test]
+    fn threads_give_the_same_solution_as_one_thread() {
+        let pattern = pattern();
+        let Some(serial) = solver(N, &pattern, true) else {
+            return;
+        };
+        let mut serial = serial;
+        let mut threaded = solver(N, &pattern, true)
+            .unwrap()
+            .with_execution(Execution::Threads(0));
+        let b = right_hand_side(N);
+        let (one, many) = (
+            serial.solve(laplacian(0.5), &b).unwrap(),
+            threaded.solve(laplacian(0.5), &b).unwrap(),
+        );
+        assert_eq!(one.iter().count(), N);
+        one.iter()
+            .zip(many.iter())
+            .for_each(|(one, many)| assert_eq!(one.to_bits(), many.to_bits()));
     }
 
     #[test]

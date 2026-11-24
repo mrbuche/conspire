@@ -6,7 +6,7 @@ use crate::math::{
 };
 
 /// The constraints of a bordered KKT system, with a row for each constraint.
-pub(super) trait ConstraintMatrix {
+pub(super) trait ConstraintMatrix: Sync {
     /// The entry of a constraint on a variable.
     fn at(&self, constraint: usize, variable: usize) -> Scalar;
     /// Visits the entries that may be nonzero.

@@ -61,7 +61,7 @@ impl<const D: usize, I, J, K, L, U> HessianBlock for TensorRank4<D, I, J, K, L, 
 #[repr(transparent)]
 pub struct TensorRank4<const D: usize, I, J, K, L, U = Dimensionless>(
     [TensorRank3<D, J, K, L, U>; D],
-    pub(super) PhantomData<I>,
+    pub(super) PhantomData<fn() -> I>,
 );
 
 impl<const D: usize, I, J, K, L, U> Clone for TensorRank4<D, I, J, K, L, U> {

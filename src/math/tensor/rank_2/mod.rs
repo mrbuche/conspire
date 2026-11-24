@@ -53,7 +53,7 @@ use crate::math::assert::FiniteDifference;
 #[repr(transparent)]
 pub struct TensorRank2<const D: usize, I, J, U = Dimensionless>(
     pub(super) [TensorRank1<D, J, U>; D],
-    pub(super) PhantomData<I>,
+    pub(super) PhantomData<fn() -> I>,
 );
 
 impl<const D: usize, I, J, U> Clone for TensorRank2<D, I, J, U> {

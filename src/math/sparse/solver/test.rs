@@ -275,7 +275,7 @@ struct Counting(Rc<Cell<usize>>);
 impl SparseBackend for Counting {
     fn solve(
         &mut self,
-        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        source: &(dyn Fn(usize, usize) -> Scalar + Sync),
         b: &Vector,
     ) -> Result<Vector, SparseError> {
         self.0.set(self.0.get() + 1);

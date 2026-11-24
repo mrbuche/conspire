@@ -38,7 +38,7 @@ pub fn levi_civita<I, J, K>() -> TensorRank3<3, I, J, K> {
 #[repr(transparent)]
 pub struct TensorRank3<const D: usize, I, J, K, U = Dimensionless>(
     pub(super) [TensorRank2<D, J, K, U>; D],
-    pub(super) PhantomData<I>,
+    pub(super) PhantomData<fn() -> I>,
 );
 
 impl<const D: usize, I, J, K, U> Clone for TensorRank3<D, I, J, K, U> {

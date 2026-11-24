@@ -201,7 +201,7 @@ where
 /// Common methods for Hessians.
 pub trait Hessian
 where
-    Self: Tensor,
+    Self: Tensor + Sync,
 {
     /// The entry at the given (row, column) position.
     fn entry(&self, row: usize, column: usize) -> Scalar;
@@ -222,7 +222,7 @@ where
 }
 
 /// Common methods for blocks of a Hessian.
-pub trait HessianBlock {
+pub trait HessianBlock: Sync {
     /// The entry of the block at the given row and column within it.
     fn entry(&self, row: usize, column: usize) -> TensorRank0;
     /// The number of rows the block occupies.

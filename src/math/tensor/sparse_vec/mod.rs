@@ -318,7 +318,7 @@ where
 
 impl<T> Hessian for TensorSparseVec2D<T>
 where
-    T: HessianBlock + Tensor,
+    T: HessianBlock + Tensor + Sync,
 {
     fn entry(&self, row: usize, column: usize) -> Scalar {
         let block = T::default();

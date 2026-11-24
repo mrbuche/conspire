@@ -16,8 +16,9 @@
 //! `sparse_solves` times the sparse direct solve of the tangent of a stretched grid on the host and
 //! on a device by cuDSS, and where the time of the device goes. `SOLVE_CELLS` is the cells on a
 //! side, `8,16,24,32,48` by default, `HOST_MAX_DOFS` is the unknowns above which the host is not
-//! run, 300000 by default, and one Newton solve of the largest grid the host is run on is timed on
-//! both.
+//! run, 120000 by default, and one Newton solve of the largest grid the host is run on is timed on
+//! both. The values of the matrix on the device are computed on `THREADS` threads, and the Newton
+//! solve on the device is serial.
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids of
 //! `single_block`, `22,46,90` by default, `ELEMENTS` is the elements of each shape of
@@ -44,7 +45,7 @@ use conspire::{
     },
     gpu::{Device, DeviceBlocks, DeviceSparseSolver, GpuError, Timings},
     math::{
-        Hessian, Quantity, Tensor, Vector,
+        Execution, Hessian, Quantity, Tensor, Vector,
         assert::AssertionError,
         optimize::{NewtonRaphson, Tolerances},
         sparse::{SparseError, SparseSolver},
@@ -381,9 +382,8 @@ fn milliseconds(seconds: f64) -> String {
 
 fn show_timings(label: &str, timings: &Timings) {
     println!(
-        "    {label}: fill {} + gather {} + upload {} + analysis {} + factor {} + solve {} + download {} ms",
+        "    {label}: fill {} + upload {} + analysis {} + factor {} + solve {} + download {} ms",
         milliseconds(timings.fill),
-        milliseconds(timings.gather),
         milliseconds(timings.upload),
         milliseconds(timings.analysis),
         milliseconds(timings.factorization),
@@ -403,8 +403,11 @@ fn sparse_solves() -> Result<(), AssertionError> {
         }
         Err(error) => panic!("{error}"),
     };
-    println!("\n{device:?}, the host solver is serial");
-    let host_limit = variable("HOST_MAX_DOFS").unwrap_or(300_000);
+    println!(
+        "\n{device:?}, the values are computed on {} threads and the host solver is serial",
+        threads()
+    );
+    let host_limit = variable("HOST_MAX_DOFS").unwrap_or(120_000);
     let mut last_with_host = None;
     for cells in solve_cells() {
         let (model, coordinates) = grid(cells);
@@ -421,7 +424,8 @@ fn sparse_solves() -> Result<(), AssertionError> {
             pattern.len()
         );
         let mut solver = DeviceSparseSolver::from_pattern(&device, unknowns, pattern.clone(), true)
-            .map_err(describe)?;
+            .map_err(describe)?
+            .with_execution(Execution::Threads(threads()));
         let start = Instant::now();
         let x = solver.solve(source, &b).map_err(describe)?;
         let first = start.elapsed().as_secs_f64() * 1e3;
@@ -446,14 +450,24 @@ fn sparse_solves() -> Result<(), AssertionError> {
         let start = Instant::now();
         let x_host = host.solve(source, &b).map_err(describe)?;
         let first_host = start.elapsed().as_secs_f64() * 1e3;
-        let again_host = time_of(repetitions, || {
-            black_box(host.solve(source, &b)?);
-            Ok::<(), SparseError>(())
-        })
-        .map_err(describe)?;
+        let (again_host, how) = if first_host > 5000.0 {
+            (first_host, " (the first solve, as a repeat is too long)")
+        } else {
+            let host_repetitions = if first_host > 500.0 {
+                1
+            } else {
+                repetitions.min(5)
+            };
+            let again = time_of(host_repetitions, || {
+                black_box(host.solve(source, &b)?);
+                Ok::<(), SparseError>(())
+            })
+            .map_err(describe)?;
+            (again, "")
+        };
         let host_residual = relative_residual(&pattern, &source, &x_host, &b);
         println!(
-            "  host: built {built:.1} ms, first {first_host:.1} ms, then {again_host:.2} ms, residual {host_residual:.1e}; device is {:.1}x on repeated solves",
+            "  host: built {built:.1} ms, first {first_host:.1} ms, then {again_host:.2} ms{how}, residual {host_residual:.1e}; device is {:.1}x on repeated solves",
             again_host / again
         );
         last_with_host = Some(cells);

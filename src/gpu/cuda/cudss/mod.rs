@@ -15,10 +15,8 @@ use std::time::Instant;
 /// fills its values from a source adds its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Timings {
-    /// The values of the entries, asked of a source on the host.
+    /// The values of the entries, asked of a source on the host, and the right-hand side.
     pub fill: f64,
-    /// The values put in the order of the device.
-    pub gather: f64,
     /// The values and the right-hand side, copied to the device.
     pub upload: f64,
     /// The ordering and the symbolic factorization, which the first solve makes.
