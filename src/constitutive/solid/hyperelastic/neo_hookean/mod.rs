@@ -3,7 +3,7 @@ mod test;
 
 use crate::{
     constitutive::{
-        ConstitutiveError,
+        ConstitutiveError, FromParameters,
         solid::{FIVE_THIRDS, Solid, TWO_THIRDS, elastic::Elastic, hyperelastic::Hyperelastic},
     },
     math::{IDENTITY, Quantity, Rank2, TensorRank4},
@@ -38,6 +38,19 @@ impl Solid for NeoHookean {
     }
     fn shear_modulus(&self) -> Quantity<Stress> {
         self.shear_modulus
+    }
+}
+
+impl FromParameters for NeoHookean {
+    const NAME: &'static str = "neo_hookean";
+    fn parameters(&self) -> Vec<f64> {
+        vec![self.shear_modulus.value(), self.bulk_modulus.value()]
+    }
+    fn from_parameters(parameters: &[f64]) -> Self {
+        Self {
+            shear_modulus: Stress::pascals(parameters[0]),
+            bulk_modulus: Stress::pascals(parameters[1]),
+        }
     }
 }
 

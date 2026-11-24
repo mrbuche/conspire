@@ -4,6 +4,8 @@ mod test;
 pub mod cohesive;
 pub mod diffusion;
 pub mod electrical;
+mod error;
+mod integration;
 pub mod linear;
 pub mod mass;
 pub mod multiphysics;
@@ -16,8 +18,10 @@ pub mod surface;
 pub mod thermal;
 pub mod time_scale;
 
+pub use error::{ErrorRecord, FiniteElementError, FiniteElementKind};
+pub use integration::{IntegrationData, Recomputed};
+
 use crate::{
-    domain::block::element::{ElementError, ElementKind},
     math::{
         Projection, Quantity, Reference, Scalar, ScalarList, TensorList, TensorRank1,
         TensorRank1List, TensorRank1List2D,
@@ -84,32 +88,6 @@ pub struct Element<const D: usize, const G: usize, const N: usize, const O: usiz
     integration_weights: IntegrationWeights<G, Volume>,
 }
 
-impl<const D: usize, const G: usize, const N: usize, const O: usize> Element<D, G, N, O> {
-    pub(crate) fn gradient_vectors(&self) -> &GradientVectors<D, G, N> {
-        &self.gradient_vectors
-    }
-}
-
-pub trait IntegrationData<const G: usize, const N: usize> {
-    fn gradient_vectors_at(
-        &self,
-        point: usize,
-    ) -> TensorRank1List<3, Reference, N, ReciprocalLength>;
-    fn integration_weight_at(&self, point: usize) -> Quantity<Volume>;
-}
-
-impl<const G: usize, const N: usize, const O: usize> IntegrationData<G, N> for Element<3, G, N, O> {
-    fn gradient_vectors_at(
-        &self,
-        point: usize,
-    ) -> TensorRank1List<3, Reference, N, ReciprocalLength> {
-        self.gradient_vectors[point].clone()
-    }
-    fn integration_weight_at(&self, point: usize) -> Quantity<Volume> {
-        self.integration_weights[point]
-    }
-}
-
 impl<const D: usize, const G: usize, const N: usize, const O: usize> Debug for Element<D, G, N, O> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let element = match (D, G, N, O) {
@@ -117,14 +95,13 @@ impl<const D: usize, const G: usize, const N: usize, const O: usize> Debug for E
             (2, 4, 4, 1) => "LinearQuadrilateral",
             (3, 8, 8, 1) => "LinearHexahedron",
             (3, 8, 5, 1) => "LinearPyramid",
-            (3, 1, 4, 1) | (3, 4, 4, 1) => "LinearTetrahedron",
+            (3, _, 4, 1) => "LinearTetrahedron",
             (3, 6, 6, 1) => "LinearWedge",
             (3, 27, 27, 2) => "QuadraticHexahedron",
             (3, 4, 10, 2) => "QuadraticTetrahedron",
             (3, 27, 13, 2) => "QuadraticPyramid",
             (3, 18, 15, 2) => "QuadraticWedge",
             (3, 27, 20, 2) => "SerendipityHexahedron",
-            (3, 4, 10, 0) => "CompositeTetrahedron",
             _ => panic!(),
         };
         write!(f, "{element} {{ integration points: {G}, nodes: {N} }}",)
@@ -137,33 +114,14 @@ fn basic_from<const D: usize, const G: usize, const N: usize, const O: usize>(
 where
     Element<D, G, N, O>: FiniteElement<G, D, N, N>,
 {
-    let gradient_vectors = Element::shape_functions_gradients_at_integration_points()
-        .into_iter()
-        .map(|standard_gradient_operator| {
-            (&reference_nodal_coordinates * &standard_gradient_operator).inverse_transpose()
-                * standard_gradient_operator
-        })
-        .collect();
-    let integration_weights = Element::shape_functions_gradients_at_integration_points()
-        .into_iter()
-        .zip(Element::parametric_weights())
-        .map(|(standard_gradient_operator, integration_weight)| {
-            Quantity::new(
-                (&reference_nodal_coordinates * standard_gradient_operator).determinant()
-                    * integration_weight,
-            )
-        })
-        .collect();
+    let (derivatives, weights) = Recomputed::tables::<Element<D, G, N, O>>();
+    let recomputed = Recomputed::new(reference_nodal_coordinates, &derivatives, &weights);
     Element {
-        gradient_vectors,
-        integration_weights,
+        gradient_vectors: (0..G)
+            .map(|point| recomputed.gradient_vectors(point))
+            .collect(),
+        integration_weights: (0..G)
+            .map(|point| recomputed.integration_weight(point))
+            .collect(),
     }
 }
-
-pub struct FiniteElementKind;
-
-impl ElementKind for FiniteElementKind {
-    const NAME: &'static str = "finite element";
-}
-
-pub type FiniteElementError = ElementError<FiniteElementKind>;

@@ -2,6 +2,8 @@
 pub(crate) mod test;
 
 mod density;
+#[cfg(feature = "gpu")]
+mod device;
 pub(crate) mod diffusion;
 pub mod electrical;
 pub mod mass;

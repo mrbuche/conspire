@@ -4,6 +4,8 @@ pub(crate) mod boundary;
 pub(crate) mod chemical;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod density;
+#[cfg(all(feature = "gpu", feature = "elements"))]
+mod device;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
 pub(crate) mod diffusion;
 #[cfg_attr(not(feature = "fem"), allow(dead_code))]
@@ -24,6 +26,9 @@ pub(crate) mod thermal;
     allow(dead_code)
 )]
 pub(crate) mod volume;
+
+#[cfg(all(feature = "gpu", feature = "fem"))]
+pub use device::{DeviceError, Resident};
 
 use crate::{
     domain::{

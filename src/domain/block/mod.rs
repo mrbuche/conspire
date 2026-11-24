@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub(crate) mod test;
 
+#[cfg(all(feature = "gpu", feature = "elements"))]
+pub(crate) mod device;
 pub(crate) mod element;
 pub(crate) mod solid;
 

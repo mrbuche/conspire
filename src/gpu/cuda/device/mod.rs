@@ -67,12 +67,10 @@ impl Device {
         }
     }
     /// The name of the device.
-    #[cfg(test)]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The compute capability of the device, as a major and a minor number.
-    #[cfg(test)]
     pub fn capability(&self) -> (i32, i32) {
         self.capability
     }

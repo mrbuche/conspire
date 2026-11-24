@@ -12,10 +12,12 @@ mod error;
 pub mod fluid;
 pub mod hybrid;
 pub mod multiphysics;
+mod parameters;
 pub mod solid;
 pub mod thermal;
 
 pub use error::{ConstitutiveError, IntegratorFailure, SolverFailure, Unavailable};
+pub use parameters::FromParameters;
 
 use core::fmt::Debug;
 

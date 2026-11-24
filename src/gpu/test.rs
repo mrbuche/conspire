@@ -112,6 +112,34 @@ fn a_buffer_and_a_kernel_outlive_their_device() {
 }
 
 #[test]
+fn a_buffer_is_filled_with_words() {
+    let Some(device) = device() else { return };
+    let buffer = device.buffer::<u64>(5).unwrap();
+    for word in [u32::MAX, 0, 0x01020304] {
+        buffer.fill(word).unwrap();
+        let mut found = vec![1; 5];
+        buffer.download(&mut found).unwrap();
+        let expected = (u64::from(word) << 32) | u64::from(word);
+        assert_eq!(found, [expected; 5]);
+    }
+}
+
+#[test]
+fn the_errors_of_a_model_on_a_device_say_what_and_where() {
+    let message = GpuError::NoKernel("block_forces_x_g1_n1".to_string()).to_string();
+    assert!(message.contains("block_forces_x_g1_n1"), "{message}");
+    let message = GpuError::Disagreement {
+        block: 2,
+        item: 7,
+        point: 3,
+    }
+    .to_string();
+    for part in ["integration point 3", "element 7", "block 2"] {
+        assert!(message.contains(part), "{message}");
+    }
+}
+
+#[test]
 fn a_device_is_used_from_many_threads() {
     let Some(device) = device() else { return };
     scope(|scope| {
