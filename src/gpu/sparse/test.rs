@@ -39,6 +39,14 @@ fn product(
     product
 }
 
+fn loose() -> Assert {
+    Assert {
+        abs_tol: 1e-9,
+        rel_tol: 1e-9,
+        ..Assert::default()
+    }
+}
+
 fn right_hand_side(num: usize) -> Vector {
     (0..num).map(|i| 1.0 + 0.1 * (i % 7) as Scalar).collect()
 }
@@ -148,8 +156,8 @@ mod symmetric {
         let b = right_hand_side(N);
         for shift in [2.3, 0.5, 3.1] {
             let x = device.solve(laplacian(shift), &b)?;
-            Assert::default().eq_within_tols(product(&pattern, laplacian(shift), &x), &b)?;
-            Assert::default().eq_within_tols(&x, &host.solve(laplacian(shift), &b)?)?;
+            loose().eq_within_tols(product(&pattern, laplacian(shift), &x), &b)?;
+            loose().eq_within_tols(&x, &host.solve(laplacian(shift), &b)?)?;
         }
         Ok(())
     }

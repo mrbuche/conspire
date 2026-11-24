@@ -10,12 +10,7 @@ fn skip<T>(why: &str) -> Option<T> {
     None
 }
 
-fn solver(
-    row_starts: &[i32],
-    columns: &[i32],
-    symmetric: bool,
-    values: &[f64],
-) -> Option<CudssSolver> {
+fn solver(row_starts: &[i32], columns: &[i32], symmetric: bool) -> Option<CudssSolver> {
     let device = match Device::new(0) {
         Ok(device) => device,
         Err(GpuError::Unavailable(message)) => {
@@ -23,7 +18,7 @@ fn solver(
         }
         Err(error) => panic!("{error}"),
     };
-    match CudssSolver::new(&device, row_starts, columns, symmetric, values) {
+    match CudssSolver::new(&device, row_starts, columns, symmetric) {
         Ok(solver) => Some(solver),
         Err(GpuError::Unavailable(message)) => skip(&format!("there is no cuDSS: {message}")),
         Err(error) => panic!("{error}"),
@@ -43,7 +38,7 @@ fn all_near(found: &[f64], expected: f64) {
 fn solves_a_general_system_of_three_and_refactors() {
     let (row_starts, columns) = ([0, 2, 5, 7], [0, 1, 0, 1, 2, 1, 2]);
     let values = [4.0, 1.0, 2.0, 5.0, 1.0, 1.0, 3.0];
-    let Some(mut solver) = solver(&row_starts, &columns, false, &values) else {
+    let Some(mut solver) = solver(&row_starts, &columns, false) else {
         return;
     };
     let b = [5.0, 8.0, 4.0];
@@ -56,7 +51,7 @@ fn solves_a_general_system_of_three_and_refactors() {
 fn solves_a_symmetric_system_from_its_upper_triangle() {
     let (row_starts, columns) = ([0, 2, 4, 5], [0, 1, 1, 2, 2]);
     let values = [4.0, 1.0, 5.0, 1.0, 3.0];
-    let Some(mut solver) = solver(&row_starts, &columns, true, &values) else {
+    let Some(mut solver) = solver(&row_starts, &columns, true) else {
         return;
     };
     all_near(&solver.solve(&values, &[5.0, 7.0, 4.0]).unwrap(), 1.0);

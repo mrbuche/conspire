@@ -12,7 +12,9 @@ use core::{ffi::c_void, ptr::null_mut};
 ///
 /// The matrix is in compressed sparse row form, with the pattern fixed for the life of the solver.
 /// A symmetric matrix is given by its upper triangle alone. The ordering and the symbolic
-/// factorization are made once, and each [`CudssSolver::solve`] refactors the new values.
+/// factorization are made once, at the first [`CudssSolver::solve`] and with its values, which
+/// the ordering and the pivoting of a general matrix depend on, and each later solve refactors
+/// the new values.
 pub struct CudssSolver {
     /// The functions of the cuDSS library.
     api: Api,
@@ -42,6 +44,8 @@ pub struct CudssSolver {
     columns: Buffer<i32>,
     /// The number of unknowns.
     size: usize,
+    /// Whether the analysis has been made, which the first solve does.
+    analyzed: bool,
     /// Whether the first factorization has been made, so that later solves refactor.
     factored: bool,
 }
@@ -52,13 +56,12 @@ unsafe impl Send for CudssSolver {}
 
 impl CudssSolver {
     /// A solver for matrices of the pattern given by `row_starts` and `columns` (zero-based, with
-    /// `size + 1` row starts), after the analysis of the pattern with `values` as the first guess.
+    /// `size + 1` row starts). The pattern is analyzed at the first solve, as its values matter.
     pub fn new(
         device: &Device,
         row_starts: &[i32],
         columns: &[i32],
         symmetric: bool,
-        values: &[f64],
     ) -> Result<Self> {
         let size = row_starts.len().saturating_sub(1);
         assert_eq!(row_starts.first(), Some(&0), "row starts begin at zero");
@@ -67,7 +70,6 @@ impl CudssSolver {
             columns.len(),
             "row starts end at the number of entries"
         );
-        assert_eq!(values.len(), columns.len(), "a value for each entry");
         let api = Api::load()?;
         let context = device.context().clone();
         let mut solver = Self {
@@ -79,14 +81,16 @@ impl CudssSolver {
             matrix: null_mut(),
             solution: null_mut(),
             right_hand_side: null_mut(),
-            values: device.buffer_of(values)?,
+            values: device.buffer(columns.len())?,
             unknowns: device.buffer::<f64>(size)?,
             right_hand_sides: device.buffer::<f64>(size)?,
             row_starts: device.buffer_of(row_starts)?,
             columns: device.buffer_of(columns)?,
             size,
+            analyzed: false,
             factored: false,
         };
+        solver.values.fill(0)?;
         solver.context.bind()?;
         let (mtype, view) = if symmetric {
             (api::MATRIX_SYMMETRIC, api::VIEW_UPPER)
@@ -147,7 +151,6 @@ impl CudssSolver {
                 "cudssMatrixCreateDn",
             )?;
         }
-        solver.execute(api::PHASE_ANALYSIS, "analysis")?;
         Ok(solver)
     }
     /// The number of unknowns.
@@ -164,6 +167,10 @@ impl CudssSolver {
         );
         self.values.upload(values)?;
         self.right_hand_sides.upload(right_hand_side)?;
+        if !self.analyzed {
+            self.execute(api::PHASE_ANALYSIS, "analysis")?;
+            self.analyzed = true;
+        }
         if self.factored {
             self.execute(api::PHASE_REFACTORIZATION, "refactorization")?;
         } else {

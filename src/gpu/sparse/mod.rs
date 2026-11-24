@@ -80,7 +80,7 @@ impl DeviceSparseSolver {
             None
         } else {
             Some(
-                CudssSolver::new(device, &row_starts, &columns, symmetric, &to_device)
+                CudssSolver::new(device, &row_starts, &columns, symmetric)
                     .map_err(|error| SparseError::Device(error.to_string()))?,
             )
         };
