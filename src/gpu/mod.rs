@@ -1,12 +1,8 @@
-//! A CUDA device.
-//!
-//! The driver is opened when a device is made, not linked, so that a build needs no CUDA, and a
-//! machine without it gets [`GpuError::Unavailable`] instead of a program that does not start.
+#[cfg(test)]
+mod test;
 
 mod cuda;
 pub(crate) mod kernels;
-#[cfg(test)]
-mod test;
 
 #[cfg(feature = "elements")]
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, DeviceLayout};
@@ -26,8 +22,7 @@ pub enum GpuError {
     Unavailable(String),
     /// The kernels of an application were not built, so there is nothing to run on the device.
     KernelsNotBuilt(Application),
-    /// The kernels have none of this name, so the model or the shape of the elements of a block
-    /// cannot be run on the device.
+    /// The kernels have none of this name, so it cannot be run on the device.
     NoKernel(String),
     /// The device found an error at an element of a block, and the host does not.
     Disagreement {

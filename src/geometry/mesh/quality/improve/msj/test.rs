@@ -1,6 +1,6 @@
 use super::{
     element::bounded,
-    kind::{HEXAHEDRON, KINDS},
+    kind::{HEXAHEDRON, kind_of},
 };
 use crate::{
     geometry::{
@@ -63,7 +63,7 @@ pub(super) fn terms(
     nodes: &CoordinateList<3, 8>,
     derivative: bool,
 ) -> (Quantity<Area>, CoordinateList<3, 8>) {
-    let (value, slopes, _) = bounded(&KINDS[HEXAHEDRON as usize], theta, scale, nodes, derivative);
+    let (value, slopes, _) = bounded(&kind_of(HEXAHEDRON), theta, scale, nodes, derivative);
     (value, slopes)
 }
 

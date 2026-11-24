@@ -403,9 +403,17 @@ pub(super) fn edge_junctions<'a>(
                 across.sort_unstable();
                 for a in across {
                     let (plane, first, second) = (corners(i, a), corners(j, b), corners(k, c));
-                    for (owner, other, solid, triangle, partner) in
-                        [(first, second, j, b, (k, c)), (second, first, k, c, (j, b))]
-                    {
+                    for turn in 0..2 {
+                        let (owner, other) = if turn == 0 {
+                            (first, second)
+                        } else {
+                            (second, first)
+                        };
+                        let (solid, triangle, partner) = if turn == 0 {
+                            (j, b, (k, c))
+                        } else {
+                            (k, c, (j, b))
+                        };
                         for edge in 0..3 {
                             let Some(([on_a, on_owner, on_other], position)) =
                                 edge_meeting(plane, owner, edge, other)?
