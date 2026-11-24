@@ -1,8 +1,8 @@
 use std::{
     collections::BTreeSet,
     env::var_os,
-    fs::{metadata, read, read_dir, read_to_string, write},
-    path::{Path, PathBuf},
+    fs::{metadata, read_dir, read_to_string},
+    path::Path,
 };
 
 const APPLICATIONS: &str = "kernels";
@@ -15,16 +15,20 @@ fn main() {
     if var_os("CARGO_FEATURE_GPU").is_none() {
         return;
     }
-    let out = PathBuf::from(var_os("OUT_DIR").expect("cargo gives the directory of outputs"));
-    for application in applications() {
+    let applications = applications();
+    println!(
+        "cargo::rustc-check-cfg=cfg(conspire_ptx, values({}))",
+        applications
+            .iter()
+            .map(|application| format!("\"{application}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    for application in &applications {
         let ptx = Path::new(PTX).join(format!("{application}.ptx"));
-        let embedded = out.join(format!("{application}.ptx"));
-        match read(&ptx) {
-            Ok(bytes) => {
-                write(&embedded, bytes).expect("the PTX can be copied");
-                stale(&application, &ptx);
-            }
-            Err(_) => write(&embedded, b"").expect("the placeholder can be written"),
+        if ptx.is_file() {
+            stale(application, &ptx);
+            println!("cargo::rustc-cfg=conspire_ptx=\"{application}\"");
         }
     }
 }
