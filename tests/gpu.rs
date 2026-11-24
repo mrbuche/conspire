@@ -587,10 +587,10 @@ fn alternating(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
     coordinates
         .iter()
         .map(|&[x, y, z]| {
-            let parity = [x, y, z]
+            let parity: i64 = [x, y, z]
                 .iter()
                 .map(|coordinate| (coordinate * COLUMNS as f64).round() as i64)
-                .sum::<i64>();
+                .sum();
             let sign = if parity % 2 == 0 { 1.0 } else { -1.0 };
             [x + 0.02 * sign, y - 0.01 * sign, z + 0.015 * sign]
         })
@@ -620,18 +620,14 @@ fn the_alternating_displacement_has_the_hourglass_forces_that_a_smooth_one_hardl
     let coordinates = lattice(COLUMNS, LAYERS);
     let nodes = slab(COLUMNS, 0..1)[0];
     let element =
-        StabilizedHexahedron::from(ElementNodalReferenceCoordinates::<8>::from(from_fn::<
-            [f64; 3],
-            8,
-            _,
-        >(
-            |a| coordinates[nodes[a]],
-        )));
-    let components = |current: NodalCoordinates<3>| {
+        StabilizedHexahedron::from(ElementNodalReferenceCoordinates::from(from_fn(|a| {
+            coordinates[nodes[a]]
+        })));
+    let components = |current: NodalCoordinates<3>| -> Vec<_> {
         current
             .iter()
-            .map(|node| from_fn::<f64, 3, _>(|i| node[i].value()))
-            .collect::<Vec<_>>()
+            .map(|node| from_fn(|i| node[i].value()))
+            .collect()
     };
     let alternating = hourglass_size(&element, &nodes, &components(alternating(&coordinates)));
     let smooth = hourglass_size(&element, &nodes, &components(deformed(&coordinates)));
@@ -644,16 +640,14 @@ fn stabilized_hexahedra_of_each_model_have_the_forces_of_the_host_on_a_device()
     let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
     let connectivity = slab(COLUMNS, 0..LAYERS);
-    let rubbers: Model<StabilizedGrid, 3> = (
+    let rubbers = Model::<StabilizedGrid, 3>::from((
         (rubber(), density(), connectivity.clone(), &reference).into(),
         reference.clone(),
-    )
-        .into();
-    let steels: Model<StabilizedSteel, 3> = (
+    ));
+    let steels = Model::<StabilizedSteel, 3>::from((
         (steel(), density(), connectivity, &reference).into(),
         reference,
-    )
-        .into();
+    ));
     let current = alternating(&coordinates);
     for fused in [false, true] {
         let expected = components(&rubbers.nodal_forces(&current)?);
@@ -699,17 +693,13 @@ fn a_stabilized_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the
     let mut forces = vec![0.0; 3 * block.layout.plane()];
     for (item, nodes) in connectivity.iter().enumerate() {
         let element =
-            StabilizedHexahedron::from(ElementNodalReferenceCoordinates::<8>::from(from_fn::<
-                [f64; 3],
-                8,
-                _,
-            >(
-                |a| coordinates[nodes[a]],
-            )));
+            StabilizedHexahedron::from(ElementNodalReferenceCoordinates::from(from_fn(|a| {
+                coordinates[nodes[a]]
+            })));
         let computed = ElasticElement::nodal_forces(
             &element,
             &steel(),
-            &from_fn::<[f64; 3], 8, _>(|a| from_fn(|i| current[nodes[a]][i].value())).into(),
+            &from_fn(|a| from_fn(|i| current[nodes[a]][i].value())).into(),
         )?;
         for (a, force) in computed.iter().enumerate() {
             for (i, component) in force.iter().enumerate() {
@@ -740,14 +730,13 @@ fn blocks_of_both_kinds_that_share_nodes_have_the_forces_of_the_host_on_a_device
 -> Result<(), AssertionError> {
     let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
-    let model: Model<Blocks<Grid, StabilizedSteel>, 3> = (
+    let model = Model::<Blocks<Grid, StabilizedSteel>, 3>::from((
         Blocks(
             Grid::from((rubber(), density(), slab(COLUMNS, 0..2), &reference)),
             StabilizedSteel::from((steel(), density(), slab(COLUMNS, 2..LAYERS), &reference)),
         ),
         reference,
-    )
-        .into();
+    ));
     let current = alternating(&coordinates);
     let expected = components(&model.nodal_forces(&current)?);
     for fused in [false, true] {
@@ -765,11 +754,10 @@ fn a_stabilized_element_with_an_error_is_reported_as_the_host_reports_it()
 -> Result<(), AssertionError> {
     let coordinates = lattice(COLUMNS, LAYERS);
     let reference = NodalReferenceCoordinates::from(coordinates.clone());
-    let model: Model<StabilizedGrid, 3> = (
+    let model = Model::<StabilizedGrid, 3>::from((
         (rubber(), density(), slab(COLUMNS, 0..LAYERS), &reference).into(),
         reference,
-    )
-        .into();
+    ));
     let mut current = alternating(&coordinates);
     current[0] = [0.9, 0.9, 0.9].into();
     let Err(expected) = model.nodal_forces(&current) else {

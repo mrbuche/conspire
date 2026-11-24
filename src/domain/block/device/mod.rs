@@ -26,11 +26,9 @@ pub struct DeviceBlock {
     pub derivatives: Vec<f64>,
     /// The weights of the integration points of the parametric element.
     pub weights: Vec<f64>,
-    /// The number of values that each element has of its own, which is none for the elements that
-    /// share what they integrate with.
+    /// The number of values that each element has of its own.
     pub values_per_item: usize,
-    /// The values of the elements, as the value `k` of an element `item` at `k * items + item`,
-    /// with the element last as in the layout.
+    /// The values of the elements, with the element last as in the layout.
     pub values: Vec<f64>,
     /// The layout of the elements.
     pub layout: DeviceLayout,

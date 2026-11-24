@@ -242,11 +242,10 @@ macro_rules! stabilized {
         type Shape = Block<$constitutive, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
         let (connectivity, coordinates) = disjoint::<8, 8>($count);
         let reference = NodalReferenceCoordinates::from(coordinates.clone());
-        let model: Model<Shape, 3> = (
+        let model = Model::<Shape, 3>::from((
             Shape::from(($model, density(), connectivity, &reference)),
             reference,
-        )
-            .into();
+        ));
         compare(
             concat!($label, " stabilized n8"),
             &model,

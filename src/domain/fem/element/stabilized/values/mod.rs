@@ -8,8 +8,6 @@ use core::{array::from_fn, iter::once};
 impl<const N: usize> StabilizedElement<N> {
     /// The number of values that describe an element for a device: the components of the mean
     /// gradient of each node, then the volume, then the hourglass matrix by rows.
-    ///
-    /// The volumes of the nodes are not among them, as the forces do not use them.
     pub const VALUES: usize = Self::HOURGLASS + N * N;
     /// The position of the first entry of the hourglass matrix, after the mean gradient and the volume.
     pub(crate) const HOURGLASS: usize = 3 * N + 1;
