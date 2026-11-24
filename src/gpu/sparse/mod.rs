@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod test;
 
-use super::{CudssSolver, Device};
+use super::{CudssSolver, Device, Timings};
 use crate::math::{
     Scalar, Tensor, Vector,
     sparse::{CscMatrix, SparseBackend, SparseError, SparseSolver},
 };
+use std::time::Instant;
 
 /// A sparse direct solver on a device, for repeated solves on a fixed sparsity pattern.
 ///
@@ -27,6 +28,8 @@ pub struct DeviceSparseSolver {
     to_device: Vec<Scalar>,
     /// The solver on the device, which a matrix of no unknowns does without.
     solver: Option<CudssSolver>,
+    /// Where the time of the last solve went.
+    timings: Timings,
 }
 
 impl DeviceSparseSolver {
@@ -90,7 +93,12 @@ impl DeviceSparseSolver {
             gather,
             to_device,
             solver,
+            timings: Timings::default(),
         })
+    }
+    /// Where the time of the last solve went.
+    pub fn timings(&self) -> Timings {
+        self.timings
     }
     /// The nonzero (row, column) positions this structure was built from.
     pub fn pattern(&self) -> &[(usize, usize)] {
@@ -106,7 +114,10 @@ impl DeviceSparseSolver {
         let Some(solver) = self.solver.as_mut() else {
             return Ok(Vector::zero(0));
         };
+        let start = Instant::now();
         self.matrix.fill(source);
+        let fill = start.elapsed().as_secs_f64();
+        let start = Instant::now();
         self.from_matrix.clear();
         self.from_matrix
             .extend(self.matrix.iter().map(|(_, _, value)| *value));
@@ -115,10 +126,16 @@ impl DeviceSparseSolver {
             .zip(&self.gather)
             .for_each(|(value, &position)| *value = self.from_matrix[position]);
         let right_hand_side = b.iter().copied().collect::<Vec<_>>();
-        solver
+        let gather = start.elapsed().as_secs_f64();
+        let solution = solver
             .solve(&self.to_device, &right_hand_side)
-            .map(Vector::from)
-            .map_err(|error| SparseError::Device(error.to_string()))
+            .map_err(|error| SparseError::Device(error.to_string()))?;
+        self.timings = Timings {
+            fill,
+            gather,
+            ..solver.timings()
+        };
+        Ok(Vector::from(solution))
     }
 }
 

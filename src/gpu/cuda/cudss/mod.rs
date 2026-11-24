@@ -7,6 +7,29 @@ use super::{Buffer, Device, GpuError, Result, context::Context};
 use alloc::sync::Arc;
 use api::{Api, Handle};
 use core::{ffi::c_void, ptr::null_mut};
+use std::time::Instant;
+
+/// Where the time of the last solve went, in seconds.
+///
+/// A device solver measures its own part, which waits for each phase to finish, and a solver that
+/// fills its values from a source adds its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Timings {
+    /// The values of the entries, asked of a source on the host.
+    pub fill: f64,
+    /// The values put in the order of the device.
+    pub gather: f64,
+    /// The values and the right-hand side, copied to the device.
+    pub upload: f64,
+    /// The ordering and the symbolic factorization, which the first solve makes.
+    pub analysis: f64,
+    /// The factorization, or the refactorization of every solve after the first.
+    pub factorization: f64,
+    /// The solves with the factors.
+    pub solve: f64,
+    /// The solution, copied to the host.
+    pub download: f64,
+}
 
 /// A direct solver of a sparse system of equations on a device, by cuDSS.
 ///
@@ -44,6 +67,8 @@ pub struct CudssSolver {
     columns: Buffer<i32>,
     /// The number of unknowns.
     size: usize,
+    /// Where the time of the last solve went.
+    timings: Timings,
     /// Whether the analysis has been made, which the first solve does.
     analyzed: bool,
     /// Whether the first factorization has been made, so that later solves refactor.
@@ -87,6 +112,7 @@ impl CudssSolver {
             row_starts: device.buffer_of(row_starts)?,
             columns: device.buffer_of(columns)?,
             size,
+            timings: Timings::default(),
             analyzed: false,
             factored: false,
         };
@@ -157,6 +183,10 @@ impl CudssSolver {
     pub fn size(&self) -> usize {
         self.size
     }
+    /// Where the time of the last solve went.
+    pub fn timings(&self) -> Timings {
+        self.timings
+    }
     /// Solves for the values of the entries, in the order of the pattern, and a right-hand side,
     /// factoring anew at the new values.
     pub fn solve(&mut self, values: &[f64], right_hand_side: &[f64]) -> Result<Vec<f64>> {
@@ -165,21 +195,33 @@ impl CudssSolver {
             self.size,
             "a right-hand side entry per unknown"
         );
+        let mut timings = Timings::default();
+        let start = Instant::now();
         self.values.upload(values)?;
         self.right_hand_sides.upload(right_hand_side)?;
+        timings.upload = start.elapsed().as_secs_f64();
         if !self.analyzed {
+            let start = Instant::now();
             self.execute(api::PHASE_ANALYSIS, "analysis")?;
+            timings.analysis = start.elapsed().as_secs_f64();
             self.analyzed = true;
         }
+        let start = Instant::now();
         if self.factored {
             self.execute(api::PHASE_REFACTORIZATION, "refactorization")?;
         } else {
             self.execute(api::PHASE_FACTORIZATION, "factorization")?;
             self.factored = true;
         }
+        timings.factorization = start.elapsed().as_secs_f64();
+        let start = Instant::now();
         self.execute(api::PHASE_SOLVE, "solve")?;
+        timings.solve = start.elapsed().as_secs_f64();
+        let start = Instant::now();
         let mut solution = vec![0.0; self.size];
         self.unknowns.download(&mut solution)?;
+        timings.download = start.elapsed().as_secs_f64();
+        self.timings = timings;
         Ok(solution)
     }
     fn execute(&self, phase: i32, name: &str) -> Result<()> {

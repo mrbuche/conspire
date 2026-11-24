@@ -10,7 +10,7 @@ mod sparse;
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout};
 #[cfg(feature = "fem")]
 pub use crate::domain::{DeviceError, Resident};
-pub use cuda::{Argument, Buffer, CudssSolver, Device, Function, Module, Resources};
+pub use cuda::{Argument, Buffer, CudssSolver, Device, Function, Module, Resources, Timings};
 pub use kernels::Application;
 #[cfg(feature = "math")]
 pub use sparse::DeviceSparseSolver;

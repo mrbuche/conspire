@@ -10,7 +10,7 @@ mod resources;
 
 pub use argument::Argument;
 pub use buffer::Buffer;
-pub use cudss::CudssSolver;
+pub use cudss::{CudssSolver, Timings};
 pub use device::Device;
 pub use module::{Function, Module};
 pub use resources::Resources;
