@@ -17,23 +17,8 @@ use crate::{
     math::{Quantity, Tensor, integrate::IntegrationError},
     units::Time,
 };
-use std::thread::available_parallelism;
 
-/// How the nodal forces of a run of explicit dynamics are computed.
-///
-/// The choice never changes the results, which are identical in either case, and only the run
-/// is affected: the threads and their storage are created when the run starts and dropped
-/// when it ends.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Execution {
-    /// On the calling thread, with nothing created for the run.
-    #[default]
-    Serial,
-    /// On the given number of threads, which live for the run. Any number, including one,
-    /// takes the parallel pathway, which [`Serial`](Self::Serial) avoids, and zero is as many
-    /// threads as the machine offers.
-    Threads(usize),
-}
+pub use crate::math::Execution;
 
 /// The threads and storage of one run.
 pub(super) enum Run<S> {
@@ -48,8 +33,7 @@ impl Execution {
     {
         let threads = match self {
             Self::Serial => return Ok(Run::Serial),
-            Self::Threads(0) => available_parallelism().map_or(1, usize::from),
-            Self::Threads(threads) => threads,
+            Self::Threads(_) => self.threads(),
         };
         Ok(Run::Parallel(
             Workers::new(threads).map_err(IntegrationError::Intermediate)?,

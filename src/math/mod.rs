@@ -26,6 +26,7 @@ pub mod sparse;
 /// Special functions.
 pub mod special;
 
+mod execution;
 mod graph;
 #[cfg(feature = "std")]
 mod labels;
@@ -36,6 +37,7 @@ mod tensor;
 pub use crate::hash::FxHasher;
 #[cfg(feature = "std")]
 pub use crate::hash::{FxHashMap, FxHashSet};
+pub use execution::Execution;
 pub use graph::{Graph, Incidence};
 #[cfg(feature = "std")]
 pub use labels::Labels;
