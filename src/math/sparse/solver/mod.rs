@@ -10,6 +10,20 @@ use crate::math::{Scalar, Vector};
 use alloc::rc::Rc;
 use core::cell::{Ref, RefCell};
 
+/// Where the solves of a [`SparseSolver`] are done, in place of its own factorizations, such as on
+/// a device.
+///
+/// The source gives the value at each position of the pattern the solver was made from, and
+/// duplicate positions are summed by the backend.
+pub trait SparseBackend {
+    /// Solves for the values a source gives and a right-hand side.
+    fn solve(
+        &mut self,
+        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        b: &Vector,
+    ) -> Result<Vector, SparseError>;
+}
+
 /// A sparse direct solver for repeated solves on a fixed sparsity pattern.
 ///
 /// Cloning shares the cached factorization, whose pivot order and fill pattern
@@ -19,8 +33,14 @@ use core::cell::{Ref, RefCell};
 /// not detected at runtime — a source whose symmetry can vary between solves
 /// (e.g. a tangent that is only symmetric near a particular configuration)
 /// must be declared asymmetric.
+///
+/// With a [`SparseBackend`] the solves are the backend's, which the clones share as they share the
+/// factorizations; the inertia of [`SparseSolver::solve_ldl`] and the test of
+/// [`SparseSolver::is_minimum`] remain those of the factorizations here.
 #[derive(Clone)]
 pub struct SparseSolver {
+    symmetric: bool,
+    backend: Option<Rc<RefCell<dyn SparseBackend>>>,
     matrix: RefCell<CscMatrix>,
     ldl: Rc<RefCell<Option<CscLdl>>>,
     lu: Rc<RefCell<Option<CscLu>>>,
@@ -40,10 +60,25 @@ impl SparseSolver {
             None
         };
         Self {
+            symmetric,
+            backend: None,
             matrix: RefCell::new(matrix),
             ldl: Rc::new(RefCell::new(ldl)),
             lu: Rc::new(RefCell::new(lu)),
         }
+    }
+    /// The same solver, doing its solves with a backend, which is made for the same pattern.
+    pub fn with_backend(mut self, backend: impl SparseBackend + 'static) -> Self {
+        self.backend = Some(Rc::new(RefCell::new(backend)));
+        self
+    }
+    /// The number of unknowns.
+    pub fn size(&self) -> usize {
+        self.matrix.borrow().height()
+    }
+    /// Whether the values were declared symmetric.
+    pub fn is_symmetric(&self) -> bool {
+        self.symmetric
     }
     /// The nonzero (row, column) positions this structure was built from.
     pub fn pattern(&self) -> Ref<'_, [(usize, usize)]> {
@@ -98,6 +133,10 @@ impl SparseSolver {
         source: impl FnMut(usize, usize) -> Scalar,
         b: &Vector,
     ) -> Result<Vector, SparseError> {
+        if let Some(backend) = &self.backend {
+            let mut source = source;
+            return backend.borrow_mut().solve(&mut source, b);
+        }
         let mut matrix = self.matrix.borrow_mut();
         matrix.fill(source);
         let mut ldl = self.ldl.borrow_mut();

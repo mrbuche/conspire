@@ -4,6 +4,7 @@ use super::{
 use alloc::{ffi::CString, sync::Arc};
 use core::{
     ffi::{CStr, c_char, c_int, c_uint},
+    fmt::{self, Debug, Formatter},
     marker::PhantomData,
     mem::size_of,
     ptr::null_mut,
@@ -13,10 +14,19 @@ const COMPUTE_CAPABILITY_MAJOR: c_int = 75;
 const COMPUTE_CAPABILITY_MINOR: c_int = 76;
 
 /// A CUDA device, on which buffers and kernels live.
+///
+/// Cloning gives another handle to the same device, which the clones share.
+#[derive(Clone)]
 pub struct Device {
     context: Arc<Context>,
     name: String,
     capability: (c_int, c_int),
+}
+
+impl Debug for Device {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Device({} {:?})", self.name, self.capability)
+    }
 }
 
 impl Device {

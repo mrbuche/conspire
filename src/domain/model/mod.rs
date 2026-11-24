@@ -30,6 +30,8 @@ pub(crate) mod volume;
 #[cfg(all(feature = "gpu", feature = "fem"))]
 pub use device::{DeviceError, Resident};
 
+#[cfg(feature = "gpu")]
+use crate::gpu::Device;
 use crate::{
     domain::{
         ElementModelError,
@@ -86,6 +88,8 @@ pub struct Model<B, const D: usize> {
     pub(crate) coordinates: NodalReferenceCoordinates<D>,
     pub(crate) node_sets: NodeSets,
     pub(crate) side_sets: SideSets,
+    #[cfg(feature = "gpu")]
+    pub(crate) device: Option<Device>,
 }
 
 impl<B, const D: usize> Model<B, D> {
@@ -160,6 +164,23 @@ impl<B, const D: usize> Model<B, D> {
     }
 }
 
+#[cfg(feature = "gpu")]
+impl<B, const D: usize> Model<B, D> {
+    /// The same model, solving its linear systems on a device, by cuDSS, where it has a sparse
+    /// direct solver.
+    ///
+    /// The device is first asked at the first solve, so that a device or a library that is not
+    /// there is the error of that solve.
+    pub fn with_device(mut self, device: &Device) -> Self {
+        self.device = Some(device.clone());
+        self
+    }
+    /// The device the linear systems are solved on, if there is one.
+    pub fn device(&self) -> Option<&Device> {
+        self.device.as_ref()
+    }
+}
+
 #[cfg_attr(
     not(any(feature = "fem", feature = "vem", feature = "cbm")),
     allow(dead_code)
@@ -183,12 +204,17 @@ where
         dimension: usize,
         symmetric: bool,
     ) -> SparseSolver {
-        solver_from_neighbors(
+        let solver = solver_from_neighbors(
             &self.finalized_neighbors(),
             equality_constraints,
             dimension,
             symmetric,
-        )
+        );
+        #[cfg(feature = "gpu")]
+        if let Some(device) = &self.device {
+            return solver.on_device(device);
+        }
+        solver
     }
 }
 
@@ -242,6 +268,8 @@ impl<B, const D: usize> From<(B, NodalReferenceCoordinates<D>)> for Model<B, D> 
             coordinates,
             node_sets: NodeSets::new(),
             side_sets: SideSets::new(),
+            #[cfg(feature = "gpu")]
+            device: None,
         }
     }
 }

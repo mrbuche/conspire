@@ -3,8 +3,8 @@
 mod common;
 
 use common::{
-    agree, components, deformed, density, describe, disjoint, lattice, on_device, rubber, slab,
-    steel,
+    agree, components, deformed, density, describe, disjoint, lattice, on_device, rubber, skip,
+    slab, steel,
 };
 use conspire::{
     constitutive::{
@@ -15,8 +15,9 @@ use conspire::{
         },
     },
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates, Root,
         block::Block,
+        boundary::{BoundaryConditions, ConstrainAt, Displacement, Enforcement, Loads, Solid},
         element::{
             ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElementError,
             Recomputed,
@@ -29,9 +30,9 @@ use conspire::{
         },
         solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError},
-    math::{Quantity, Tensor, assert::AssertionError},
-    units::Density,
+    gpu::{Device, DeviceBlock, DeviceBlocks, DeviceError, GpuError},
+    math::{Quantity, Tensor, assert::AssertionError, optimize::NewtonRaphson},
+    units::{Density, Length},
 };
 use core::array::from_fn;
 
@@ -539,4 +540,74 @@ fn the_kernels_report_what_they_need_of_a_multiprocessor() -> Result<(), Asserti
         );
     }
     Ok(())
+}
+
+fn stretched(
+    model: Model<Blocks<Grid, Steel>, 3>,
+    enforcement: Enforcement,
+) -> Result<NodalCoordinates<3>, String> {
+    let face = (COLUMNS + 1) * (COLUMNS + 1);
+    let nodes = face * (LAYERS + 1);
+    let bottom = 0..face;
+    let top = nodes - face..nodes;
+    let conditions = BoundaryConditions::<Solid<3>>::new()
+        .fix_nodes_by(enforcement, Displacement::<0>, bottom.clone())
+        .fix_nodes_by(enforcement, Displacement::<1>, bottom.clone())
+        .fix_nodes_by(enforcement, Displacement::<2>, bottom)
+        .prescribe_nodes_by(enforcement, Displacement::<2>, top, Length::meters(0.01));
+    let loads = Loads::<Solid<3>, ()>::new();
+    model
+        .root(&conditions, &loads, NewtonRaphson::default())
+        .map_err(|error| error.to_string())
+}
+
+fn compare_solves(enforcement: Enforcement) -> Result<(), AssertionError> {
+    let device = match Device::new(0) {
+        Ok(device) => device,
+        Err(GpuError::Unavailable(message)) => {
+            skip::<()>(&format!("there is no device: {message}"));
+            return Ok(());
+        }
+        Err(error) => panic!("{error}"),
+    };
+    let host = stretched(two_blocks().model, enforcement).map_err(describe)?;
+    let found = match stretched(two_blocks().model.with_device(&device), enforcement) {
+        Ok(found) => found,
+        Err(message) if message.contains("is available") => {
+            skip::<()>(&message);
+            return Ok(());
+        }
+        Err(message) => return Err(message.into()),
+    };
+    let flat = |coordinates: &NodalCoordinates<3>| {
+        coordinates
+            .iter()
+            .flat_map(|node| node.iter().map(|component| component.value()))
+            .collect::<Vec<_>>()
+    };
+    let (found, host) = (flat(&found), flat(&host));
+    assert_eq!(found.len(), host.len());
+    let worst = found
+        .iter()
+        .zip(&host)
+        .fold(0.0_f64, |worst, (found, host)| {
+            worst.max((found - host).abs())
+        });
+    eprintln!("the largest difference of the coordinates is {worst:e}");
+    if worst <= 1e-9 {
+        Ok(())
+    } else {
+        Err(format!("the coordinates differ by {worst}").into())
+    }
+}
+
+#[test]
+fn a_model_solved_on_a_device_has_the_coordinates_of_the_host() -> Result<(), AssertionError> {
+    compare_solves(Enforcement::Elimination)
+}
+
+#[test]
+fn a_model_with_its_boundary_held_by_multipliers_solves_on_a_device() -> Result<(), AssertionError>
+{
+    compare_solves(Enforcement::Multipliers)
 }

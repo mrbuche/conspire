@@ -4,7 +4,7 @@ mod test;
 use super::{CudssSolver, Device};
 use crate::math::{
     Scalar, Tensor, Vector,
-    sparse::{CscMatrix, SparseError},
+    sparse::{CscMatrix, SparseBackend, SparseError, SparseSolver},
 };
 
 /// A sparse direct solver on a device, for repeated solves on a fixed sparsity pattern.
@@ -119,5 +119,52 @@ impl DeviceSparseSolver {
             .solve(&self.to_device, &right_hand_side)
             .map(Vector::from)
             .map_err(|error| SparseError::Device(error.to_string()))
+    }
+}
+
+/// The solver of a device that is made at the first solve, so that a pattern can be given to a
+/// [`SparseSolver`] without the device being asked: whatever it cannot do is the error of the solve.
+struct OnDevice {
+    device: Device,
+    size: usize,
+    pattern: Vec<(usize, usize)>,
+    symmetric: bool,
+    solver: Option<DeviceSparseSolver>,
+}
+
+impl SparseBackend for OnDevice {
+    fn solve(
+        &mut self,
+        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        b: &Vector,
+    ) -> Result<Vector, SparseError> {
+        let solver = match &mut self.solver {
+            Some(solver) => solver,
+            none => none.insert(DeviceSparseSolver::from_pattern(
+                &self.device,
+                self.size,
+                self.pattern.clone(),
+                self.symmetric,
+            )?),
+        };
+        solver.solve(source, b)
+    }
+}
+
+impl SparseSolver {
+    /// The same solver, doing its solves on a device, by cuDSS.
+    ///
+    /// The device is first asked at the first solve, so that a device or a library that is not
+    /// there, a pattern that is not symmetric when it is declared so, or a matrix the device cannot
+    /// factor, is the error of a solve. The solves have no fallback to the host.
+    pub fn on_device(self, device: &Device) -> Self {
+        let backend = OnDevice {
+            device: device.clone(),
+            size: self.size(),
+            pattern: self.pattern().to_vec(),
+            symmetric: self.is_symmetric(),
+            solver: None,
+        };
+        self.with_backend(backend)
     }
 }

@@ -4,7 +4,7 @@ mod solver;
 
 pub use factor::{CscLdl, CscLu};
 pub use matrix::CscMatrix;
-pub use solver::SparseSolver;
+pub use solver::{SparseBackend, SparseSolver};
 
 use crate::math::assert::AssertionError;
 use core::{error::Error, fmt};

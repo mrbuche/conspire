@@ -58,6 +58,8 @@ where
             coordinates,
             node_sets,
             side_sets,
+            #[cfg(feature = "gpu")]
+            device: None,
         })
     }
 }

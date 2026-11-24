@@ -1,7 +1,9 @@
-use super::{Scalar, SparseSolver, Vector};
+use super::{Scalar, SparseBackend, SparseError, SparseSolver, Vector};
 use crate::math::assert::Assert;
 use crate::math::assert::AssertionError;
 use crate::math::matrix::square::SquareMatrix;
+use alloc::rc::Rc;
+use core::cell::Cell;
 
 const N: usize = 100;
 
@@ -266,4 +268,37 @@ fn solve_ldl_refuses_an_asymmetric_solver() {
             .solve_ldl(|i, j| ((2 * i + j) % 3) as f64 + 1.0, &b)
             .is_err()
     )
+}
+
+struct Counting(Rc<Cell<usize>>);
+
+impl SparseBackend for Counting {
+    fn solve(
+        &mut self,
+        source: &mut dyn FnMut(usize, usize) -> Scalar,
+        b: &Vector,
+    ) -> Result<Vector, SparseError> {
+        self.0.set(self.0.get() + 1);
+        Ok(Vector::from([source(0, 0), 7.0, b[0]]))
+    }
+}
+
+#[test]
+fn a_backend_does_the_solves_and_the_clones_share_it() -> Result<(), AssertionError> {
+    let calls = Rc::new(Cell::new(0));
+    let pattern = vec![(0, 0), (0, 1), (1, 0), (1, 1), (1, 2), (2, 1), (2, 2)];
+    let solver = SparseSolver::from_pattern(3, pattern, true).with_backend(Counting(calls.clone()));
+    assert_eq!(solver.size(), 3);
+    assert!(solver.is_symmetric());
+    let b = Vector::from([5.0, 1.0, 1.0]);
+    let source = |i: usize, j: usize| if i == j { 4.0 } else { -1.0 };
+    let expected = Vector::from([4.0, 7.0, 5.0]);
+    Assert::default().eq_within_tols(&solver.solve(source, &b)?, &expected)?;
+    Assert::default().eq_within_tols(&solver.clone().solve(source, &b)?, &expected)?;
+    assert_eq!(calls.get(), 2);
+    let (_, inertia) = solver.solve_ldl(source, &b)?;
+    assert_eq!(inertia, (3, 0, 0));
+    assert_eq!(solver.is_minimum(source, 0), Some(true));
+    assert_eq!(calls.get(), 2);
+    Ok(())
 }
