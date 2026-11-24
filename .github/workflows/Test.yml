@@ -100,7 +100,7 @@ jobs:
       - name: Toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
-          components: clippy, llvm-bitcode-linker
+          components: clippy, llvm-bitcode-linker, llvm-tools
           targets: nvptx64-nvidia-cuda
           toolchain: nightly
       - name: Clippy without std

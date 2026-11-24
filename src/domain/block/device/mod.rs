@@ -11,8 +11,7 @@ pub struct DeviceBlock {
     pub parameters: Vec<f64>,
     /// The integration points of each element.
     pub points: usize,
-    /// The derivatives of the shape functions at the integration points of the parametric
-    /// element, as point, then node, then component, which all of the elements share.
+    /// The derivatives of the shape functions at the integration points of the element.
     pub derivatives: Vec<f64>,
     /// The weights of the integration points of the parametric element.
     pub weights: Vec<f64>,

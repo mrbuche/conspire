@@ -22,8 +22,7 @@ pub enum GpuError {
     Unavailable(String),
     /// The kernels of an application were not built, so there is nothing to run on the device.
     KernelsNotBuilt(Application),
-    /// The kernels have none of this name, so the model or the shape of the elements of a block
-    /// cannot be run on the device.
+    /// The kernels have none of this name, so it cannot be run on the device.
     NoKernel(String),
     /// The device found an error at an element of a block, and the host does not.
     Disagreement {

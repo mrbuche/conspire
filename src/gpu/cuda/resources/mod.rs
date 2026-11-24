@@ -5,8 +5,7 @@ mod test;
 /// the device runs at once, and so how well it hides the latency of its memory and arithmetic.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Resources {
-    /// The registers of each thread, of at most 255, as the driver compiled the kernel for the
-    /// device.
+    /// The registers of each thread, of at most 255, as the driver compiled for the device.
     pub registers: u32,
     /// The bytes of local memory of each thread, which is the memory of the device, and slow.
     pub local_bytes: u32,
