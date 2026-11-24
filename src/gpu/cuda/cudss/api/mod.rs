@@ -1,10 +1,10 @@
 use super::super::{GpuError, Result, library::Library};
 use core::ffi::{c_int, c_void};
 
-pub(super) const PHASE_ANALYSIS: c_int = 1;
-pub(super) const PHASE_FACTORIZATION: c_int = 2;
-pub(super) const PHASE_REFACTORIZATION: c_int = 4;
-pub(super) const PHASE_SOLVE: c_int = 8;
+pub(super) const PHASE_ANALYSIS: c_int = 1 | 2;
+pub(super) const PHASE_FACTORIZATION: c_int = 4;
+pub(super) const PHASE_REFACTORIZATION: c_int = 8;
+pub(super) const PHASE_SOLVE: c_int = 16 | 32 | 64 | 128 | 256 | 512;
 pub(super) const MATRIX_GENERAL: c_int = 0;
 pub(super) const MATRIX_SYMMETRIC: c_int = 1;
 pub(super) const VIEW_FULL: c_int = 0;
