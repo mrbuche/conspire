@@ -8,7 +8,7 @@ pub(crate) mod kernels;
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout};
 #[cfg(feature = "fem")]
 pub use crate::domain::{DeviceError, Resident};
-pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
+pub use cuda::{Argument, Buffer, CudssSolver, Device, Function, Module, Resources};
 pub use kernels::Application;
 
 use core::{

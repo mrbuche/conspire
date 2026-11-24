@@ -66,6 +66,10 @@ impl Device {
             })
         }
     }
+    /// The context of the device, for libraries that work in it.
+    pub(super) fn context(&self) -> &Arc<Context> {
+        &self.context
+    }
     /// The name of the device.
     pub fn name(&self) -> &str {
         &self.name
