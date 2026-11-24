@@ -31,7 +31,11 @@ use conspire::{
         solid::elastic::ElasticElements,
     },
     gpu::{Device, DeviceBlock, DeviceBlocks, DeviceError, GpuError},
-    math::{Quantity, Tensor, assert::AssertionError, optimize::NewtonRaphson},
+    math::{
+        Quantity, Tensor,
+        assert::AssertionError,
+        optimize::{NewtonRaphson, Tolerances},
+    },
     units::{Density, Length},
 };
 use core::array::from_fn;
@@ -556,12 +560,21 @@ fn stretched(
         .fix_nodes_by(enforcement, Displacement::<2>, bottom)
         .prescribe_nodes_by(enforcement, Displacement::<2>, top, Length::meters(0.01));
     let loads = Loads::<Solid<3>, ()>::new();
+    let solver = NewtonRaphson {
+        abs_tol: Tolerances {
+            constraint: 1e-9,
+            residual: 1e-3,
+        },
+        ..NewtonRaphson::default()
+    };
     model
-        .root(&conditions, &loads, NewtonRaphson::default())
+        .root(&conditions, &loads, solver)
         .map_err(|error| error.to_string())
 }
 
 fn compare_solves(enforcement: Enforcement) -> Result<(), AssertionError> {
+    let host = stretched(two_blocks().model, enforcement)
+        .map_err(|message| describe(format!("on the host: {message}")))?;
     let device = match Device::new(0) {
         Ok(device) => device,
         Err(GpuError::Unavailable(message)) => {
@@ -570,14 +583,13 @@ fn compare_solves(enforcement: Enforcement) -> Result<(), AssertionError> {
         }
         Err(error) => panic!("{error}"),
     };
-    let host = stretched(two_blocks().model, enforcement).map_err(describe)?;
     let found = match stretched(two_blocks().model.with_device(&device), enforcement) {
         Ok(found) => found,
         Err(message) if message.contains("is available") => {
             skip::<()>(&message);
             return Ok(());
         }
-        Err(message) => return Err(message.into()),
+        Err(message) => return Err(describe(format!("on the device: {message}"))),
     };
     let flat = |coordinates: &NodalCoordinates<3>| {
         coordinates
