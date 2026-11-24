@@ -14,6 +14,8 @@ use core::{error::Error, fmt};
 pub enum SparseError {
     Singular,
     Unsymmetric,
+    /// A device failed, or is not there, with what it reported.
+    Device(String),
 }
 
 impl fmt::Display for SparseError {
@@ -21,6 +23,7 @@ impl fmt::Display for SparseError {
         match self {
             Self::Singular => write!(f, "Matrix is singular."),
             Self::Unsymmetric => write!(f, "Matrix is not symmetric."),
+            Self::Device(message) => write!(f, "Device: {message}"),
         }
     }
 }

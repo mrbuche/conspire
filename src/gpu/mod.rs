@@ -3,6 +3,8 @@ mod test;
 
 mod cuda;
 pub(crate) mod kernels;
+#[cfg(feature = "math")]
+mod sparse;
 
 #[cfg(feature = "elements")]
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout};
@@ -10,6 +12,8 @@ pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceLayout};
 pub use crate::domain::{DeviceError, Resident};
 pub use cuda::{Argument, Buffer, CudssSolver, Device, Function, Module, Resources};
 pub use kernels::Application;
+#[cfg(feature = "math")]
+pub use sparse::DeviceSparseSolver;
 
 use core::{
     error::Error,

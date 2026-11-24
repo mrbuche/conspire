@@ -251,6 +251,7 @@ impl From<SparseError> for OptimizationError {
         match error {
             SparseError::Singular => Self::SingularMatrix,
             SparseError::Unsymmetric => Self::UnsymmetricMatrix,
+            SparseError::Device(message) => Self::Intermediate(message),
         }
     }
 }
