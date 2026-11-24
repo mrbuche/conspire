@@ -56,6 +56,12 @@ pub(crate) fn block_forces(model: &str, points: usize, nodes: usize) -> String {
     format!("block_forces_{model}_g{points}_n{nodes}")
 }
 
+/// The name of the kernel for the elements of a point with hourglass control of a block of a model.
+#[cfg(feature = "elements")]
+pub(crate) fn block_forces_stabilized(model: &str, nodes: usize) -> String {
+    format!("block_forces_{model}_stabilized_n{nodes}")
+}
+
 fn prepare(application: Application, ptx: &str, fused: bool) -> Result<Cow<'_, str>, GpuError> {
     if ptx.trim().is_empty() {
         Err(GpuError::KernelsNotBuilt(application))

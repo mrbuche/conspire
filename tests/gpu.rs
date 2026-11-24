@@ -26,10 +26,11 @@ use conspire::{
                 ElementNodalForcesSolid,
                 elastic::{ElasticElement, ElasticFiniteElement},
             },
+            stabilized::linear::Hexahedron as StabilizedHexahedron,
         },
         solid::elastic::ElasticElements,
     },
-    gpu::{DeviceBlock, DeviceBlocks, DeviceError},
+    gpu::{DeviceBlock, DeviceBlocks, DeviceError, DeviceKind},
     math::{Quantity, Tensor, assert::AssertionError},
     units::Density,
 };
@@ -38,6 +39,7 @@ use core::array::from_fn;
 type Grid = Block<NeoHookean, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Steel = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Density>>;
 type Tetrahedra = Block<NeoHookean, Tetrahedron<1>, 1, 3, 4, 4, Quantity<Density>>;
+type StabilizedGrid = Block<NeoHookean, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
 
 const COLUMNS: usize = 3;
 const LAYERS: usize = 4;
@@ -88,9 +90,12 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
         (NeoHookean::NAME, rubber().parameters(), &below),
         (SaintVenantKirchhoff::NAME, steel().parameters(), &above),
     ]) {
+        assert_eq!(block.kind, DeviceKind::Full);
         assert_eq!(block.model, name);
         assert_eq!(block.parameters, parameters);
         assert_eq!(block.points, 8);
+        assert_eq!(block.values_per_item, 0);
+        assert!(block.values.is_empty());
         assert_eq!(block.derivatives, derivatives);
         assert_eq!(block.weights, weights);
         let items = connectivity.len();
@@ -104,6 +109,40 @@ fn a_block_is_described_by_its_model_its_shape_and_the_layout_of_its_elements() 
     }
     assert_eq!(blocks[0].parameters, [3.0e9, 13.0e9]);
     assert_eq!(blocks[1].parameters, [80.0e9, 160.0e9]);
+}
+
+#[test]
+fn a_block_of_stabilized_elements_is_described_by_the_values_of_each_element() {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let connectivity = slab(COLUMNS, 0..LAYERS);
+    let model: Model<StabilizedGrid, 3> = (
+        (rubber(), density(), connectivity.clone(), &reference).into(),
+        reference,
+    )
+        .into();
+    let mut blocks = Vec::new();
+    model.device_blocks(&mut blocks);
+    assert_eq!(blocks.len(), 1);
+    let block = &blocks[0];
+    let items = connectivity.len();
+    assert_eq!(block.kind, DeviceKind::Stabilized);
+    assert_eq!(block.model, NeoHookean::NAME);
+    assert_eq!(block.points, 1);
+    assert!(block.derivatives.is_empty() && block.weights.is_empty());
+    assert_eq!(block.values_per_item, 24 + 1 + 64);
+    assert_eq!(block.values.len(), 89 * items);
+    assert_eq!(block.layout.items, items);
+    assert_eq!(block.layout.nodes_per_item, 8);
+    for (item, nodes) in connectivity.iter().enumerate() {
+        let element =
+            StabilizedHexahedron::from(ElementNodalReferenceCoordinates::<8>::from(from_fn(|a| {
+                coordinates[nodes[a]]
+            })));
+        for (k, value) in element.values().into_iter().enumerate() {
+            assert_eq!(block.values[k * items + item].to_bits(), value.to_bits());
+        }
+    }
 }
 
 #[test]
@@ -538,5 +577,205 @@ fn the_kernels_report_what_they_need_of_a_multiprocessor() -> Result<(), Asserti
             "{name}"
         );
     }
+    Ok(())
+}
+
+type StabilizedSteel =
+    Block<SaintVenantKirchhoff, StabilizedHexahedron, 1, 3, 8, 8, Quantity<Density>>;
+
+fn alternating(coordinates: &[[f64; 3]]) -> NodalCoordinates<3> {
+    coordinates
+        .iter()
+        .map(|&[x, y, z]| {
+            let parity: i64 = [x, y, z]
+                .iter()
+                .map(|coordinate| (coordinate * COLUMNS as f64).round() as i64)
+                .sum();
+            let sign = if parity % 2 == 0 { 1.0 } else { -1.0 };
+            [x + 0.02 * sign, y - 0.01 * sign, z + 0.015 * sign]
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn hourglass_size(element: &StabilizedHexahedron, nodes: &[usize; 8], current: &[[f64; 3]]) -> f64 {
+    let matrix = element.hourglass_matrix();
+    (0..8)
+        .map(|a| {
+            (0..3)
+                .map(|i| {
+                    (0..8)
+                        .map(|b| matrix[a][b].value() * current[nodes[b]][i])
+                        .sum::<f64>()
+                        .powi(2)
+                })
+                .sum::<f64>()
+        })
+        .sum::<f64>()
+        .sqrt()
+}
+
+#[test]
+fn the_alternating_displacement_has_the_hourglass_forces_that_a_smooth_one_hardly_has() {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let nodes = slab(COLUMNS, 0..1)[0];
+    let element =
+        StabilizedHexahedron::from(ElementNodalReferenceCoordinates::from(from_fn(|a| {
+            coordinates[nodes[a]]
+        })));
+    let components = |current: NodalCoordinates<3>| -> Vec<_> {
+        current
+            .iter()
+            .map(|node| from_fn(|i| node[i].value()))
+            .collect()
+    };
+    let alternating = hourglass_size(&element, &nodes, &components(alternating(&coordinates)));
+    let smooth = hourglass_size(&element, &nodes, &components(deformed(&coordinates)));
+    assert!(alternating > 5.0 * smooth, "{alternating} and {smooth}");
+}
+
+#[test]
+fn stabilized_hexahedra_of_each_model_have_the_forces_of_the_host_on_a_device()
+-> Result<(), AssertionError> {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let connectivity = slab(COLUMNS, 0..LAYERS);
+    let rubbers = Model::<StabilizedGrid, 3>::from((
+        (rubber(), density(), connectivity.clone(), &reference).into(),
+        reference.clone(),
+    ));
+    let steels = Model::<StabilizedSteel, 3>::from((
+        (steel(), density(), connectivity, &reference).into(),
+        reference,
+    ));
+    let current = alternating(&coordinates);
+    for fused in [false, true] {
+        let expected = components(&rubbers.nodal_forces(&current)?);
+        let Some(resident) = on_device(&rubbers, fused) else {
+            return Ok(());
+        };
+        let found = resident
+            .nodal_forces(&rubbers, &current)
+            .map_err(describe)?;
+        agree(&components(&found), &expected, 1e-10)?;
+        let expected = components(&steels.nodal_forces(&current)?);
+        let Some(resident) = on_device(&steels, fused) else {
+            return Ok(());
+        };
+        let found = resident.nodal_forces(&steels, &current).map_err(describe)?;
+        agree(&components(&found), &expected, 1e-10)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_stabilized_steel_model_has_the_forces_of_the_host_with_the_same_code_to_the_bit_on_a_device()
+-> Result<(), AssertionError> {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let connectivity = slab(COLUMNS, 0..LAYERS);
+    let model: Model<StabilizedSteel, 3> = (
+        (steel(), density(), connectivity.clone(), &reference).into(),
+        reference,
+    )
+        .into();
+    let current = alternating(&coordinates);
+    let Some(resident) = on_device(&model, false) else {
+        return Ok(());
+    };
+    resident.compute(&current).map_err(describe)?;
+    assert!(resident.first_error().map_err(describe)?.is_none());
+    let found = components(&resident.download().map_err(describe)?);
+    let mut blocks = Vec::new();
+    model.device_blocks(&mut blocks);
+    let block = &blocks[0];
+    let items = block.layout.items;
+    let mut forces = vec![0.0; 3 * block.layout.plane()];
+    for (item, nodes) in connectivity.iter().enumerate() {
+        let element =
+            StabilizedHexahedron::from(ElementNodalReferenceCoordinates::from(from_fn(|a| {
+                coordinates[nodes[a]]
+            })));
+        let computed = ElasticElement::nodal_forces(
+            &element,
+            &steel(),
+            &from_fn(|a| from_fn(|i| current[nodes[a]][i].value())).into(),
+        )?;
+        for (a, force) in computed.iter().enumerate() {
+            for (i, component) in force.iter().enumerate() {
+                forces[(i * 8 + a) * items + item] = component.value();
+            }
+        }
+    }
+    let mut expected = vec![[0.0; 3]; coordinates.len()];
+    gather(block, &forces, &mut expected);
+    let expected = expected.iter().flatten().copied().collect::<Vec<_>>();
+    assert_eq!(found.len(), expected.len());
+    found
+        .iter()
+        .zip(&expected)
+        .enumerate()
+        .for_each(|(k, (found, expected))| {
+            assert_eq!(
+                found.to_bits(),
+                expected.to_bits(),
+                "{found} and {expected} at {k}"
+            );
+        });
+    Ok(())
+}
+
+#[test]
+fn blocks_of_both_kinds_that_share_nodes_have_the_forces_of_the_host_on_a_device()
+-> Result<(), AssertionError> {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let model = Model::<Blocks<Grid, StabilizedSteel>, 3>::from((
+        Blocks(
+            Grid::from((rubber(), density(), slab(COLUMNS, 0..2), &reference)),
+            StabilizedSteel::from((steel(), density(), slab(COLUMNS, 2..LAYERS), &reference)),
+        ),
+        reference,
+    ));
+    let current = alternating(&coordinates);
+    let expected = components(&model.nodal_forces(&current)?);
+    for fused in [false, true] {
+        let Some(resident) = on_device(&model, fused) else {
+            return Ok(());
+        };
+        let found = resident.nodal_forces(&model, &current).map_err(describe)?;
+        agree(&components(&found), &expected, 1e-10)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_stabilized_element_with_an_error_is_reported_as_the_host_reports_it()
+-> Result<(), AssertionError> {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let model = Model::<StabilizedGrid, 3>::from((
+        (rubber(), density(), slab(COLUMNS, 0..LAYERS), &reference).into(),
+        reference,
+    ));
+    let mut current = alternating(&coordinates);
+    current[0] = [0.9, 0.9, 0.9].into();
+    let Err(expected) = model.nodal_forces(&current) else {
+        return Err("the host finds an error".into());
+    };
+    let Some(resident) = on_device(&model, true) else {
+        return Ok(());
+    };
+    resident.compute(&current).map_err(describe)?;
+    let Some((block, record)) = resident.first_error().map_err(describe)? else {
+        return Err("the device finds an error".into());
+    };
+    assert_eq!(Some(block), expected.block.or(Some(0)));
+    assert_eq!(Some(record.item()), expected.item);
+    assert_eq!(Some(record.point()), expected.point);
+    let Err(error) = resident.nodal_forces(&model, &current) else {
+        return Err("the device finds an error".into());
+    };
+    assert_eq!(error.to_string(), expected.to_string());
     Ok(())
 }

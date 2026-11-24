@@ -1,4 +1,7 @@
+#[cfg(feature = "gpu")]
+mod device;
 pub mod linear;
+mod values;
 
 use crate::{
     fem::element::{
@@ -58,16 +61,27 @@ impl<const N: usize> StabilizedElement<N> {
         shear_modulus: Quantity<Stress>,
         nodal_coordinates: &ElementNodalCoordinates<N>,
     ) -> ElementNodalForcesSolid<N> {
+        Self::hourglass_forces_from(
+            |a, b| self.hourglass_matrix[a][b],
+            shear_modulus,
+            nodal_coordinates,
+        )
+    }
+    /// The [hourglass forces](Self::hourglass_forces) of a hourglass matrix that `matrix` gives
+    /// the entries of, which is read as it is used, so that it need not be held whole: the
+    /// entry of the row `a` and the column `b`.
+    pub(crate) fn hourglass_forces_from(
+        matrix: impl Fn(usize, usize) -> Quantity<Length>,
+        shear_modulus: Quantity<Stress>,
+        nodal_coordinates: &ElementNodalCoordinates<N>,
+    ) -> ElementNodalForcesSolid<N> {
         let modulus = shear_modulus * HOURGLASS_PARAMETER;
-        self.hourglass_matrix
-            .iter()
-            .map(|hourglass_matrix_a| {
-                hourglass_matrix_a
+        (0..N)
+            .map(|a| {
+                nodal_coordinates
                     .iter()
-                    .zip(nodal_coordinates.iter())
-                    .map(|(hourglass_matrix_ab, nodal_coordinate_b)| {
-                        nodal_coordinate_b * hourglass_matrix_ab
-                    })
+                    .enumerate()
+                    .map(|(b, nodal_coordinate_b)| nodal_coordinate_b * matrix(a, b))
                     .sum::<TensorRank1<_, _, _>>()
                     * modulus
             })
