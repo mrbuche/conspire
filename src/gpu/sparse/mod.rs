@@ -24,7 +24,8 @@ use std::time::Instant;
 /// an error.
 ///
 /// The values are asked of the source at the positions of the device, and on the threads that the
-/// [`Execution`] gives, which never changes them.
+/// [`Execution`] gives, which never changes them. The solution is that of the device, which need
+/// not be the same to the last bit from one solver to another.
 pub struct DeviceSparseSolver {
     /// The (row, column) that the source is asked for the value of each entry of the device.
     positions: Vec<(usize, usize)>,

@@ -110,23 +110,27 @@ mod symmetric {
     const SIDE: usize = 12;
     const N: usize = SIDE * SIDE;
 
-    fn pattern() -> Vec<(usize, usize)> {
+    fn grid(side: usize) -> Vec<(usize, usize)> {
         let mut pattern = Vec::new();
-        (0..SIDE).for_each(|x| {
-            (0..SIDE).for_each(|y| {
-                let i = SIDE * x + y;
+        (0..side).for_each(|x| {
+            (0..side).for_each(|y| {
+                let i = side * x + y;
                 pattern.push((i, i));
-                if x + 1 < SIDE {
-                    pattern.push((i, i + SIDE));
-                    pattern.push((i + SIDE, i));
+                if x + 1 < side {
+                    pattern.push((i, i + side));
+                    pattern.push((i + side, i));
                 }
-                if y + 1 < SIDE {
+                if y + 1 < side {
                     pattern.push((i, i + 1));
                     pattern.push((i + 1, i));
                 }
             })
         });
         pattern
+    }
+
+    fn pattern() -> Vec<(usize, usize)> {
+        grid(SIDE)
     }
 
     fn laplacian(shift: Scalar) -> impl Fn(usize, usize) -> Scalar {
@@ -163,24 +167,19 @@ mod symmetric {
     }
 
     #[test]
-    fn threads_give_the_same_solution_as_one_thread() {
-        let pattern = pattern();
-        let Some(serial) = solver(N, &pattern, true) else {
-            return;
+    fn a_solver_with_threads_solves_as_one_without() -> Result<(), AssertionError> {
+        const LARGE: usize = 200;
+        let pattern = grid(LARGE);
+        let Some(mut serial) = solver(LARGE * LARGE, &pattern, true) else {
+            return Ok(());
         };
-        let mut serial = serial;
-        let mut threaded = solver(N, &pattern, true)
+        let mut threaded = solver(LARGE * LARGE, &pattern, true)
             .unwrap()
-            .with_execution(Execution::Threads(0));
-        let b = right_hand_side(N);
-        let (one, many) = (
-            serial.solve(laplacian(0.5), &b).unwrap(),
-            threaded.solve(laplacian(0.5), &b).unwrap(),
-        );
-        assert_eq!(one.iter().count(), N);
-        one.iter()
-            .zip(many.iter())
-            .for_each(|(one, many)| assert_eq!(one.to_bits(), many.to_bits()));
+            .with_execution(Execution::Threads(4));
+        let b = right_hand_side(LARGE * LARGE);
+        let x = threaded.solve(laplacian(0.0), &b)?;
+        loose().eq_within_tols(product(&pattern, laplacian(0.0), &x), &b)?;
+        loose().eq_within_tols(&x, &serial.solve(laplacian(0.0), &b)?)
     }
 
     #[test]
