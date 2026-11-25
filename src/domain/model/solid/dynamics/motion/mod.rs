@@ -23,7 +23,7 @@ use alloc::collections::BTreeSet;
 /// the motion starts at, whatever the step it is held in. Fixed degrees of freedom have no
 /// velocity, and those that are moved keep the one they are given, which a scheme that
 /// moves them itself uses, and an explicit one does not report.
-pub(super) struct Motion<'c, C> {
+pub(crate) struct Motion<'c, C> {
     conditions: &'c C,
     anchor: NodalCoordinates<3>,
     moving: Vec<usize>,
@@ -58,7 +58,7 @@ where
     /// moved to where the motion starts.
     ///
     /// This is [`held`](Self::held) without the masses, for a run that divides by them itself.
-    pub(super) fn start(
+    pub(crate) fn start(
         conditions: &'c C,
         initial_time: Quantity<Time>,
         coordinates: &mut NodalCoordinates<3>,
@@ -125,6 +125,11 @@ where
     pub(super) fn constraint_at(&self, time: Quantity<Time>) -> EqualityConstraints {
         EqualityConstraint::from_reference(self.conditions.constraint_at(time), &self.anchor)
     }
+    /// The degrees of freedom that are moved, in ascending order.
+    #[cfg(feature = "gpu")]
+    pub(crate) fn moving(&self) -> &[usize] {
+        &self.moving
+    }
     /// Where a degree of freedom is when the motion starts.
     fn anchored(&self, dof: usize) -> f64 {
         self.anchor[dof / 3][dof % 3].value()
@@ -132,7 +137,7 @@ where
     /// Puts into `targets` what each of the moved degrees of freedom is held at, at a time, in
     /// their order, which is ascending: where it starts, unless a condition holds it elsewhere,
     /// the last one that does.
-    pub(super) fn targets_into(&self, time: Quantity<Time>, targets: &mut [f64]) {
+    pub(crate) fn targets_into(&self, time: Quantity<Time>, targets: &mut [f64]) {
         assert_eq!(
             targets.len(),
             self.moving.len(),

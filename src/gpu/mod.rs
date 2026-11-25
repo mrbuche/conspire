@@ -2,17 +2,13 @@
 mod test;
 
 mod cuda;
-mod dynamics;
 pub(crate) mod kernels;
 
 #[cfg(feature = "elements")]
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, DeviceLayout};
 #[cfg(feature = "fem")]
-pub use crate::domain::{DeviceError, Resident};
+pub use crate::domain::{DeviceError, ExplicitRun, Resident};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
-pub use dynamics::Imposed;
-#[cfg(feature = "math")]
-pub use dynamics::Schedule;
 pub use kernels::Application;
 
 use core::{

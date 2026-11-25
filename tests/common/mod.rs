@@ -4,14 +4,17 @@ use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
         Model, NodalCoordinates, NodalReferenceCoordinates, NodalVelocities,
-        boundary::{DeviceForce, DeviceLoads, LoadAt, Loads, Solid},
+        boundary::{
+            BoundaryConditions, ConstrainAt, DeviceForce, DeviceLoads, Displacement, LoadAt, Loads,
+            Solid,
+        },
         element::{FiniteElement, linear::LinearElement},
         solid::NodalForcesSolid,
         volume::NodalVolumeElements,
     },
-    gpu::{DeviceBlocks, GpuError, Imposed, Resident, Schedule},
+    gpu::{DeviceBlocks, GpuError, Resident},
     math::{Quantity, Tensor, TensorRank1Vec, assert::AssertionError},
-    units::{Density, Stress, Time},
+    units::{Density, Length, Stress, Time},
 };
 use core::{array::from_fn, fmt::Display, ops::Range};
 use std::env::var_os;
@@ -239,15 +242,16 @@ pub fn device_forces_of(loads: &impl DeviceLoads) -> Vec<DeviceForce> {
     forces
 }
 
-pub fn imposed_by<B>(work: &Work<B>, moved: bool) -> Imposed {
-    Imposed {
-        fixed: work.fixed.clone(),
-        moved: if moved {
-            work.moved.clone()
-        } else {
-            Vec::new()
-        },
-    }
+pub fn conditions_on<B>(work: &Work<B>, moved: bool) -> impl ConstrainAt<Solid<3>> {
+    let base = 0..work.layer;
+    let top = if moved { work.top.clone() } else { Vec::new() };
+    BoundaryConditions::<Solid<3>>::new()
+        .fix_nodes(Displacement::<0>, base.clone())
+        .fix_nodes(Displacement::<1>, base.clone())
+        .fix_nodes(Displacement::<2>, base)
+        .prescribe_nodes_with(Displacement::<0>, top, |time| {
+            Length::meters(RATE * time.value())
+        })
 }
 
 pub fn targets_at<B>(work: &Work<B>, start: &[f64], row: usize, dt: f64) -> Vec<f64> {
@@ -255,29 +259,6 @@ pub fn targets_at<B>(work: &Work<B>, start: &[f64], row: usize, dt: f64) -> Vec<
         .iter()
         .map(|&dof| start[dof] + RATE * time_at(row, dt).value())
         .collect()
-}
-
-pub struct Grid<'a, B> {
-    work: &'a Work<B>,
-    start: Vec<f64>,
-    dt: f64,
-}
-
-impl<B> Schedule for Grid<'_, B> {
-    fn time(&self, row: usize) -> Option<Quantity<Time>> {
-        Some(time_at(row, self.dt))
-    }
-    fn targets(&self, row: usize) -> Option<Vec<f64>> {
-        Some(targets_at(self.work, &self.start, row, self.dt))
-    }
-}
-
-pub fn schedule_of<'a, B>(work: &'a Work<B>, start: &NodalCoordinates<3>, dt: f64) -> Grid<'a, B> {
-    Grid {
-        work,
-        start: flat(start),
-        dt,
-    }
 }
 
 pub fn close(found: &[f64], expected: &[f64], what: &str) -> Result<(), AssertionError> {

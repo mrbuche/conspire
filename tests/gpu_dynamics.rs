@@ -3,9 +3,9 @@
 mod common;
 
 use common::{
-    FIRST, LAST, RATE, Work, bits, close, components, deformed, density, describe,
-    device_forces_of, flat, imposed_by, lattice, loads_on, on_device, schedule_of, slab,
-    static_forces, steel, targets_at, time_at, volume_loads_on,
+    FIRST, LAST, Work, bits, close, components, conditions_on, deformed, density, describe,
+    device_forces_of, flat, lattice, loads_on, on_device, slab, static_forces, steel, targets_at,
+    time_at, volume_loads_on,
 };
 use conspire::{
     constitutive::solid::hyperelastic::SaintVenantKirchhoff,
@@ -14,7 +14,8 @@ use conspire::{
         NodalVelocities,
         block::Block,
         boundary::{
-            BoundaryConditions, ConstrainAt, DeviceForce, DeviceLoads, Displacement, LoadAt, Solid,
+            BoundaryConditions, ConstrainAt, DeviceForce, DeviceLoads, Displacement, Enforcement,
+            LoadAt, Solid,
         },
         element::{linear::Hexahedron, stabilized::linear::Hexahedron as StabilizedHexahedron},
         solid::{
@@ -22,7 +23,7 @@ use conspire::{
             elastic::ElasticElements,
         },
     },
-    gpu::{DeviceBlocks, GpuError, Imposed, Resident},
+    gpu::{DeviceBlocks, ExplicitRun, GpuError, Resident},
     math::{
         Quantity, QuantityVector, Tensor,
         assert::{Assert, AssertionError},
@@ -61,8 +62,29 @@ fn both_kinds() -> Work<Blocks<Steel, StabilizedSteel>> {
     Work::new((blocks, reference).into(), coordinates, COLUMNS)
 }
 
-fn state(resident: &Resident) -> Result<[Vec<u64>; 3], AssertionError> {
-    let (x, v, a) = resident.dynamics_state().map_err(describe)?;
+fn start<'a, B, C, L>(
+    resident: &'a mut Resident,
+    work: &Work<B>,
+    loads: &'a L,
+    conditions: &'a C,
+) -> Result<ExplicitRun<'a, C, L>, GpuError>
+where
+    Lumped: MassChoice<Model<B, 3>, Mass = QuantityVector<Mass>>,
+    C: ConstrainAt<Solid<3>>,
+    L: DeviceLoads,
+{
+    resident.explicit_dynamics(
+        &Lumped.masses(&work.model),
+        &VelocityVerlet::new(Time::seconds(DT)),
+        Time::seconds(0.0),
+        (&deformed(&work.coordinates), &work.velocities()),
+        loads,
+        conditions,
+    )
+}
+
+fn state<C, L>(run: &ExplicitRun<'_, C, L>) -> Result<[Vec<u64>; 3], AssertionError> {
+    let (x, v, a) = run.state().map_err(describe)?;
     Ok([bits(&flat(&x)), bits(&flat(&v)), bits(&flat(&a))])
 }
 
@@ -77,16 +99,8 @@ where
     Lumped: MassChoice<Model<B, 3>, Mass = QuantityVector<Mass>>,
 {
     let steps = 20;
-    let (start, velocities) = (deformed(&work.coordinates), work.velocities());
-    let base = 0..work.layer;
-    let top = if moved { work.top.clone() } else { Vec::new() };
-    let conditions = BoundaryConditions::<Solid<3>>::new()
-        .fix_nodes(Displacement::<0>, base.clone())
-        .fix_nodes(Displacement::<1>, base.clone())
-        .fix_nodes(Displacement::<2>, base)
-        .prescribe_nodes_with(Displacement::<0>, top, |time| {
-            Length::meters(RATE * time.value())
-        });
+    let (initial, velocities) = (deformed(&work.coordinates), work.velocities());
+    let conditions = conditions_on(work, moved);
     let time = (0..=steps).map(|row| time_at(row, DT)).collect::<Vec<_>>();
     let (_, x, v, a) = work.model.integrate(
         Execution::Serial,
@@ -94,29 +108,16 @@ where
         Lumped,
         &VelocityVerlet::new(Time::seconds(DT)),
         &time,
-        (start.clone(), velocities.clone()),
+        (initial.clone(), velocities),
         loads,
         &conditions,
     )?;
-    let imposed = imposed_by(work, moved);
     let Some(mut resident) = on_device(&work.model, false) else {
         return Ok(());
     };
-    let schedule = schedule_of(work, &start, DT);
-    resident
-        .start_dynamics(
-            &Lumped.masses(&work.model),
-            &start,
-            &velocities,
-            &imposed,
-            loads,
-            &schedule,
-        )
-        .map_err(describe)?;
-    resident
-        .steps(DT, steps, loads, &schedule)
-        .map_err(describe)?;
-    let (found_x, found_v, found_a) = resident.dynamics_state().map_err(describe)?;
+    let mut run = start(&mut resident, work, loads, &conditions).map_err(describe)?;
+    run.steps(steps).map_err(describe)?;
+    let (found_x, found_v, found_a) = run.state().map_err(describe)?;
     let last = |what: &str| format!("the host's run has {what}");
     let (last_x, last_v, last_a) = (
         flat(x.iter().last().ok_or_else(|| last("coordinates"))?),
@@ -126,7 +127,7 @@ where
     close(&flat(&found_x), &last_x, "coordinates")?;
     close(&flat(&found_v), &last_v, "velocities")?;
     close(&flat(&found_a), &last_a, "accelerations")?;
-    let (found_x, started) = (flat(&found_x), flat(&start));
+    let (found_x, started) = (flat(&found_x), flat(&initial));
     for &dof in &work.fixed {
         Assert::eq(found_x[dof], started[dof])?;
     }
@@ -147,26 +148,14 @@ fn a_step_on_the_device_is_the_step_of_the_integrator_to_the_bit() -> Result<(),
     };
     let masses = Lumped.masses(&work.model);
     let per_node = masses.iter().map(|mass| mass.value()).collect::<Vec<_>>();
-    let imposed = Imposed {
-        fixed: work.fixed.clone(),
-        ..Imposed::default()
-    };
-    resident
-        .start_dynamics(
-            &masses,
-            &deformed(&work.coordinates),
-            &work.velocities(),
-            &imposed,
-            &(),
-            &(),
-        )
-        .map_err(describe)?;
+    let conditions = conditions_on(&work, false);
+    let mut run = start(&mut resident, &work, &(), &conditions).map_err(describe)?;
     for step in 0..10 {
-        let (x, v, a) = resident.dynamics_state().map_err(describe)?;
+        let (x, v, a) = run.state().map_err(describe)?;
         let (x, v, a) = (flat(&x), flat(&v), flat(&a));
-        resident.steps(DT, 1, &(), &()).map_err(describe)?;
-        let (x_next, v_next, a_next) = resident.dynamics_state().map_err(describe)?;
-        let forces = components(&resident.download().map_err(describe)?);
+        run.steps(1).map_err(describe)?;
+        let (x_next, v_next, a_next) = run.state().map_err(describe)?;
+        let forces = components(&run.forces().map_err(describe)?);
         let half = (0..x.len())
             .map(|i| a[i] * (DT * 0.5) + v[i])
             .collect::<Vec<_>>();
@@ -210,33 +199,21 @@ fn a_step_with_loads_and_moved_coordinates_is_the_step_of_the_integrator_to_the_
     let work = steelwork();
     let loads = loads_on(&work.model, &work.coordinates)?;
     let forces = device_forces_of(&loads);
-    let imposed = imposed_by(&work, true);
+    let conditions = conditions_on(&work, true);
     let Some(mut resident) = on_device(&work.model, false) else {
         return Ok(());
     };
     let masses = Lumped.masses(&work.model);
     let per_node = masses.iter().map(|mass| mass.value()).collect::<Vec<_>>();
-    let start = deformed(&work.coordinates);
-    let started = flat(&start);
-    let schedule = schedule_of(&work, &start, DT);
-    resident
-        .start_dynamics(
-            &masses,
-            &start,
-            &work.velocities(),
-            &imposed,
-            &loads,
-            &schedule,
-        )
-        .map_err(describe)?;
+    let started = flat(&deformed(&work.coordinates));
+    let mut run = start(&mut resident, &work, &loads, &conditions).map_err(describe)?;
     for step in 0..10 {
         let row = step + 1;
-        let (x, v, a) = resident.dynamics_state().map_err(describe)?;
+        let (x, v, a) = run.state().map_err(describe)?;
         let (x, v, a) = (flat(&x), flat(&v), flat(&a));
-        resident.steps(DT, 1, &loads, &schedule).map_err(describe)?;
-        let (x_next, v_next, a_next) = resident.dynamics_state().map_err(describe)?;
-        resident.run().map_err(describe)?;
-        let mut unbalanced = components_of(&resident)?;
+        run.steps(1).map_err(describe)?;
+        let (x_next, v_next, a_next) = run.state().map_err(describe)?;
+        let mut unbalanced = components(&run.forces().map_err(describe)?);
         let mut which = 0;
         for force in &forces {
             match force {
@@ -296,10 +273,6 @@ fn a_step_with_loads_and_moved_coordinates_is_the_step_of_the_integrator_to_the_
     Ok(())
 }
 
-fn components_of(resident: &Resident) -> Result<Vec<f64>, AssertionError> {
-    Ok(components(&resident.download().map_err(describe)?))
-}
-
 #[test]
 fn steps_on_the_device_are_those_of_the_integrator_of_the_host() -> Result<(), AssertionError> {
     against_the_host(&steelwork(), &(), false)
@@ -326,24 +299,17 @@ fn steps_taken_together_are_those_taken_one_at_a_time() -> Result<(), AssertionE
         return Ok(());
     };
     let loads = loads_on(&work.model, &work.coordinates)?;
-    let imposed = imposed_by(&work, true);
-    let masses = Lumped.masses(&work.model);
-    let (start, velocities) = (deformed(&work.coordinates), work.velocities());
-    let schedule = schedule_of(&work, &start, DT);
-    let mut run = |calls: usize, steps: usize| -> Result<[Vec<u64>; 3], AssertionError> {
-        resident
-            .start_dynamics(&masses, &start, &velocities, &imposed, &loads, &schedule)
-            .map_err(describe)?;
+    let conditions = conditions_on(&work, true);
+    let mut taken = |calls: usize, steps: usize| -> Result<[Vec<u64>; 3], AssertionError> {
+        let mut run = start(&mut resident, &work, &loads, &conditions).map_err(describe)?;
         for _ in 0..calls {
-            resident
-                .steps(DT, steps, &loads, &schedule)
-                .map_err(describe)?;
+            run.steps(steps).map_err(describe)?;
         }
-        state(&resident)
+        state(&run)
     };
-    let together = run(1, 1500)?;
-    assert_eq!(run(15, 100)?, together);
-    assert_eq!(run(1500, 1)?, together);
+    let together = taken(1, 1500)?;
+    assert_eq!(taken(15, 100)?, together);
+    assert_eq!(taken(1500, 1)?, together);
     Ok(())
 }
 
@@ -354,20 +320,8 @@ fn the_state_put_into_nodes_that_are_kept_is_the_state_in_new_nodes_to_the_bit()
     let Some(mut resident) = on_device(&work.model, true) else {
         return Ok(());
     };
-    let imposed = Imposed {
-        fixed: work.fixed.clone(),
-        ..Imposed::default()
-    };
-    resident
-        .start_dynamics(
-            &Lumped.masses(&work.model),
-            &deformed(&work.coordinates),
-            &work.velocities(),
-            &imposed,
-            &(),
-            &(),
-        )
-        .map_err(describe)?;
+    let conditions = conditions_on(&work, false);
+    let mut run = start(&mut resident, &work, &(), &conditions).map_err(describe)?;
     let nodes = work.coordinates.len();
     let mut kept = (
         NodalCoordinates::zero(nodes),
@@ -382,16 +336,19 @@ fn the_state_put_into_nodes_that_are_kept_is_the_state_in_new_nodes_to_the_bit()
         vector.fill(f64::NAN);
     }
     for _ in 0..4 {
-        resident.steps(DT, 3, &(), &()).map_err(describe)?;
-        let new = resident.dynamics_state().map_err(describe)?;
-        resident
-            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+        run.steps(3).map_err(describe)?;
+        let new = run.state().map_err(describe)?;
+        run.state_into(&mut kept.0, &mut kept.1, &mut kept.2)
             .map_err(describe)?;
         assert_eq!(bits(kept.0.as_flat()), bits(new.0.as_flat()));
         assert_eq!(bits(kept.1.as_flat()), bits(new.1.as_flat()));
         assert_eq!(bits(kept.2.as_flat()), bits(new.2.as_flat()));
     }
     Ok(())
+}
+
+fn refused<T>(run: Result<T, GpuError>) -> Result<GpuError, AssertionError> {
+    run.err().ok_or_else(|| "the run is started".into())
 }
 
 #[test]
@@ -401,26 +358,33 @@ fn an_element_with_an_error_in_a_run_of_dynamics_is_an_error() -> Result<(), Ass
         return Ok(());
     };
     let masses = Lumped.masses(&work.model);
-    let velocities = work.velocities();
-    let good = deformed(&work.coordinates);
-    let mut bad = good.clone();
+    let integrator = VelocityVerlet::new(Time::seconds(DT));
+    let conditions = conditions_on(&work, false);
+    let mut bad = deformed(&work.coordinates);
     bad[1] = [0.9, 0.9, 0.9].into();
-    let imposed = Imposed {
-        fixed: work.fixed.clone(),
-        ..Imposed::default()
-    };
-    let error = resident
-        .start_dynamics(&masses, &bad, &velocities, &imposed, &(), &())
-        .expect_err("the start has an error");
+    let error = refused(resident.explicit_dynamics(
+        &masses,
+        &integrator,
+        Time::seconds(0.0),
+        (&bad, &work.velocities()),
+        &(),
+        &conditions,
+    ))?;
     assert!(matches!(error, GpuError::Element { .. }), "{error}");
-    resident
-        .start_dynamics(&masses, &good, &velocities, &imposed, &(), &())
+    let mut velocities = work.velocities();
+    let last = work.coordinates.len() - 1;
+    velocities[last] = [-2.0 / DT; 3].into();
+    let mut run = resident
+        .explicit_dynamics(
+            &masses,
+            &integrator,
+            Time::seconds(0.0),
+            (&deformed(&work.coordinates), &velocities),
+            &(),
+            &conditions,
+        )
         .map_err(describe)?;
-    resident.steps(DT, 2, &(), &()).map_err(describe)?;
-    resident.set_coordinates(&bad).map_err(describe)?;
-    let error = resident
-        .steps(DT, 1, &(), &())
-        .expect_err("the step has an error");
+    let error = refused(run.steps(1))?;
     assert!(matches!(error, GpuError::Element { .. }), "{error}");
     Ok(())
 }
@@ -431,64 +395,31 @@ fn what_is_not_a_run_of_the_model_is_an_error() -> Result<(), AssertionError> {
     let Some(mut resident) = on_device(&work.model, false) else {
         return Ok(());
     };
-    let error = resident
-        .steps(DT, 1, &(), &())
-        .expect_err("a run that is not started is stepped");
+    let outside =
+        BoundaryConditions::<Solid<3>>::new().fix_node(Displacement::<0>, work.coordinates.len());
+    let error = refused(start(&mut resident, &work, &(), &outside))?;
     assert!(matches!(error, GpuError::Invalid(_)), "{error}");
-    let error = resident
-        .dynamics_state()
-        .expect_err("the state of a run that is not started");
+    let multipliers = BoundaryConditions::<Solid<3>>::new().prescribe_nodes_by(
+        Enforcement::Multipliers,
+        Displacement::<0>,
+        [0],
+        Length::meters(0.0),
+    );
+    let error = refused(start(&mut resident, &work, &(), &multipliers))?;
     assert!(matches!(error, GpuError::Invalid(_)), "{error}");
-    let masses = Lumped.masses(&work.model);
-    let (start, velocities) = (deformed(&work.coordinates), work.velocities());
-    let grid = schedule_of(&work, &start, DT);
-    let moved = Imposed {
-        moved: work.moved.clone(),
-        ..Imposed::default()
-    };
-    let error = resident
-        .start_dynamics(&masses, &start, &velocities, &moved, &(), &())
-        .expect_err("coordinates are moved and nothing says where");
-    assert!(matches!(error, GpuError::Invalid(_)), "{error}");
-    let outside = Imposed {
-        fixed: vec![3 * work.coordinates.len()],
-        ..Imposed::default()
-    };
-    let error = resident
-        .start_dynamics(&masses, &start, &velocities, &outside, &(), &())
-        .expect_err("a degree of freedom that the model does not have is held");
-    assert!(matches!(error, GpuError::Invalid(_)), "{error}");
+    let conditions = conditions_on(&work, false);
     let other = steelwork_of(COLUMNS - 1, LAYERS - 1);
     let others = loads_on(&other.model, &other.coordinates)?;
-    let error = resident
-        .start_dynamics(
-            &masses,
-            &start,
-            &velocities,
-            &Imposed::default(),
-            &others,
-            &grid,
-        )
-        .expect_err("loads of another number of nodes");
+    let error = refused(start(&mut resident, &work, &others, &conditions))?;
     assert!(matches!(error, GpuError::Invalid(_)), "{error}");
-    let loads = loads_on(&work.model, &work.coordinates)?;
-    let error = resident
-        .start_dynamics(
-            &masses,
-            &start,
-            &velocities,
-            &Imposed::default(),
-            &loads,
-            &(),
-        )
-        .expect_err("loads of time are run and nothing says when");
-    assert!(matches!(error, GpuError::Invalid(_)), "{error}");
-    resident
-        .start_dynamics(&masses, &start, &velocities, &Imposed::default(), &(), &())
-        .map_err(describe)?;
-    let error = resident
-        .steps(DT, 1, &loads, &grid)
-        .expect_err("the loads are not those of the run");
+    let error = refused(resident.explicit_dynamics(
+        &Lumped.masses(&work.model),
+        &VelocityVerlet::new(Time::seconds(0.0)),
+        Time::seconds(0.0),
+        (&deformed(&work.coordinates), &work.velocities()),
+        &(),
+        &conditions,
+    ))?;
     assert!(matches!(error, GpuError::Invalid(_)), "{error}");
     Ok(())
 }

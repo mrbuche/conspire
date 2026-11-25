@@ -39,8 +39,8 @@
 mod common;
 
 use common::{
-    RATE, Work, agree, close, components, deformed, density, describe, disjoint, flat, imposed_by,
-    lattice, on_device, rubber, schedule_of, skip, slab, steel, time_at, volume_loads_on,
+    Work, agree, close, components, conditions_on, deformed, density, describe, disjoint, flat,
+    lattice, on_device, rubber, skip, slab, steel, time_at, volume_loads_on,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
@@ -48,7 +48,7 @@ use conspire::{
         Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
         NodalVelocities,
         block::Block,
-        boundary::{BoundaryConditions, ConstrainAt, DeviceLoads, Displacement, LoadAt, Solid},
+        boundary::{ConstrainAt, DeviceLoads, LoadAt, Solid},
         element::{
             linear::{Hexahedron, LinearElement},
             stabilized::linear::Hexahedron as StabilizedHexahedron,
@@ -59,9 +59,9 @@ use conspire::{
             mass::LumpedMassElements,
         },
     },
-    gpu::{Device, DeviceBlocks, GpuError, Resident},
-    math::{Quantity, Tensor, assert::AssertionError, integrate::VelocityVerlet},
-    units::{Density, Length, Time},
+    gpu::{Device, DeviceBlocks, ExplicitRun, GpuError, Resident},
+    math::{Quantity, QuantityVector, Tensor, assert::AssertionError, integrate::VelocityVerlet},
+    units::{Density, Mass, Time},
 };
 use std::{
     env::{var, var_os},
@@ -449,15 +449,7 @@ where
     B: ParallelElasticElements<3> + LumpedMassElements<3>,
     L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
 {
-    let top = if moved { work.top.clone() } else { Vec::new() };
-    let base = 0..work.layer;
-    let conditions = BoundaryConditions::<Solid<3>>::new()
-        .fix_nodes(Displacement::<0>, base.clone())
-        .fix_nodes(Displacement::<1>, base.clone())
-        .fix_nodes(Displacement::<2>, base)
-        .prescribe_nodes_with(Displacement::<0>, top, |time| {
-            Length::meters(RATE * time.value())
-        });
+    let conditions = conditions_on(work, moved);
     let time = (0..=steps)
         .map(|row| time_at(row, STEP))
         .collect::<Vec<_>>();
@@ -487,6 +479,29 @@ struct Cost {
     observing: f64,
 }
 
+fn start_run<'a, C, L>(
+    resident: &'a mut Resident,
+    masses: &QuantityVector<Mass>,
+    from: (&NodalCoordinates<3>, &NodalVelocities<3>),
+    loads: &'a L,
+    conditions: &'a C,
+) -> Result<ExplicitRun<'a, C, L>, AssertionError>
+where
+    C: ConstrainAt<Solid<3>>,
+    L: DeviceLoads,
+{
+    resident
+        .explicit_dynamics(
+            masses,
+            &VelocityVerlet::new(Time::seconds(STEP)),
+            Time::seconds(0.0),
+            from,
+            loads,
+            conditions,
+        )
+        .map_err(describe)
+}
+
 fn on_a_device<B, L>(
     work: &Work<B>,
     loads: &L,
@@ -498,47 +513,40 @@ where
     B: DeviceBlocks + ElasticElements<3> + LumpedMassElements<3>,
     L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> + DeviceLoads,
 {
-    let (start, velocities) = (deformed(&work.coordinates), work.velocities());
-    let imposed = imposed_by(work, moved);
-    let schedule = schedule_of(work, &start, STEP);
+    let (initial, velocities) = (deformed(&work.coordinates), work.velocities());
+    let conditions = conditions_on(work, moved);
     let masses = Lumped.masses(&work.model);
+    let from = (&initial, &velocities);
     let setup_start = Instant::now();
     let Some(mut resident) = on_device(&work.model, fused) else {
         return Ok(None);
     };
-    let restart = |resident: &mut Resident| {
-        resident
-            .start_dynamics(&masses, &start, &velocities, &imposed, loads, &schedule)
-            .map_err(describe)
-    };
-    restart(&mut resident)?;
-    let setup = setup_start.elapsed().as_secs_f64() * 1e3;
     let (expected, steps) = expected;
-    resident
-        .steps(STEP, steps, loads, &schedule)
+    let setup = {
+        let mut run = start_run(&mut resident, &masses, from, loads, &conditions)?;
+        let setup = setup_start.elapsed().as_secs_f64() * 1e3;
+        run.steps(steps).map_err(describe)?;
+        let (x, v, a) = run.state().map_err(describe)?;
+        close(&flat(&x), &expected[0], "coordinates")?;
+        close(&flat(&v), &expected[1], "velocities")?;
+        close(&flat(&a), &expected[2], "accelerations")?;
+        setup
+    };
+    start_run(&mut resident, &masses, from, loads, &conditions)?
+        .steps(20)
         .map_err(describe)?;
-    let (x, v, a) = resident.dynamics_state().map_err(describe)?;
-    close(&flat(&x), &expected[0], "coordinates")?;
-    close(&flat(&v), &expected[1], "velocities")?;
-    close(&flat(&a), &expected[2], "accelerations")?;
-    restart(&mut resident)?;
-    resident
-        .steps(STEP, 20, loads, &schedule)
-        .map_err(describe)?;
-    restart(&mut resident)?;
-    let trial = Instant::now();
-    resident
-        .steps(STEP, 50, loads, &schedule)
-        .map_err(describe)?;
-    let per_step = trial.elapsed().as_secs_f64() * 1e3 / 50.0;
+    let per_step = {
+        let mut run = start_run(&mut resident, &masses, from, loads, &conditions)?;
+        let trial = Instant::now();
+        run.steps(50).map_err(describe)?;
+        trial.elapsed().as_secs_f64() * 1e3 / 50.0
+    };
     let steps = ((1000.0 / per_step) as usize).clamp(50, MOST_STEPS);
     let mut step = f64::INFINITY;
     for _ in 0..repetitions() {
-        restart(&mut resident)?;
+        let mut run = start_run(&mut resident, &masses, from, loads, &conditions)?;
         let start = Instant::now();
-        resident
-            .steps(STEP, steps, loads, &schedule)
-            .map_err(describe)?;
+        run.steps(steps).map_err(describe)?;
         step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
     }
     let nodes = work.coordinates.len();
@@ -547,16 +555,19 @@ where
         NodalVelocities::<3>::zero(nodes),
         NodalAccelerations::<3>::zero(nodes),
     );
-    let observing_into = time_of(repetitions(), || {
-        resident
-            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
-            .map_err(describe)
-    })?;
-    let observing = time_of(repetitions(), || {
-        black_box(resident.dynamics_state().map_err(describe)?);
-        Ok::<(), AssertionError>(())
-    })?;
-    resident.set_coordinates(&start).map_err(describe)?;
+    let (observing_into, observing) = {
+        let run = start_run(&mut resident, &masses, from, loads, &conditions)?;
+        let observing_into = time_of(repetitions(), || {
+            run.state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+                .map_err(describe)
+        })?;
+        let observing = time_of(repetitions(), || {
+            black_box(run.state().map_err(describe)?);
+            Ok::<(), AssertionError>(())
+        })?;
+        (observing_into, observing)
+    };
+    resident.set_coordinates(&initial).map_err(describe)?;
     let forces = time_of(repetitions(), || resident.run().map_err(describe))?;
     Ok(Some(Cost {
         step,

@@ -1,6 +1,8 @@
 mod dynamics;
 
-use self::dynamics::Dynamics;
+pub use dynamics::ExplicitRun;
+
+use self::dynamics::Kernels;
 use crate::{
     domain::{
         ElementModelError, Model, NodalCoordinates,
@@ -120,7 +122,8 @@ pub struct Resident {
     nodal_forces: Buffer<f64>,
     blocks: Vec<BlockOnDevice>,
     fused: bool,
-    dynamics: Option<Dynamics>,
+    /// The kernels of the steps of dynamics, which are loaded when a run is first started.
+    kernels: Option<Kernels>,
     _module: Module,
 }
 
@@ -147,7 +150,7 @@ impl Resident {
             nodal_forces: device.buffer(reference.len())?,
             blocks,
             fused,
-            dynamics: None,
+            kernels: None,
             _module: module,
             device,
         })
