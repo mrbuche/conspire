@@ -347,8 +347,6 @@ fn steps_taken_together_are_those_taken_one_at_a_time() -> Result<(), AssertionE
     Ok(())
 }
 
-// The state that is put into nodes that are kept is the state that comes in new nodes, to the
-// bit, whatever the kept nodes held, call after call.
 #[test]
 fn the_state_put_into_nodes_that_are_kept_is_the_state_in_new_nodes_to_the_bit()
 -> Result<(), AssertionError> {
