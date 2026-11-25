@@ -10,7 +10,9 @@ pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, De
 #[cfg(feature = "fem")]
 pub use crate::domain::{DeviceError, Resident};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
-pub use dynamics::{Imposed, ImposedLoad, Schedule};
+pub use dynamics::Imposed;
+#[cfg(feature = "math")]
+pub use dynamics::Schedule;
 pub use kernels::Application;
 
 use core::{

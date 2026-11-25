@@ -32,14 +32,14 @@ mod common;
 
 use common::{
     RATE, Work, agree, close, components, deformed, density, describe, disjoint, flat, imposed_by,
-    lattice, on_device, rubber, schedule_of, slab, steel, targets_at, time_at, volume_loads_on,
+    lattice, on_device, rubber, schedule_of, slab, steel, time_at, volume_loads_on,
 };
 use conspire::{
     constitutive::solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
     fem::{
         Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::Block,
-        boundary::{BoundaryConditions, ConstrainAt, Displacement, LoadAt, Solid},
+        boundary::{BoundaryConditions, ConstrainAt, DeviceLoads, Displacement, LoadAt, Solid},
         element::{
             linear::{Hexahedron, LinearElement},
             stabilized::linear::Hexahedron as StabilizedHexahedron,
@@ -374,12 +374,8 @@ fn three_blocks_that_share_nodes() -> Result<(), AssertionError> {
     )
 }
 
-// The step of the runs of dynamics, which is exact in binary and small enough that the grids stay
-// stable and the elements stay valid however many steps a device takes.
 const STEP: f64 = 1.0 / 134_217_728.0;
 
-// The most steps that a device takes in a timed run, so that the motion of the top and the loads
-// of time stay small next to the cells of the smallest grids.
 const MOST_STEPS: usize = 100_000;
 
 fn step_cells() -> Vec<usize> {
@@ -390,14 +386,11 @@ fn step_cells() -> Vec<usize> {
     }
 }
 
-// The steps of the runs on the host that keep a history, which is large, so fewer for larger
-// grids.
 fn history_steps(nodes: usize) -> (usize, usize) {
     let short = (400_000 / nodes).clamp(1, 20);
     (short, 3 * short + 1)
 }
 
-// The cost of a step in milliseconds, from runs of `short` and `long` steps.
 fn marginal(
     short: usize,
     long: usize,
@@ -408,8 +401,6 @@ fn marginal(
     Ok((long_time - short_time) / (long - short) as f64)
 }
 
-// The coordinates, velocities and accelerations at the end of `steps` steps with the integrator
-// of the library, each as `3 * node + component`.
 fn on_host<B, L>(
     work: &Work<B>,
     loads: &L,
@@ -451,9 +442,6 @@ where
     ])
 }
 
-// The cost of a step on a device, and of the setup of a run, and of the forces alone, in
-// milliseconds; or nothing if there is no device. The state after the first steps is checked
-// against `expected`, which the host made.
 fn on_a_device<B, L>(
     work: &Work<B>,
     loads: &L,
@@ -463,17 +451,11 @@ fn on_a_device<B, L>(
 ) -> Result<Option<(f64, f64, f64)>, AssertionError>
 where
     B: DeviceBlocks + ElasticElements<3> + LumpedMassElements<3>,
-    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
+    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> + DeviceLoads,
 {
     let (start, velocities) = (deformed(&work.coordinates), work.velocities());
-    let forces = loads
-        .device_forces()
-        .ok_or("the loads are not ones that a device takes")?;
-    let (imposed, components) = imposed_by(work, forces, moved, STEP);
-    // Flattened once: doing it for every row would time the flattening, not the device.
-    let started = flat(&start);
-    let targets = |row| targets_at(work, &started, row, STEP);
-    let schedule = schedule_of(Some(&targets), &components);
+    let imposed = imposed_by(work, moved);
+    let schedule = schedule_of(work, &start, STEP);
     let masses = Lumped.masses(&work.model);
     let setup_start = Instant::now();
     let Some(mut resident) = on_device(&work.model, fused) else {
@@ -481,30 +463,37 @@ where
     };
     let restart = |resident: &mut Resident| {
         resident
-            .start_dynamics(&masses, &start, &velocities, &imposed, &schedule)
+            .start_dynamics(&masses, &start, &velocities, &imposed, loads, &schedule)
             .map_err(describe)
     };
     restart(&mut resident)?;
     let setup = setup_start.elapsed().as_secs_f64() * 1e3;
     let (expected, steps) = expected;
-    resident.steps(STEP, steps, &schedule).map_err(describe)?;
+    resident
+        .steps(STEP, steps, loads, &schedule)
+        .map_err(describe)?;
     let (x, v, a) = resident.dynamics_state().map_err(describe)?;
     close(&flat(&x), &expected[0], "coordinates")?;
     close(&flat(&v), &expected[1], "velocities")?;
     close(&flat(&a), &expected[2], "accelerations")?;
-    // Enough steps to take about a second, found from a few.
     restart(&mut resident)?;
-    resident.steps(STEP, 20, &schedule).map_err(describe)?;
+    resident
+        .steps(STEP, 20, loads, &schedule)
+        .map_err(describe)?;
     restart(&mut resident)?;
     let trial = Instant::now();
-    resident.steps(STEP, 50, &schedule).map_err(describe)?;
+    resident
+        .steps(STEP, 50, loads, &schedule)
+        .map_err(describe)?;
     let per_step = trial.elapsed().as_secs_f64() * 1e3 / 50.0;
     let steps = ((1000.0 / per_step) as usize).clamp(50, MOST_STEPS);
     let mut step = f64::INFINITY;
     for _ in 0..repetitions() {
         restart(&mut resident)?;
         let start = Instant::now();
-        resident.steps(STEP, steps, &schedule).map_err(describe)?;
+        resident
+            .steps(STEP, steps, loads, &schedule)
+            .map_err(describe)?;
         step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
     }
     resident.set_coordinates(&start).map_err(describe)?;
@@ -512,8 +501,6 @@ where
     Ok(Some((step, setup, forces)))
 }
 
-// Times a variant of the run on a grid, and prints a row for each way of running it. A device
-// that is not there ends the benchmark, which is whether to go on.
 fn variant<B, L>(
     label: &str,
     work: &Work<B>,
@@ -522,7 +509,7 @@ fn variant<B, L>(
 ) -> Result<bool, AssertionError>
 where
     B: ParallelElasticElements<3> + LumpedMassElements<3> + DeviceBlocks,
-    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
+    L: LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> + DeviceLoads,
 {
     let elements = elements(&work.model);
     let rate = |step: f64| elements as f64 / step / 1e3;
