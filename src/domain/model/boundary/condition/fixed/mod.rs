@@ -56,6 +56,8 @@ impl<L> Condition<L> for Fixed<'_, L> {
     fn constraint_at(&self, _: Quantity<Time>) -> EqualityConstraint {
         Static::held_constraint(self)
     }
+    // What is fixed is held where it starts, so it is held at no other value.
+    fn prescribed_at(&self, _: Quantity<Time>, _: &mut impl FnMut(usize, Prescription)) {}
 }
 
 impl<L> Static<L> for Fixed<'_, L> {

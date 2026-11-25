@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use crate::{
     domain::{
         NodalCoordinates, NodalCoordinatesHistory, NodalVelocities, Stepping,
@@ -11,7 +14,7 @@ use crate::{
     },
     units::Time,
 };
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
 
 /// The degrees of freedom of a solid held in place, and the motion of those that are moved.
 ///
@@ -37,12 +40,31 @@ where
         conditions: &'c C,
         initial_time: Quantity<Time>,
         coordinates: &mut NodalCoordinates<3>,
-        mut velocities: NodalVelocities<3>,
+        velocities: NodalVelocities<3>,
         stepping: Stepping,
     ) -> Result<(M::Inverse, NodalVelocities<3>, Self), IntegrationError>
     where
         M: MassMatrix<3>,
     {
+        let (held, velocities, motion) =
+            Self::start(conditions, initial_time, coordinates, velocities, stepping)?;
+        let inverse = masses
+            .inverse(&held)
+            .map_err(|error| IntegrationError::Intermediate(error.to_string()))?;
+        Ok((inverse, velocities, motion))
+    }
+    /// The degrees of freedom that are held, which are those fixed and those moved, in ascending
+    /// order, the velocities with the fixed ones removed, and the motion, once the coordinates are
+    /// moved to where the motion starts.
+    ///
+    /// This is [`held`](Self::held) without the masses, for a run that divides by them itself.
+    pub(super) fn start(
+        conditions: &'c C,
+        initial_time: Quantity<Time>,
+        coordinates: &mut NodalCoordinates<3>,
+        mut velocities: NodalVelocities<3>,
+        stepping: Stepping,
+    ) -> Result<(Vec<usize>, NodalVelocities<3>, Self), IntegrationError> {
         let mut fixed = BTreeSet::new();
         let mut moving = BTreeSet::new();
         for constraint in conditions.constraint_at(initial_time) {
@@ -82,9 +104,11 @@ where
         }
         moving.retain(|dof| !fixed.contains(dof));
         let held: Vec<usize> = fixed.union(&moving).copied().collect();
-        let inverse = masses
-            .inverse(&held)
-            .map_err(|error| IntegrationError::Intermediate(error.to_string()))?;
+        if let Some(dof) = held.iter().find(|&&dof| dof >= 3 * coordinates.len()) {
+            return Err(IntegrationError::Intermediate(format!(
+                "The degree of freedom {dof} that a boundary condition holds is not in the model."
+            )));
+        }
         fixed
             .iter()
             .for_each(|&dof| velocities[dof / 3][dof % 3] = Default::default());
@@ -94,43 +118,56 @@ where
             moving: moving.into_iter().collect(),
         };
         motion.apply(initial_time, coordinates);
-        Ok((inverse, velocities, motion))
+        Ok((held, velocities, motion))
     }
     /// The constraints at a time, with what is held at a distance from where it starts held at
     /// that distance from the coordinates the motion starts at.
     pub(super) fn constraint_at(&self, time: Quantity<Time>) -> EqualityConstraints {
         EqualityConstraint::from_reference(self.conditions.constraint_at(time), &self.anchor)
     }
-    /// What the moved degrees of freedom are held at, at a time.
-    fn targets(&self, time: Quantity<Time>) -> BTreeMap<usize, f64> {
-        let mut targets = BTreeMap::new();
-        for constraint in self.conditions.constraint_at(time) {
-            if let EqualityConstraint::Prescribed(entries)
-            | EqualityConstraint::Multipliers(entries) = constraint
-            {
-                for (dof, prescription) in entries {
-                    let start = self.anchor[dof / 3][dof % 3].value();
+    /// Where a degree of freedom is when the motion starts.
+    fn anchored(&self, dof: usize) -> f64 {
+        self.anchor[dof / 3][dof % 3].value()
+    }
+    /// Puts into `targets` what each of the moved degrees of freedom is held at, at a time, in
+    /// their order, which is ascending: where it starts, unless a condition holds it elsewhere,
+    /// the last one that does.
+    pub(super) fn targets_into(&self, time: Quantity<Time>, targets: &mut [f64]) {
+        assert_eq!(
+            targets.len(),
+            self.moving.len(),
+            "there is a target for each degree of freedom that is moved"
+        );
+        targets
+            .iter_mut()
+            .zip(&self.moving)
+            .for_each(|(target, &dof)| *target = self.anchored(dof));
+        let mut next = 0;
+        self.conditions
+            .prescribed_at(time, &mut |dof, prescription| {
+                let found = if self.moving.get(next) == Some(&dof) {
+                    Ok(next)
+                } else {
+                    self.moving.binary_search(&dof)
+                };
+                if let Ok(index) = found {
                     match prescription {
                         Prescription::Initial => {}
                         Prescription::Offset(offset) => {
-                            targets.insert(dof, start + offset);
+                            targets[index] = self.anchored(dof) + offset
                         }
-                        Prescription::Absolute(value) => {
-                            targets.insert(dof, value);
-                        }
+                        Prescription::Absolute(value) => targets[index] = value,
                     }
+                    next = index + 1;
                 }
-            }
-        }
-        targets
+            });
     }
     /// Moves the degrees of freedom that are moved to where they are held at a time.
     pub(super) fn apply(&self, time: Quantity<Time>, coordinates: &mut NodalCoordinates<3>) {
-        let targets = self.targets(time);
-        self.moving.iter().for_each(|dof| {
-            let start = self.anchor[dof / 3][dof % 3].value();
-            coordinates[dof / 3][dof % 3] =
-                Quantity::new(targets.get(dof).copied().unwrap_or(start));
+        let mut targets = vec![0.0; self.moving.len()];
+        self.targets_into(time, &mut targets);
+        self.moving.iter().zip(targets).for_each(|(&dof, target)| {
+            coordinates[dof / 3][dof % 3] = Quantity::new(target);
         });
     }
     /// Gives the degrees of freedom that are moved the motion they are held at in the history.

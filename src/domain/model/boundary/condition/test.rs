@@ -2,17 +2,18 @@ use crate::{
     domain::{
         NodalCoordinates,
         boundary::{
-            BoundaryConditions, Constrain, ConstrainAt, Coupled, Direct, Displacement, Field,
-            Layout, Left, NodalState, Potential, Right, Solid, SolidThermal, Temperature,
+            BoundaryConditions, Constrain, ConstrainAt, Coupled, Direct, Displacement, Enforcement,
+            Field, Layout, Left, NodalState, Potential, Right, Rows, Solid, SolidThermal,
+            Temperature,
         },
         multiphysics::solid_thermal::NodalStatesSolidThermal,
     },
     geometry::mesh::{NodeSet, NodeSets},
     math::{
         Current, Quantity, QuantityVector, TensorRank1, TensorTuple, TensorTupleVec,
-        optimize::{EqualityConstraint, EqualityConstraints},
+        optimize::{EqualityConstraint, EqualityConstraints, Prescription},
     },
-    units::{ElectricPotential, Length, Temperature as TemperatureUnit},
+    units::{ElectricPotential, Length, Temperature as TemperatureUnit, Time},
 };
 use core::marker::PhantomData;
 
@@ -45,6 +46,76 @@ fn nothing_fixed() {
 fn a_set_that_is_not_there() {
     assert!(sets().by_name("side").is_none());
     assert!(sets().by_label(8).is_none());
+}
+
+fn given(
+    conditions: &impl ConstrainAt<Solid<3>>,
+    time: Quantity<Time>,
+) -> Vec<(usize, Prescription)> {
+    let mut given = Vec::new();
+    conditions.prescribed_at(time, &mut |index, prescription| {
+        given.push((index, prescription))
+    });
+    given
+}
+
+fn of_the_constraints(
+    conditions: &impl ConstrainAt<Solid<3>>,
+    time: Quantity<Time>,
+) -> Vec<(usize, Prescription)> {
+    conditions
+        .constraint_at(time)
+        .into_iter()
+        .flat_map(|constraint| match constraint {
+            EqualityConstraint::Prescribed(entries) | EqualityConstraint::Multipliers(entries) => {
+                entries
+            }
+            _ => Vec::new(),
+        })
+        .filter(|&(_, prescription)| prescription != Prescription::Initial)
+        .collect()
+}
+
+#[test]
+fn what_is_given_as_prescribed_is_what_the_constraints_hold_at_a_value() {
+    let sets = sets();
+    let bottom = sets.by_name("bottom").unwrap();
+    let conditions = BoundaryConditions::<Solid<3>>::new()
+        .fix(Displacement::<0>, bottom)
+        .fix_by(Enforcement::Multipliers, Displacement::<1>, bottom)
+        .prescribe_nodes(Displacement::<2>, [4, 3], Length::meters(0.5))
+        .prescribe_nodes_by(
+            Enforcement::Multipliers,
+            Displacement::<0>,
+            [5],
+            Length::meters(0.0),
+        )
+        .prescribe_nodes_with(Displacement::<1>, [6, 1], |time| {
+            Length::meters(time.value())
+        });
+    let rows = Rows::<Solid<3>>::new(Enforcement::Elimination)
+        .hold(20, Prescription::Initial)
+        .hold(21, Prescription::Absolute(2.0));
+    let conditions = (conditions, rows);
+    for time in [0.0, 1.0, 2.5] {
+        let time = Time::seconds(time);
+        assert_eq!(
+            given(&conditions, time),
+            of_the_constraints(&conditions, time)
+        );
+    }
+    assert_eq!(
+        given(&conditions, Time::seconds(1.0)),
+        [
+            (14, Prescription::Offset(0.5)),
+            (11, Prescription::Offset(0.5)),
+            (15, Prescription::Offset(0.0)),
+            (19, Prescription::Offset(1.0)),
+            (4, Prescription::Offset(1.0)),
+            (21, Prescription::Absolute(2.0)),
+        ]
+    );
+    assert!(given(&BoundaryConditions::new(), Time::seconds(1.0)).is_empty());
 }
 
 mod coupled {

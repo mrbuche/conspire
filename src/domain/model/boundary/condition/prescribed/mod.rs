@@ -66,6 +66,13 @@ impl<L> Condition<L> for Prescribed<'_, L> {
     fn constraint_at(&self, _: Quantity<Time>) -> EqualityConstraint {
         Static::held_constraint(self)
     }
+    fn prescribed_at(&self, _: Quantity<Time>, each: &mut impl FnMut(usize, Prescription)) {
+        if self.prescription != Prescription::Initial {
+            self.target
+                .dofs(self.stride, self.offset)
+                .for_each(|index| each(index, self.prescription));
+        }
+    }
 }
 
 impl<L> Static<L> for Prescribed<'_, L> {
