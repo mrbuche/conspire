@@ -67,5 +67,4 @@ pub trait Schedule {
     }
 }
 
-/// A run that has nothing that is a function of the step.
 impl Schedule for () {}

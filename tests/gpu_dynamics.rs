@@ -10,7 +10,8 @@ use common::{
 use conspire::{
     constitutive::solid::hyperelastic::SaintVenantKirchhoff,
     fem::{
-        Blocks, Model, NodalCoordinates, NodalReferenceCoordinates,
+        Blocks, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
+        NodalVelocities,
         block::Block,
         boundary::{
             BoundaryConditions, ConstrainAt, DeviceForce, DeviceLoads, Displacement, LoadAt, Solid,
@@ -343,6 +344,53 @@ fn steps_taken_together_are_those_taken_one_at_a_time() -> Result<(), AssertionE
     let together = run(1, 1500)?;
     assert_eq!(run(15, 100)?, together);
     assert_eq!(run(1500, 1)?, together);
+    Ok(())
+}
+
+#[test]
+fn the_state_put_into_nodes_that_are_kept_is_the_state_in_new_nodes_to_the_bit()
+-> Result<(), AssertionError> {
+    let work = steelwork();
+    let Some(mut resident) = on_device(&work.model, true) else {
+        return Ok(());
+    };
+    let imposed = Imposed {
+        fixed: work.fixed.clone(),
+        ..Imposed::default()
+    };
+    resident
+        .start_dynamics(
+            &Lumped.masses(&work.model),
+            &deformed(&work.coordinates),
+            &work.velocities(),
+            &imposed,
+            &(),
+            &(),
+        )
+        .map_err(describe)?;
+    let nodes = work.coordinates.len();
+    let mut kept = (
+        NodalCoordinates::zero(nodes),
+        NodalVelocities::zero(nodes),
+        NodalAccelerations::zero(nodes),
+    );
+    for vector in [
+        kept.0.as_flat_mut(),
+        kept.1.as_flat_mut(),
+        kept.2.as_flat_mut(),
+    ] {
+        vector.fill(f64::NAN);
+    }
+    for _ in 0..4 {
+        resident.steps(DT, 3, &(), &()).map_err(describe)?;
+        let new = resident.dynamics_state().map_err(describe)?;
+        resident
+            .dynamics_state_into(&mut kept.0, &mut kept.1, &mut kept.2)
+            .map_err(describe)?;
+        assert_eq!(bits(kept.0.as_flat()), bits(new.0.as_flat()));
+        assert_eq!(bits(kept.1.as_flat()), bits(new.1.as_flat()));
+        assert_eq!(bits(kept.2.as_flat()), bits(new.2.as_flat()));
+    }
     Ok(())
 }
 

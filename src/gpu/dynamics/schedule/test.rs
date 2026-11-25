@@ -9,7 +9,6 @@ fn invalid(result: Result<impl Sized, GpuError>) -> String {
     }
 }
 
-/// A schedule that has times and targets, each of which a test may leave out.
 struct Steps {
     times: bool,
     targets: bool,
@@ -50,7 +49,6 @@ fn a_schedule_has_targets_for_coordinates_that_are_moved_and_times_for_loads_of_
 
 #[test]
 fn a_schedule_gives_only_what_a_run_needs_of_it() {
-    // Nothing moved and nothing of time needs nothing, which `()` has.
     assert!(().check(false, 0).is_ok());
     let no_targets = Steps {
         times: true,
@@ -89,10 +87,8 @@ fn the_targets_of_the_rows_are_in_the_order_of_the_rows() -> Result<(), GpuError
         targets: true,
     };
     assert_eq!(schedule.target_rows(2, 3, 2)?, [3.0, 13.0, 4.0, 14.0]);
-    // Nothing moved, nothing to give, whatever the schedule has.
     assert!(schedule.target_rows(0, 3, 2)?.is_empty());
     assert!(().target_rows(0, 0, 5)?.is_empty());
-    // Targets for other coordinates than those that are moved, or none for a row.
     let message = invalid(schedule.target_rows(3, 0, 1));
     assert!(
         message.contains("2 targets") && message.contains("3 coordinates"),
