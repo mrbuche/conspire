@@ -42,8 +42,8 @@ where
     LinearElement<G, N>: LinearFiniteElement<G, N> + ElasticFiniteElement<NeoHookean, G, 3, N, N>,
 {
     let nodes = reference::<G, N>();
-    let element = LinearElement::<G, N>::from(ElementNodalReferenceCoordinates::<N>::from(nodes));
-    let (derivatives, weights) = Recomputed::<3, G, N>::tables::<LinearElement<G, N>>();
+    let element = LinearElement::from(ElementNodalReferenceCoordinates::from(nodes));
+    let (derivatives, weights) = Recomputed::tables::<LinearElement<G, N>>();
     let recomputed = Recomputed::new(nodes.into(), &derivatives, &weights);
     (0..G).try_for_each(|point| {
         Assert::eq(

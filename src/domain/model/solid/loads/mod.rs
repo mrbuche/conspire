@@ -1,5 +1,5 @@
 #[cfg(feature = "gpu")]
-use crate::domain::boundary::DeviceForce;
+use crate::domain::boundary::{DeviceForce, DeviceLoads};
 use crate::{
     domain::{
         ElementModel, Model, NodalAccelerations, NodalCoordinates, NodalReferenceCoordinates,
@@ -127,14 +127,23 @@ impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>> for DeadLoad {
     ) -> Result<(), String> {
         self.subtract_from(nodal_coordinates, residual)
     }
-    #[cfg(feature = "gpu")]
-    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
-        Some(vec![DeviceForce::Constant(
+}
+
+#[cfg(feature = "gpu")]
+impl DeviceLoads for DeadLoad {
+    fn device_forces(&self, each: &mut impl FnMut(DeviceForce)) {
+        each(DeviceForce::Constant(
             self.forces
                 .iter()
                 .flat_map(|force| force.iter().map(|component| component.value()))
                 .collect(),
-        )])
+        ));
+    }
+    fn device_weighted(&self) -> usize {
+        0
+    }
+    fn device_components(&self, which: usize, _: Quantity<Time>) -> [f64; 3] {
+        panic!("there is no force of time {which}, as a force that does not change is not one")
     }
 }
 
@@ -322,15 +331,29 @@ where
             .for_each(|(residual, force)| *residual -= force);
         Ok(())
     }
-    #[cfg(feature = "gpu")]
-    fn device_forces(&self) -> Option<Vec<DeviceForce<'_>>> {
-        Some(vec![DeviceForce::Weighted {
-            weights: self.weights.iter().map(|weight| weight.value()).collect(),
-            components: Box::new(|time| {
-                let density = (self.density)(time);
-                [density[0].value(), density[1].value(), density[2].value()]
-            }),
-        }])
+}
+
+#[cfg(feature = "gpu")]
+impl<W, D, G> DeviceLoads for TimedLoad<W, G>
+where
+    G: Fn(Quantity<Time>) -> TensorRank1<3, Current, D>,
+    D: UnitMul<W, Output = Force>,
+{
+    fn device_forces(&self, each: &mut impl FnMut(DeviceForce)) {
+        each(DeviceForce::Weighted(
+            self.weights.iter().map(|weight| weight.value()).collect(),
+        ));
+    }
+    fn device_weighted(&self) -> usize {
+        1
+    }
+    fn device_components(&self, which: usize, time: Quantity<Time>) -> [f64; 3] {
+        assert_eq!(
+            which, 0,
+            "there is only one force of time in a force of time"
+        );
+        let density = (self.density)(time);
+        [density[0].value(), density[1].value(), density[2].value()]
     }
 }
 

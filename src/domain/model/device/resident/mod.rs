@@ -271,8 +271,8 @@ impl Resident {
     /// The nodal forces that the last computation made, in new nodes.
     ///
     /// A call that makes them again and again is better to keep nodes and put the forces into
-    /// them with [`download_into`](Self::download_into): with a device open, memory that has not
-    /// been used before is several times slower to touch than memory that has.
+    /// them with [`download_into`](Self::download_into): copying into nodes that are made for it
+    /// has been measured to take several times as long as copying into nodes that are kept.
     pub fn download(&self) -> Result<NodalForcesSolid<3>, GpuError> {
         let mut forces = NodalForcesSolid::<3>::zero(self.nodes);
         self.download_into(&mut forces)?;

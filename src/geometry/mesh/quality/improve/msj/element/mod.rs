@@ -34,13 +34,15 @@ impl Frame {
     }
     pub(super) fn new(point: &Point, nodes: &CoordinateList<3, 8>, normalization: Scalar) -> Self {
         let edges: CoordinateList<3, 3> = point
-            .sparse
+            .weights
             .iter()
-            .map(|terms| {
-                terms
+            .map(|weight_i| {
+                nodes
                     .iter()
-                    .fold(Coordinate::default(), |sum, &(node, weight)| {
-                        sum + &nodes[node] * weight
+                    .zip(weight_i)
+                    .filter(|(_, weight)| **weight != 0.0)
+                    .fold(Coordinate::default(), |sum, (node, weight)| {
+                        sum + node * weight
                     })
             })
             .collect();

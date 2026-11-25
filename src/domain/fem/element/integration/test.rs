@@ -21,8 +21,7 @@ const HEXAHEDRON: [[f64; 3]; 8] = [
 
 #[test]
 fn the_data_of_an_element_are_those_that_it_stores() -> Result<(), AssertionError> {
-    let element =
-        LinearElement::<8, 8>::from(ElementNodalReferenceCoordinates::<8>::from(HEXAHEDRON));
+    let element = LinearElement::from(ElementNodalReferenceCoordinates::from(HEXAHEDRON));
     (0..8).try_for_each(|point| {
         Assert::default().eq_within_tols(
             element.gradient_vectors_at(point),
@@ -37,8 +36,7 @@ fn the_data_of_an_element_are_those_that_it_stores() -> Result<(), AssertionErro
 
 #[test]
 fn the_weights_of_the_points_of_an_element_add_up_to_its_volume() -> Result<(), AssertionError> {
-    let element =
-        LinearElement::<8, 8>::from(ElementNodalReferenceCoordinates::<8>::from(HEXAHEDRON));
+    let element = LinearElement::from(ElementNodalReferenceCoordinates::from(HEXAHEDRON));
     let sum: Quantity<Volume> = (0..8)
         .map(|point| element.integration_weight_at(point))
         .sum();

@@ -1,5 +1,5 @@
 use super::super::{
-    kind::{HEXAHEDRON_POINTS, KINDS},
+    kind::{HEXAHEDRON_POINTS, kind_of},
     test::{Raw, UNIT, distorted, offset, terms, typed},
 };
 use super::Frame;
@@ -86,7 +86,7 @@ fn tetrahedron(nodes: [[Scalar; 3]; 4]) -> CoordinateList<3, 8> {
 
 fn tetrahedron_value(theta: Scalar, scale: Scalar, nodes: [[Scalar; 3]; 4]) -> Scalar {
     bounded(
-        &KINDS[1],
+        &kind_of(1),
         Quantity::new(theta),
         Quantity::new(scale),
         &tetrahedron(nodes),
@@ -126,7 +126,7 @@ fn mean_edge(nodes: &[[Scalar; 3]; 4]) -> Scalar {
 
 fn tetrahedron_check(theta: Scalar, nodes: [[Scalar; 3]; 4]) {
     let (_, analytic, _) = bounded(
-        &KINDS[1],
+        &kind_of(1),
         Quantity::new(theta),
         Quantity::new(1.3),
         &tetrahedron(nodes),
@@ -162,10 +162,10 @@ fn tetrahedron_gradient_matches_finite_difference_on_the_scaled_branch() {
 fn tetrahedron_gradient_matches_finite_difference_on_the_jacobian_branch() {
     let mut nodes = distorted_tetrahedron(0.1, 3.0);
     nodes[3][2] = -0.4;
-    let frames = KINDS[1]
+    let frames = kind_of(1)
         .points
         .iter()
-        .map(|point| Frame::new(point, &tetrahedron(nodes), KINDS[1].normalization).scaled)
+        .map(|point| Frame::new(point, &tetrahedron(nodes), kind_of(1).normalization).scaled)
         .fold(Quantity::new(Scalar::INFINITY), Quantity::min);
     assert!(frames < Quantity::default());
     tetrahedron_check(0.5, nodes)
@@ -310,7 +310,7 @@ fn padded(nodes: &[[Scalar; 3]]) -> CoordinateList<3, 8> {
 
 fn kind_value(kind: usize, theta: Scalar, scale: Scalar, nodes: &[[Scalar; 3]]) -> Scalar {
     bounded(
-        &KINDS[kind],
+        &kind_of(kind as u8),
         Quantity::new(theta),
         Quantity::new(scale),
         &padded(nodes),
@@ -321,7 +321,7 @@ fn kind_value(kind: usize, theta: Scalar, scale: Scalar, nodes: &[[Scalar; 3]]) 
 }
 
 fn mean_edge_of(kind: usize, nodes: &[[Scalar; 3]]) -> Scalar {
-    let edges = KINDS[kind].edges;
+    let edges = kind_of(kind as u8).edges;
     edges
         .iter()
         .map(|&[a, b]| {
@@ -336,7 +336,7 @@ fn mean_edge_of(kind: usize, nodes: &[[Scalar; 3]]) -> Scalar {
 
 fn kind_check(kind: usize, theta: Scalar, nodes: &[[Scalar; 3]]) {
     let (_, analytic, _) = bounded(
-        &KINDS[kind],
+        &kind_of(kind as u8),
         Quantity::new(theta),
         Quantity::new(1.3),
         &padded(nodes),

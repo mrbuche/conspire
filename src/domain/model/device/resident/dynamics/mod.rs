@@ -1,9 +1,11 @@
 use super::{Resident, THREADS_PER_BLOCK};
 use crate::{
     domain::{
-        NodalAccelerations, NodalCoordinates, NodalVelocities, solid::mass::NodalLumpedMasses,
+        NodalAccelerations, NodalCoordinates, NodalVelocities,
+        boundary::{DeviceForce, DeviceLoads},
+        solid::mass::NodalLumpedMasses,
     },
-    gpu::{Application, Buffer, Function, GpuError, Imposed, ImposedLoad, Schedule, kernels::ptx},
+    gpu::{Application, Buffer, Function, GpuError, Imposed, Schedule, kernels::ptx},
     math::Tensor,
 };
 
@@ -55,7 +57,8 @@ pub(super) struct Dynamics {
 
 impl Resident {
     /// Starts a run of dynamics from the coordinates and velocities, with the masses of the
-    /// nodes, and what is imposed on it; `schedule` says what is imposed at the start.
+    /// nodes, the degrees of freedom that are held or moved, the external forces, and what is a
+    /// function of the step; `schedule` says what it is at the start.
     ///
     /// The velocities are those given: dynamics on the host has the fixed degrees of freedom
     /// without velocity, and the caller makes them so. The accelerations at the start are those
@@ -66,7 +69,8 @@ impl Resident {
         coordinates: &NodalCoordinates<3>,
         velocities: &NodalVelocities<3>,
         imposed: &Imposed,
-        schedule: &Schedule<'_>,
+        loads: &impl DeviceLoads,
+        schedule: &impl Schedule,
     ) -> Result<(), GpuError> {
         assert_eq!(
             masses.len(),
@@ -78,9 +82,23 @@ impl Resident {
             self.nodes,
             "a model is run with the nodes that it has"
         );
-        imposed.check(self.nodes)?;
-        schedule.check(imposed)?;
         let flags = imposed.held_flags(self.nodes)?;
+        let mut forces = Vec::new();
+        loads.device_forces(&mut |force| forces.push(force));
+        for force in &forces {
+            force.check(self.nodes).map_err(GpuError::Invalid)?;
+        }
+        let weighted = loads.device_weighted();
+        let given = forces
+            .iter()
+            .filter(|force| matches!(force, DeviceForce::Weighted(_)))
+            .count();
+        if given != weighted {
+            return Err(GpuError::Invalid(format!(
+                "the loads give {given} forces that are a function of time, and say that {weighted} are"
+            )));
+        }
+        schedule.check(!imposed.moved.is_empty(), weighted)?;
         let rows = imposed.rows();
         let kernels = match self.dynamics.take() {
             Some(dynamics) => dynamics.kernels,
@@ -111,33 +129,32 @@ impl Resident {
                 table: self.device.buffer(count * rows)?,
             })
         };
-        let loads = imposed
-            .loads
+        let on_device = forces
             .iter()
-            .map(|load| -> Result<LoadOnDevice, GpuError> {
-                Ok(match load {
-                    ImposedLoad::Constant(forces) => {
-                        LoadOnDevice::Constant(self.device.buffer_of(forces)?)
+            .map(|force| -> Result<LoadOnDevice, GpuError> {
+                Ok(match force {
+                    DeviceForce::Constant(values) => {
+                        LoadOnDevice::Constant(self.device.buffer_of(values)?)
                     }
-                    ImposedLoad::Weighted(weights) => LoadOnDevice::Weighted {
+                    DeviceForce::Weighted(weights) => LoadOnDevice::Weighted {
                         weights: self.device.buffer_of(weights)?,
                         table: self.device.buffer(3 * rows)?,
                     },
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let kinds = loads
+        let kinds = on_device
             .iter()
             .map(|load| u32::from(matches!(load, LoadOnDevice::Weighted { .. })))
             .collect::<Vec<_>>();
-        let data = loads
+        let data = on_device
             .iter()
             .map(|load| match load {
                 LoadOnDevice::Constant(forces) => forces.address(),
                 LoadOnDevice::Weighted { weights, .. } => weights.address(),
             })
             .collect::<Vec<_>>();
-        let tables = loads
+        let tables = on_device
             .iter()
             .map(|load| match load {
                 LoadOnDevice::Constant(_) => 0,
@@ -154,15 +171,15 @@ impl Resident {
                 .buffer_of(&masses.iter().map(|mass| mass.value()).collect::<Vec<_>>())?,
             held: self.device.buffer_of(&flags)?,
             moved,
-            loads,
+            loads: on_device,
             load_kinds: self.device.buffer_of(&kinds)?,
             load_data: self.device.buffer_of(&data)?,
             load_tables: self.device.buffer_of(&tables)?,
-            weighted: imposed.weighted(),
+            weighted,
             rows,
             row: 0,
         });
-        self.upload_tables(schedule, 0, 1)?;
+        self.upload_tables(loads, schedule, 0, 1)?;
         self.forget_errors()?;
         self.launch_targets(0)?;
         self.launch_forces()?;
@@ -180,16 +197,24 @@ impl Resident {
         &mut self,
         dt: f64,
         steps: usize,
-        schedule: &Schedule<'_>,
+        loads: &impl DeviceLoads,
+        schedule: &impl Schedule,
     ) -> Result<(), GpuError> {
         let dynamics = self.started()?;
         let (rows, count) = (dynamics.rows, self.dofs()?);
-        schedule.check_for(dynamics.moved.is_some(), dynamics.weighted)?;
+        if loads.device_weighted() != dynamics.weighted {
+            return Err(GpuError::Invalid(format!(
+                "the loads have {} that are a function of time, and the run started with {}",
+                loads.device_weighted(),
+                dynamics.weighted
+            )));
+        }
+        schedule.check(dynamics.moved.is_some(), dynamics.weighted)?;
         self.forget_errors()?;
         let mut done = 0;
         while done < steps {
             let batch = (steps - done).min(rows);
-            self.upload_tables(schedule, self.started()?.row + 1, batch)?;
+            self.upload_tables(loads, schedule, self.started()?.row + 1, batch)?;
             for row in 0..batch {
                 let dynamics = self.started()?;
                 self.device.launch(
@@ -219,8 +244,8 @@ impl Resident {
     /// The coordinates, velocities and accelerations of the run of dynamics, in new nodes.
     ///
     /// A run that takes them many times is better to keep nodes and use
-    /// [`dynamics_state_into`](Self::dynamics_state_into): with a device open, memory that has
-    /// not been used before is several times slower to touch than memory that has.
+    /// [`dynamics_state_into`](Self::dynamics_state_into): taking the state into new nodes has
+    /// been measured to take more than twice as long.
     pub fn dynamics_state(
         &self,
     ) -> Result<
@@ -272,7 +297,8 @@ impl Resident {
     /// of the tables.
     fn upload_tables(
         &self,
-        schedule: &Schedule<'_>,
+        loads: &impl DeviceLoads,
+        schedule: &impl Schedule,
         first: usize,
         rows: usize,
     ) -> Result<(), GpuError> {
@@ -284,11 +310,14 @@ impl Resident {
                 rows,
             )?)?;
         }
-        let mut weighted = 0;
-        for load in &dynamics.loads {
-            if let LoadOnDevice::Weighted { table, .. } = load {
-                table.upload_front(&schedule.component_rows(weighted, first, rows))?;
-                weighted += 1;
+        if dynamics.weighted > 0 {
+            let times = schedule.times(first, rows)?;
+            let mut which = 0;
+            for load in &dynamics.loads {
+                if let LoadOnDevice::Weighted { table, .. } = load {
+                    table.upload_front(&loads.device_component_rows(which, &times))?;
+                    which += 1;
+                }
             }
         }
         Ok(())
