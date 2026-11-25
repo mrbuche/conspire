@@ -3,7 +3,7 @@ pub(crate) mod test;
 
 mod explicit;
 mod implicit;
-mod motion;
+pub(crate) mod motion;
 
 pub use explicit::{
     Checked, Consistent, ElasticExplicitDynamics, Execution, Lumped, MassChoice, Stability,

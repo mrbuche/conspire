@@ -61,4 +61,12 @@ where
             self.enforcement,
         )
     }
+    fn prescribed_at(&self, time: Quantity<Time>, each: &mut impl FnMut(usize, Prescription)) {
+        let prescription = (self.prescription)(time);
+        if prescription != Prescription::Initial {
+            self.target
+                .dofs(self.stride, self.offset)
+                .for_each(|index| each(index, prescription));
+        }
+    }
 }

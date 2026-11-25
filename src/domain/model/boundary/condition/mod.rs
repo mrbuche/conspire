@@ -38,11 +38,26 @@ enum Target<'m> {
 
 impl Target<'_> {
     fn indices(&self, stride: usize, offset: usize) -> Vec<usize> {
+        self.dofs(stride, offset).collect()
+    }
+    /// The degrees of freedom of the nodes, in the order of the nodes, without a list of them.
+    fn dofs(&self, stride: usize, offset: usize) -> impl Iterator<Item = usize> + '_ {
         let nodes = match self {
             Self::Set(set) => set.nodes(),
             Self::Nodes(nodes) => nodes,
         };
-        nodes.iter().map(|&node| stride * node + offset).collect()
+        nodes.iter().map(move |&node| stride * node + offset)
+    }
+}
+
+fn each_prescribed(constraint: EqualityConstraint, each: &mut impl FnMut(usize, Prescription)) {
+    if let EqualityConstraint::Prescribed(entries) | EqualityConstraint::Multipliers(entries) =
+        constraint
+    {
+        entries
+            .into_iter()
+            .filter(|&(_, prescription)| prescription != Prescription::Initial)
+            .for_each(|(index, prescription)| each(index, prescription));
     }
 }
 
@@ -67,6 +82,14 @@ fn held(entries: Vec<(usize, Prescription)>, enforcement: Enforcement) -> Equali
 pub trait Condition<L> {
     /// The constraint holding the degrees of freedom at a time.
     fn constraint_at(&self, time: Quantity<Time>) -> EqualityConstraint;
+    /// Gives `each` degree of freedom that is held at a time at a value other than the one that it
+    /// starts at, with what that is, in the order of the constraint.
+    ///
+    /// A run asks this at every step, so a condition that can say it without making its
+    /// constraint is better to.
+    fn prescribed_at(&self, time: Quantity<Time>, each: &mut impl FnMut(usize, Prescription)) {
+        each_prescribed(self.constraint_at(time), each)
+    }
 }
 
 /// A condition on the degrees of freedom of a layout that is not a function of time.
@@ -86,6 +109,14 @@ pub trait Static<L>: Condition<L> {
 pub trait ConstrainAt<L> {
     /// The constraints holding the degrees of freedom at a time.
     fn constraint_at(&self, time: Quantity<Time>) -> EqualityConstraints;
+    /// Gives `each` degree of freedom that is held at a time at a value other than the one that it
+    /// starts at, with what that is, in the order of the constraints, so that the last that is
+    /// given for a degree of freedom is the one that holds it.
+    fn prescribed_at(&self, time: Quantity<Time>, each: &mut impl FnMut(usize, Prescription)) {
+        self.constraint_at(time)
+            .into_iter()
+            .for_each(|constraint| each_prescribed(constraint, each))
+    }
     /// Holds a component of every node in a set at its initial value.
     fn fix<'m, C, I>(self, component: C, nodes: &'m NodeSet) -> (Self, Fixed<'m, L>)
     where
@@ -352,6 +383,7 @@ impl<L> ConstrainAt<L> for BoundaryConditions<L> {
     fn constraint_at(&self, _: Quantity<Time>) -> EqualityConstraints {
         Vec::new()
     }
+    fn prescribed_at(&self, _: Quantity<Time>, _: &mut impl FnMut(usize, Prescription)) {}
 }
 
 impl<L> Constrain<L> for BoundaryConditions<L> {
@@ -369,6 +401,10 @@ where
         let mut constraints = self.0.constraint_at(time);
         constraints.push(self.1.constraint_at(time));
         constraints
+    }
+    fn prescribed_at(&self, time: Quantity<Time>, each: &mut impl FnMut(usize, Prescription)) {
+        self.0.prescribed_at(time, each);
+        self.1.prescribed_at(time, each);
     }
 }
 
