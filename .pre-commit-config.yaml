@@ -138,3 +138,7 @@ repos:
         <<: *nightly
         args: ['--release', '--example', 'kernels_elements', '--target', 'nvptx64-nvidia-cuda', '--no-default-features', '--features', 'kernels', '--', '-D',  'warnings']
         name: cargo clippy kernels device
+    -   id: clippy-kernels-dynamics-device
+        <<: *nightly
+        args: ['--release', '--example', 'kernels_dynamics', '--target', 'nvptx64-nvidia-cuda', '--no-default-features', '--features', 'kernels', '--', '-D',  'warnings']
+        name: cargo clippy kernels dynamics device

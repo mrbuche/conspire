@@ -23,10 +23,25 @@ unsafe impl<T> Argument for Buffer<T> {
     }
 }
 
+impl<T> Buffer<T> {
+    /// The address of the buffer on the device, which a kernel reads values at, and which a
+    /// buffer of addresses gives a kernel to find other buffers by.
+    ///
+    /// The address is of the buffer for as long as it lives.
+    pub fn address(&self) -> u64 {
+        self.pointer
+    }
+}
+
 impl<T: Copy> Buffer<T> {
     /// Copies `values` to the device, which must be as many as the buffer holds.
     pub fn upload(&self, values: &[T]) -> Result<()> {
         assert_eq!(values.len(), self.len, "a buffer is uploaded in full");
+        self.upload_front(values)
+    }
+    /// Copies `values` to the start of the buffer, which holds at least as many.
+    pub fn upload_front(&self, values: &[T]) -> Result<()> {
+        assert!(values.len() <= self.len, "a buffer holds what is put in it");
         if values.is_empty() {
             return Ok(());
         }

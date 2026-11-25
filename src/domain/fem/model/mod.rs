@@ -9,6 +9,8 @@ pub mod boundary {
         PowerAt, Prescribable, Prescribed, Right, Rows, Solid, SolidRate, SolidThermal, Static,
         Temperature, Timed, Velocity,
     };
+    #[cfg(feature = "gpu")]
+    pub use crate::domain::boundary::{DeviceForce, DeviceLoads};
 }
 pub mod chemical;
 pub mod diffusion {

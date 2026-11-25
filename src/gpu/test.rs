@@ -53,6 +53,28 @@ fn values_make_the_trip_to_the_device_and_back() {
 }
 
 #[test]
+fn the_front_of_a_buffer_is_given_values_and_the_rest_is_left_as_it_was() {
+    let Some(device) = device() else { return };
+    let buffer = device.buffer_of(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+    buffer.upload_front(&[7.0, 8.0]).unwrap();
+    buffer.upload_front(&[]).unwrap();
+    let mut found = vec![0.0; 4];
+    buffer.download(&mut found).unwrap();
+    assert_eq!(found, [7.0, 8.0, 3.0, 4.0]);
+}
+
+#[test]
+fn buffers_that_are_alive_have_addresses_that_are_their_own() {
+    let Some(device) = device() else { return };
+    let (first, second) = (
+        device.buffer_of(&[1.0, 2.0]).unwrap(),
+        device.buffer_of(&[3.0, 4.0]).unwrap(),
+    );
+    assert_ne!(first.address(), 0);
+    assert_ne!(first.address(), second.address());
+}
+
+#[test]
 fn a_buffer_outlives_its_device() {
     let Some(device) = device() else { return };
     let buffer = device.buffer_of(&[1.0, 2.0, 3.0]).unwrap();
@@ -137,6 +159,21 @@ fn the_errors_of_a_model_on_a_device_say_what_and_where() {
     for part in ["integration point 3", "element 7", "block 2"] {
         assert!(message.contains(part), "{message}");
     }
+}
+
+#[test]
+fn the_errors_of_a_run_of_dynamics_say_what_and_where() {
+    let message = GpuError::Element {
+        block: 1,
+        item: 4,
+        point: 3,
+    }
+    .to_string();
+    for part in ["point 3", "element 4", "block 1", "run of dynamics"] {
+        assert!(message.contains(part), "{message}");
+    }
+    let message = GpuError::Invalid("a run is started".to_string()).to_string();
+    assert!(message.contains("a run is started"), "{message}");
 }
 
 #[test]

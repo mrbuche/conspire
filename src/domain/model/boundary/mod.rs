@@ -10,6 +10,8 @@ pub use condition::{
 pub use loads::{
     Conservative, ConservativeAt, Load, LoadAt, LoadStiffness, LoadStiffnessAt, Loads, PowerAt,
 };
+#[cfg(feature = "gpu")]
+pub use loads::{DeviceForce, DeviceLoads};
 
 use crate::{
     math::{

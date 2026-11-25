@@ -16,11 +16,14 @@ macro_rules! embed {
     };
 }
 
+embed!(DYNAMICS, "dynamics");
 embed!(ELEMENTS, "elements");
 
 /// A set of kernels, which is built and loaded on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Application {
+    /// The kernels of the steps of dynamics.
+    Dynamics,
     /// The kernels of the elements.
     Elements,
 }
@@ -29,11 +32,13 @@ impl Application {
     /// The name of the directory of the kernels, which is that of their PTX.
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Dynamics => "dynamics",
             Self::Elements => "elements",
         }
     }
     const fn built(self) -> &'static str {
         match self {
+            Self::Dynamics => DYNAMICS,
             Self::Elements => ELEMENTS,
         }
     }

@@ -4,6 +4,69 @@ mod test;
 use crate::{domain::boundary::NodalState, math::Quantity, units::Time};
 use core::{marker::PhantomData, ops::Add};
 
+/// An external force that a device subtracts from the forces of a model, which does not depend on
+/// the state of the body, as plain numbers.
+#[cfg(feature = "gpu")]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeviceForce {
+    /// A force on each degree of freedom, as `3 * node + component`, which does not change.
+    Constant(Vec<f64>),
+    /// The weight of each node of a force on the nodes that is a function of time, which is the
+    /// weight times three components that [`DeviceLoads::device_components`] gives at a time.
+    Weighted(Vec<f64>),
+}
+
+#[cfg(feature = "gpu")]
+impl DeviceForce {
+    /// That the force has a value for each degree of freedom, or a weight for each node, of a
+    /// model of `nodes` nodes.
+    pub fn check(&self, nodes: usize) -> Result<(), String> {
+        match self {
+            Self::Constant(forces) if forces.len() != 3 * nodes => Err(format!(
+                "a load has {} values, and the model has {} degrees of freedom",
+                forces.len(),
+                3 * nodes
+            )),
+            Self::Weighted(weights) if weights.len() != nodes => Err(format!(
+                "a load has {} weights, and the model has {nodes} nodes",
+                weights.len()
+            )),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// External forces that a device subtracts from the forces of a model, in the order that they are
+/// subtracted in, which matters to the last bit.
+///
+/// These are the forces that do not depend on the state of the body. A force that follows the
+/// body, such as a pressure that follows the surface it acts on, is not one of them, and neither
+/// is a list of forces that has one, so that to run such a list on a device is an error when the
+/// program is built and not a wrong answer when it runs.
+#[cfg(feature = "gpu")]
+pub trait DeviceLoads {
+    /// Gives each of the forces to `each`, in the order that they are subtracted in.
+    fn device_forces(&self, each: &mut impl FnMut(DeviceForce));
+    /// How many of the forces are weighted, which are a function of time.
+    fn device_weighted(&self) -> usize;
+    /// The three components, at a time, of the weighted force that is the `which`-th of those that
+    /// [`device_forces`](Self::device_forces) gives, counting only the weighted ones.
+    ///
+    /// # Panics
+    ///
+    /// If there is no such weighted force, as `which` is not less than
+    /// [`device_weighted`](Self::device_weighted).
+    fn device_components(&self, which: usize, time: Quantity<Time>) -> [f64; 3];
+    /// The components of the weighted force `which` at each of the times, three to a time, one
+    /// time after another.
+    fn device_component_rows(&self, which: usize, times: &[Quantity<Time>]) -> Vec<f64> {
+        times
+            .iter()
+            .flat_map(|&time| self.device_components(which, time))
+            .collect()
+    }
+}
+
 /// External forces on the degrees of freedom of a state, which may be a function of time.
 pub trait LoadAt<X, R> {
     /// Subtracts the external forces at a time and a state from a residual.
@@ -79,6 +142,17 @@ impl<L, T> Loads<L, T> {
 impl<X, R> LoadAt<X, R> for () {
     fn subtract_at(&self, _: Quantity<Time>, _: &X, _: &mut R) -> Result<(), String> {
         Ok(())
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl DeviceLoads for () {
+    fn device_forces(&self, _: &mut impl FnMut(DeviceForce)) {}
+    fn device_weighted(&self) -> usize {
+        0
+    }
+    fn device_components(&self, which: usize, _: Quantity<Time>) -> [f64; 3] {
+        panic!("there is no force of time {which}, as there are no forces")
     }
 }
 
@@ -218,6 +292,29 @@ where
     }
 }
 
+#[cfg(feature = "gpu")]
+impl<A, B> DeviceLoads for (A, B)
+where
+    A: DeviceLoads,
+    B: DeviceLoads,
+{
+    fn device_forces(&self, each: &mut impl FnMut(DeviceForce)) {
+        self.0.device_forces(each);
+        self.1.device_forces(each);
+    }
+    fn device_weighted(&self) -> usize {
+        self.0.device_weighted() + self.1.device_weighted()
+    }
+    fn device_components(&self, which: usize, time: Quantity<Time>) -> [f64; 3] {
+        let before = self.0.device_weighted();
+        if which < before {
+            self.0.device_components(which, time)
+        } else {
+            self.1.device_components(which - before, time)
+        }
+    }
+}
+
 impl<X, R, A, B> Load<X, R> for (A, B)
 where
     A: Load<X, R>,
@@ -258,6 +355,22 @@ where
 {
     fn subtract_at(&self, time: Quantity<Time>, state: &X, residual: &mut R) -> Result<(), String> {
         self.0.subtract_at(time, state, residual)
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl<L, T> DeviceLoads for Loads<L, T>
+where
+    T: DeviceLoads,
+{
+    fn device_forces(&self, each: &mut impl FnMut(DeviceForce)) {
+        self.0.device_forces(each);
+    }
+    fn device_weighted(&self) -> usize {
+        self.0.device_weighted()
+    }
+    fn device_components(&self, which: usize, time: Quantity<Time>) -> [f64; 3] {
+        self.0.device_components(which, time)
     }
 }
 
