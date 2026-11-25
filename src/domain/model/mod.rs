@@ -89,7 +89,7 @@ pub struct Model<B, const D: usize> {
     pub(crate) node_sets: NodeSets,
     pub(crate) side_sets: SideSets,
     #[cfg(feature = "gpu")]
-    pub(crate) device: Option<Device>,
+    pub(crate) device: Option<(Device, Execution)>,
 }
 
 impl<B, const D: usize> Model<B, D> {
@@ -167,17 +167,17 @@ impl<B, const D: usize> Model<B, D> {
 #[cfg(feature = "gpu")]
 impl<B, const D: usize> Model<B, D> {
     /// The same model, solving its linear systems on a device, by cuDSS, where it has a sparse
-    /// direct solver.
+    /// direct solver, with the values of each matrix computed on the host as the execution says.
     ///
     /// The device is first asked at the first solve, so that a device or a library that is not
     /// there is the error of that solve.
-    pub fn with_device(mut self, device: &Device) -> Self {
-        self.device = Some(device.clone());
+    pub fn with_device(mut self, device: &Device, execution: Execution) -> Self {
+        self.device = Some((device.clone(), execution));
         self
     }
     /// The device the linear systems are solved on, if there is one.
     pub fn device(&self) -> Option<&Device> {
-        self.device.as_ref()
+        self.device.as_ref().map(|(device, _)| device)
     }
 }
 
@@ -211,8 +211,8 @@ where
             symmetric,
         );
         #[cfg(feature = "gpu")]
-        if let Some(device) = &self.device {
-            return solver.on_device(device, Execution::Serial);
+        if let Some((device, execution)) = &self.device {
+            return solver.on_device(device, *execution);
         }
         solver
     }

@@ -32,7 +32,7 @@ use conspire::{
     },
     gpu::{Device, DeviceBlock, DeviceBlocks, DeviceError, GpuError},
     math::{
-        Quantity, Tensor,
+        Execution, Quantity, Tensor,
         assert::AssertionError,
         optimize::{NewtonRaphson, Tolerances},
     },
@@ -583,7 +583,10 @@ fn compare_solves(enforcement: Enforcement) -> Result<(), AssertionError> {
         }
         Err(error) => panic!("{error}"),
     };
-    let found = match stretched(two_blocks().model.with_device(&device), enforcement) {
+    let solved_on_device = two_blocks()
+        .model
+        .with_device(&device, Execution::Threads(4));
+    let found = match stretched(solved_on_device, enforcement) {
         Ok(found) => found,
         Err(message) if message.contains("is available") => {
             skip::<()>(&message);

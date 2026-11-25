@@ -17,8 +17,8 @@
 //! on a device by cuDSS, and where the time of the device goes. `SOLVE_CELLS` is the cells on a
 //! side, `8,16,24,32,48` by default, `HOST_MAX_DOFS` is the unknowns above which the host is not
 //! run, 120000 by default, and one Newton solve of the largest grid the host is run on is timed on
-//! both. The values of the matrix on the device are computed on `THREADS` threads, and the Newton
-//! solve on the device is serial.
+//! both. The values of the matrix on the device are computed on `THREADS` threads, in the Newton
+//! solve too.
 //!
 //! The environment sets what is run: `CELLS` is the cells on a side of the grids of
 //! `single_block`, `22,46,90` by default, `ELEMENTS` is the elements of each shape of
@@ -502,7 +502,11 @@ fn newton_on_both(device: &Device, cells: usize) -> Result<(), AssertionError> {
         (solved, start.elapsed().as_secs_f64())
     };
     let (host, host_time) = newton(grid(cells).0);
-    let (found, device_time) = newton(grid(cells).0.with_device(device));
+    let (found, device_time) = newton(
+        grid(cells)
+            .0
+            .with_device(device, Execution::Threads(threads())),
+    );
     let (host, found) = (host.map_err(describe)?, found.map_err(describe)?);
     let worst = host
         .iter()
