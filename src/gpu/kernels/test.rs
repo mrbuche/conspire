@@ -71,7 +71,7 @@ fn the_error_of_kernels_that_are_not_built_names_them_and_how_to_build_them() {
 #[cfg(feature = "elements")]
 #[test]
 fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_host_looks_for() {
-    use super::block_forces;
+    use super::{block_check, block_forces};
     use crate::constitutive::{
         FromParameters,
         solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
@@ -81,11 +81,15 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
     };
     for model in [NeoHookean::NAME, SaintVenantKirchhoff::NAME] {
         for (points, nodes) in [(1, 4), (4, 4), (8, 8), (6, 6), (8, 5)] {
-            let name = block_forces(model, points, nodes);
-            assert!(
-                ptx.contains(&format!(".visible .entry {name}(")),
-                "{name} is not in the PTX"
-            );
+            for name in [
+                block_forces(model, points, nodes),
+                block_check(model, points, nodes),
+            ] {
+                assert!(
+                    ptx.contains(&format!(".visible .entry {name}(")),
+                    "{name} is not in the PTX"
+                );
+            }
         }
     }
 }
@@ -93,7 +97,7 @@ fn the_kernels_of_every_model_and_shape_are_in_the_ptx_under_the_name_that_the_h
 #[cfg(feature = "elements")]
 #[test]
 fn the_kernels_of_every_model_for_elements_of_one_point_with_hourglass_control_are_in_the_ptx() {
-    use super::block_forces_stabilized;
+    use super::{block_check_stabilized, block_forces_stabilized};
     use crate::constitutive::{
         FromParameters,
         solid::hyperelastic::{NeoHookean, SaintVenantKirchhoff},
@@ -102,11 +106,15 @@ fn the_kernels_of_every_model_for_elements_of_one_point_with_hourglass_control_a
         return eprintln!("skipped: the kernels of the elements are not built");
     };
     for model in [NeoHookean::NAME, SaintVenantKirchhoff::NAME] {
-        let name = block_forces_stabilized(model, 8);
-        assert!(
-            ptx.contains(&format!(".visible .entry {name}(")),
-            "{name} is not in the PTX"
-        );
+        for name in [
+            block_forces_stabilized(model, 8),
+            block_check_stabilized(model, 8),
+        ] {
+            assert!(
+                ptx.contains(&format!(".visible .entry {name}(")),
+                "{name} is not in the PTX"
+            );
+        }
     }
 }
 

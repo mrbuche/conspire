@@ -28,7 +28,9 @@ use conspire::{
             },
             stabilized::linear::Hexahedron as StabilizedHexahedron,
         },
-        solid::{NodalForcesSolid, elastic::ElasticElements},
+        solid::{
+            CourantFriedrichsLewy, NodalForcesSolid, TimeScaleEstimate, elastic::ElasticElements,
+        },
     },
     gpu::{DeviceBlock, DeviceBlocks, DeviceError, DeviceKind},
     math::{Quantity, Tensor, assert::AssertionError},
@@ -826,4 +828,57 @@ fn a_stabilized_element_with_an_error_is_reported_as_the_host_reports_it()
     };
     assert_eq!(error.to_string(), expected.to_string());
     Ok(())
+}
+
+fn checked_as_the_host<B>(
+    model: &Model<B, 3>,
+    current: &NodalCoordinates<3>,
+) -> Result<(), AssertionError>
+where
+    B: DeviceBlocks,
+    CourantFriedrichsLewy: TimeScaleEstimate<Model<B, 3>>,
+{
+    let rate = 1.0
+        / CourantFriedrichsLewy::default()
+            .time_scale(model, None, current)
+            .map_err(describe)?;
+    let largest = rate * rate;
+    for fused in [false, true] {
+        let Some(resident) = on_device(model, fused) else {
+            return Ok(());
+        };
+        resident.set_coordinates(current).map_err(describe)?;
+        let above = resident
+            .first_unstable(largest * (1.0 + 1e-9))
+            .map_err(describe)?;
+        assert_eq!(above, None, "fused {fused}");
+        let below = resident
+            .first_unstable(largest * (1.0 - 1e-9))
+            .map_err(describe)?;
+        assert!(below.is_some(), "fused {fused}");
+        let every = resident.first_unstable(largest * 0.0).map_err(describe)?;
+        assert_eq!(every, Some((0, 0)), "fused {fused}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_device_checks_the_time_step_of_full_elements_as_the_host_does() -> Result<(), AssertionError> {
+    let TwoBlocks {
+        model, coordinates, ..
+    } = two_blocks();
+    checked_as_the_host(&model, &deformed(&coordinates))
+}
+
+#[test]
+fn a_device_checks_the_time_step_of_stabilized_elements_as_the_host_does()
+-> Result<(), AssertionError> {
+    let coordinates = lattice(COLUMNS, LAYERS);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let model: Model<StabilizedGrid, 3> = (
+        (rubber(), density(), slab(COLUMNS, 0..LAYERS), &reference).into(),
+        reference,
+    )
+        .into();
+    checked_as_the_host(&model, &deformed(&coordinates))
 }

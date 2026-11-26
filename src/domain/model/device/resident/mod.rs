@@ -9,12 +9,15 @@ use crate::{
         block::device::{DeviceBlock, DeviceBlocks, DeviceKind},
         solid::{NodalForcesSolid, elastic::ElasticElements},
     },
-    fem::element::ErrorRecord,
+    fem::element::{ErrorRecord, time_scale::UnstableRecord},
     gpu::{
         Application, Buffer, Device, Function, GpuError, Module, Resources,
-        kernels::{block_forces, block_forces_stabilized, ptx},
+        kernels::{
+            block_check, block_check_stabilized, block_forces, block_forces_stabilized, ptx,
+        },
     },
-    math::Tensor,
+    math::{Quantity, Tensor},
+    units::RateSquared,
 };
 use core::{
     error::Error,
@@ -54,6 +57,32 @@ impl Debug for DeviceError {
 
 impl Error for DeviceError {}
 
+/// What a check of the time step of a block needs on the device, besides what its forces do.
+struct CheckOnDevice {
+    kernel: Function,
+    masses: Buffer<f64>,
+    added_squared_frequencies: Buffer<f64>,
+    unstable: Buffer<u64>,
+}
+
+impl CheckOnDevice {
+    fn new(device: &Device, module: &Module, block: &DeviceBlock) -> Result<Self, GpuError> {
+        let nodes = block.layout.nodes_per_item;
+        let name = match block.kind {
+            DeviceKind::Full => block_check(block.model, block.points, nodes),
+            DeviceKind::Stabilized => block_check_stabilized(block.model, nodes),
+        };
+        Ok(Self {
+            kernel: module
+                .function(&name)
+                .map_err(|_| GpuError::NoKernel(name.clone()))?,
+            masses: device.buffer_of(&block.masses)?,
+            added_squared_frequencies: device.buffer_of(&block.added_squared_frequencies)?,
+            unstable: device.buffer(1)?,
+        })
+    }
+}
+
 /// A block of a model on the device.
 struct BlockOnDevice {
     kind: DeviceKind,
@@ -73,6 +102,7 @@ struct BlockOnDevice {
     contributions: Buffer<u32>,
     forces: Buffer<f64>,
     record: Buffer<u64>,
+    check: Option<CheckOnDevice>,
 }
 
 impl BlockOnDevice {
@@ -106,6 +136,11 @@ impl BlockOnDevice {
             contributions: device.buffer_of(&layout.contributions)?,
             forces: device.buffer(3 * layout.plane())?,
             record: device.buffer(1)?,
+            check: if block.masses.is_empty() {
+                None
+            } else {
+                Some(CheckOnDevice::new(device, module, block)?)
+            },
         })
     }
 }
@@ -240,6 +275,115 @@ impl Resident {
             )?;
         }
         Ok(())
+    }
+    /// The first element, with its block, whose bound on its squared angular frequency at the
+    /// coordinates that the device has is more than `limit`, or is not a number, and waits for
+    /// the device.
+    ///
+    /// The bound is that of the Courant-Friedrichs-Lewy estimate of the host with the moduli of
+    /// the model, and the lumped masses are those of the densities of the blocks, so every
+    /// block must have them. An element whose bound is an error is that error.
+    pub fn first_unstable(
+        &self,
+        limit: Quantity<RateSquared>,
+    ) -> Result<Option<(usize, usize)>, GpuError> {
+        self.forget_errors()?;
+        self.forget_unstable()?;
+        self.launch_check(limit.value(), 0)?;
+        self.device.synchronize()?;
+        if let Some((block, record)) = self.first_error()? {
+            return Err(GpuError::Element {
+                block,
+                item: record.item(),
+                point: record.point(),
+            });
+        }
+        Ok(self
+            .unstable()?
+            .map(|(block, record)| (block, record.item())))
+    }
+    /// What the check of each block needs, or the error of a block that cannot be checked.
+    fn checks(&self) -> Result<Vec<(&BlockOnDevice, &CheckOnDevice)>, GpuError> {
+        self.blocks
+            .iter()
+            .enumerate()
+            .map(|(index, block)| match &block.check {
+                Some(check) => Ok((block, check)),
+                None => Err(GpuError::Invalid(format!(
+                    "the time step of block {index} cannot be checked, as it has no densities"
+                ))),
+            })
+            .collect()
+    }
+    /// Clears the elements that have been found to be unstable.
+    fn forget_unstable(&self) -> Result<(), GpuError> {
+        self.checks()?
+            .into_iter()
+            .try_for_each(|(_, check)| check.unstable.fill(u32::MAX))
+    }
+    /// Starts the check of the elements of every block against `limit` at the coordinates that
+    /// the device has, for a step, and does not wait for it.
+    fn launch_check(&self, limit: f64, step: u32) -> Result<(), GpuError> {
+        for (block, check) in self.checks()? {
+            match block.kind {
+                DeviceKind::Full => self.device.launch(
+                    &check.kernel,
+                    block.items as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.items,
+                        &self.reference_coordinates,
+                        &block.derivatives,
+                        &block.weights,
+                        &block.connectivity,
+                        &self.coordinates,
+                        &check.masses,
+                        &limit,
+                        &step,
+                        &check.unstable,
+                        &block.record,
+                        &block.parameters,
+                        &block.number_of_parameters,
+                    ],
+                )?,
+                DeviceKind::Stabilized => self.device.launch(
+                    &check.kernel,
+                    block.items as usize,
+                    THREADS_PER_BLOCK,
+                    &[
+                        &block.items,
+                        &block.values,
+                        &block.connectivity,
+                        &self.coordinates,
+                        &check.masses,
+                        &check.added_squared_frequencies,
+                        &limit,
+                        &step,
+                        &check.unstable,
+                        &block.record,
+                        &block.parameters,
+                        &block.number_of_parameters,
+                    ],
+                )?,
+            }
+        }
+        Ok(())
+    }
+    /// The unstable element of the first step that the checks since the last clearing found one
+    /// at, with its block, which is the first block that has one at that step.
+    fn unstable(&self) -> Result<Option<(usize, UnstableRecord)>, GpuError> {
+        let mut first: Option<(usize, UnstableRecord)> = None;
+        for (index, (_, check)) in self.checks()?.into_iter().enumerate() {
+            let mut word = [u64::MAX];
+            check.unstable.download(&mut word)?;
+            let record = UnstableRecord::from_bits(word[0]);
+            if record.is_unstable()
+                && first.is_none_or(|(_, earliest)| record.step() < earliest.step())
+            {
+                first = Some((index, record));
+            }
+        }
+        Ok(first)
     }
     /// What the kernels of each block need of a multiprocessor of the device, for the blocks of
     /// threads that they are launched in: the kernel of the forces of the elements, and then the

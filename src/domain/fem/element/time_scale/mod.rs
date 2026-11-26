@@ -2,9 +2,11 @@
 mod test;
 
 mod courant_friedrichs_lewy;
+mod record;
 
 pub use crate::domain::block::element::time_scale::courant_friedrichs_lewy::CourantFriedrichsLewyElement;
 pub use courant_friedrichs_lewy::squared_frequency_bound_from;
+pub use record::UnstableRecord;
 
 use crate::{
     domain::time_scale::{

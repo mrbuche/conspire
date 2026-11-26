@@ -32,6 +32,12 @@ pub struct DeviceBlock {
     pub values: Vec<f64>,
     /// The layout of the elements.
     pub layout: DeviceLayout,
+    /// The lumped masses of the nodes of the elements, laid out as the connectivity is, which
+    /// are none if the time step of the block cannot be checked.
+    pub masses: Vec<f64>,
+    /// What each element adds to the bound on its squared angular frequency beyond what its
+    /// integration points give, which are none if the masses are none.
+    pub added_squared_frequencies: Vec<f64>,
 }
 
 /// Something made of blocks that a device can run, in the order that the forces are added in.

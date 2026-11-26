@@ -6,19 +6,27 @@ use conspire::{
     constitutive::{
         FromParameters,
         solid::{
-            elastic::Elastic,
+            elastic::{Elastic, StiffnessBound},
             hyperelastic::{NeoHookean, SaintVenantKirchhoff},
         },
     },
+    domain::ModelBound,
     fem::element::{
-        ErrorRecord, Recomputed, StandardGradientOperators, linear::LinearElement,
-        solid::elastic::ElasticFiniteElement, stabilized::StabilizedElement,
+        ElementNodalCoordinates, ErrorRecord, IntegrationData, Recomputed,
+        StandardGradientOperators,
+        linear::LinearElement,
+        mass::ElementNodalLumpedMasses,
+        solid::elastic::ElasticFiniteElement,
+        stabilized::StabilizedElement,
+        time_scale::{UnstableRecord, squared_frequency_bound_from},
     },
     math::{ScalarList, Tensor},
+    units::Mass,
 };
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::nvptx::{_block_dim_x, _block_idx_x, _thread_idx_x, trap},
+    array::from_fn,
     panic::PanicInfo,
     slice::from_raw_parts,
     sync::atomic::{AtomicU64, Ordering},
@@ -232,6 +240,208 @@ unsafe fn block_forces_stabilized<M>(
     }
 }
 
+/// The coordinates of the nodes of an element `item`, as [`block_forces`] has them.
+///
+/// # Safety
+///
+/// `coordinates` must have the nodes that `connectivity`, which must be `N * items` of them,
+/// names, and `item` must be less than `items`.
+#[inline(always)]
+unsafe fn element_nodes<const N: usize>(
+    connectivity: *const u32,
+    coordinates: *const f64,
+    item: usize,
+    items: usize,
+) -> [[f64; 3]; N] {
+    let mut positions = [[0.0; 3]; N];
+    positions.iter_mut().enumerate().for_each(|(a, position)| {
+        // SAFETY: the node is one that the coordinates have.
+        let node = unsafe { *connectivity.add(a * items + item) } as usize;
+        position.iter_mut().enumerate().for_each(|(i, position)| {
+            // SAFETY: the node has three coordinates.
+            *position = unsafe { *coordinates.add(3 * node + i) }
+        });
+    });
+    positions
+}
+
+/// Checks the element `item` of a block against `limit`, the largest squared angular frequency
+/// that is stable, with the integration data of the element from `data`.
+///
+/// An element whose bound, plus `added`, is more than the limit or is not a number is recorded
+/// in `unstable`, which takes the least of the [records](UnstableRecord) at the `step`. An
+/// element whose bound is an error is recorded in `errors`, as [`block_forces`] records it.
+///
+/// # Safety
+///
+/// `connectivity` and `coordinates` must be those of [`element_nodes`], `masses` must be
+/// `N * items` values, and `unstable` and `errors` must each be one aligned value.
+#[inline(always)]
+unsafe fn check_element<M, D, const G: usize, const N: usize>(
+    data: &D,
+    item: usize,
+    items: usize,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    masses: *const f64,
+    added: f64,
+    limit: f64,
+    step: u32,
+    unstable: *mut u64,
+    errors: *mut u64,
+    model: &M,
+) where
+    M: StiffnessBound,
+    D: IntegrationData<G, N>,
+{
+    // SAFETY: as for this function.
+    let positions: ElementNodalCoordinates<N> =
+        unsafe { element_nodes::<N>(connectivity, coordinates, item, items) }.into();
+    let nodal_masses: ElementNodalLumpedMasses<N> = from_fn(|a| {
+        // SAFETY: the element has a mass for each of its nodes.
+        Mass::kilograms(unsafe { *masses.add(a * items + item) })
+    })
+    .into();
+    match squared_frequency_bound_from(data, model, &ModelBound, &positions, &nodal_masses) {
+        Ok(bound) => {
+            let squared_frequency = bound.value() + added;
+            if squared_frequency.is_nan() || squared_frequency > limit {
+                // SAFETY: `unstable` is one aligned value, which the threads only take the least.
+                unsafe { AtomicU64::from_ptr(unstable) }
+                    .fetch_min(UnstableRecord::of(step, item).bits(), Ordering::Relaxed);
+            }
+        }
+        Err(error) => {
+            // SAFETY: `errors` is one aligned value, which the threads only take the least.
+            unsafe { AtomicU64::from_ptr(errors) }
+                .fetch_min(ErrorRecord::of(item, &error).bits(), Ordering::Relaxed);
+        }
+    }
+}
+
+/// The check of the time step of each of `items` elements of a block, one element to a thread,
+/// with the gradient vectors and weights recomputed as [`block_forces`] does, and the elements
+/// recorded as [`check_element`] says.
+///
+/// # Safety
+///
+/// The nodes, the tables and the `parameters` must be those of [`block_forces`], `masses` must
+/// be `N * items` values, and `unstable` and `errors` must each be one aligned value.
+#[inline(always)]
+unsafe fn block_check<M, const G: usize, const N: usize>(
+    items: u32,
+    reference_coordinates: *const f64,
+    derivatives: *const f64,
+    weights: *const f64,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    masses: *const f64,
+    limit: f64,
+    step: u32,
+    unstable: *mut u64,
+    errors: *mut u64,
+    parameters: *const f64,
+    number_of_parameters: u32,
+) where
+    M: StiffnessBound + FromParameters,
+{
+    let item = thread();
+    let items = items as usize;
+    if item < items {
+        // SAFETY: there are as many parameters as the model takes.
+        let model = M::from_parameters(unsafe {
+            from_raw_parts(parameters, number_of_parameters as usize)
+        });
+        // SAFETY: the tables are those of the parametric element, which are as large as these,
+        // and the tensors are transparent over the numbers that they are made of.
+        let (derivatives, weights) = unsafe {
+            (
+                &*derivatives.cast::<StandardGradientOperators<3, N, G>>(),
+                &*weights.cast::<ScalarList<G>>(),
+            )
+        };
+        // SAFETY: the nodes are those of the reference coordinates.
+        let nodes = unsafe { element_nodes::<N>(connectivity, reference_coordinates, item, items) };
+        let element = Recomputed::new(nodes.into(), derivatives, weights);
+        // SAFETY: as for this function.
+        unsafe {
+            check_element::<M, _, G, N>(
+                &element,
+                item,
+                items,
+                connectivity,
+                coordinates,
+                masses,
+                0.0,
+                limit,
+                step,
+                unstable,
+                errors,
+                &model,
+            )
+        }
+    }
+}
+
+/// The check of the time step of each of `items` elements of a block of elements of one
+/// integration point with hourglass control, one element to a thread, with what each has of its
+/// own read from its `values` as [`block_forces_stabilized`] does, what it adds to the bound of
+/// its point from `added`, and the elements recorded as [`check_element`] says.
+///
+/// # Safety
+///
+/// The nodes, the `values` and the `parameters` must be those of [`block_forces_stabilized`],
+/// `masses` must be `8 * items` values, `added` must be `items` values, and `unstable` and
+/// `errors` must each be one aligned value.
+#[inline(always)]
+unsafe fn block_check_stabilized<M>(
+    items: u32,
+    values: *const f64,
+    connectivity: *const u32,
+    coordinates: *const f64,
+    masses: *const f64,
+    added: *const f64,
+    limit: f64,
+    step: u32,
+    unstable: *mut u64,
+    errors: *mut u64,
+    parameters: *const f64,
+    number_of_parameters: u32,
+) where
+    M: StiffnessBound + FromParameters,
+{
+    const N: usize = 8;
+    let item = thread();
+    let items = items as usize;
+    if item < items {
+        // SAFETY: there are as many parameters as the model takes.
+        let model = M::from_parameters(unsafe {
+            from_raw_parts(parameters, number_of_parameters as usize)
+        });
+        let element = StabilizedElement::<N>::from_values(
+            // SAFETY: the value is one of those that the element has.
+            |k| unsafe { *values.add(k * items + item) },
+        );
+        // SAFETY: as for this function, and the element has what it adds.
+        unsafe {
+            check_element::<M, _, 1, N>(
+                &element,
+                item,
+                items,
+                connectivity,
+                coordinates,
+                masses,
+                *added.add(item),
+                limit,
+                step,
+                unstable,
+                errors,
+                &model,
+            )
+        }
+    }
+}
+
 /// The second pass of the forces: the forces on `nodes` nodes, each the sum of the forces of the
 /// elements that have it, in the order of the elements, added to the forces that it has.
 ///
@@ -343,6 +553,44 @@ macro_rules! kernel {
                     )
                 }
             }
+            /// # Safety
+            ///
+            /// As for [`block_check`].
+            #[unsafe(export_name = concat!("block_check_", $name, "_g", $points, "_n", $nodes))]
+            pub unsafe extern "ptx-kernel" fn check(
+                items: u32,
+                reference_coordinates: *const f64,
+                derivatives: *const f64,
+                weights: *const f64,
+                connectivity: *const u32,
+                coordinates: *const f64,
+                masses: *const f64,
+                limit: f64,
+                step: u32,
+                unstable: *mut u64,
+                errors: *mut u64,
+                parameters: *const f64,
+                number_of_parameters: u32,
+            ) {
+                // SAFETY: as for the function that this calls.
+                unsafe {
+                    block_check::<$model, $points, $nodes>(
+                        items,
+                        reference_coordinates,
+                        derivatives,
+                        weights,
+                        connectivity,
+                        coordinates,
+                        masses,
+                        limit,
+                        step,
+                        unstable,
+                        errors,
+                        parameters,
+                        number_of_parameters,
+                    )
+                }
+            }
         };
     };
 }
@@ -389,6 +637,42 @@ macro_rules! stabilized {
                         coordinates,
                         forces,
                         record,
+                        parameters,
+                        number_of_parameters,
+                    )
+                }
+            }
+            /// # Safety
+            ///
+            /// As for [`block_check_stabilized`].
+            #[unsafe(export_name = concat!("block_check_", $name, "_stabilized_n", $nodes))]
+            pub unsafe extern "ptx-kernel" fn check(
+                items: u32,
+                values: *const f64,
+                connectivity: *const u32,
+                coordinates: *const f64,
+                masses: *const f64,
+                added: *const f64,
+                limit: f64,
+                step: u32,
+                unstable: *mut u64,
+                errors: *mut u64,
+                parameters: *const f64,
+                number_of_parameters: u32,
+            ) {
+                // SAFETY: as for the function that this calls.
+                unsafe {
+                    block_check_stabilized::<$model>(
+                        items,
+                        values,
+                        connectivity,
+                        coordinates,
+                        masses,
+                        added,
+                        limit,
+                        step,
+                        unstable,
+                        errors,
                         parameters,
                         number_of_parameters,
                     )
