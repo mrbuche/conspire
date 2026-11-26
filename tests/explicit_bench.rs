@@ -592,14 +592,14 @@ macro_rules! estimates {
         let bound = microseconds(time_of(30, || {
             black_box(
                 CourantFriedrichsLewy::default()
-                    .time_scale(&model, black_box(&current))
+                    .time_scale(&model, None, black_box(&current))
                     .unwrap(),
             );
         }));
         let power = microseconds(time_of(3, || {
             black_box(
                 ElementPowerIteration
-                    .time_scale(&model, black_box(&current))
+                    .time_scale(&model, None, black_box(&current))
                     .unwrap(),
             );
         }));
@@ -607,6 +607,42 @@ macro_rules! estimates {
             "{} ({elements} elements), microseconds per element: forces {forces:.3}, \
              Courant-Friedrichs-Lewy {bound:.3}, power iteration {power:.1}",
             $label
+        );
+        let workers = Workers::new(threads()).unwrap();
+        let mut scratch = model.scratch();
+        let parallel_forces = microseconds(time_of(30, || {
+            let mut forces = NodalForcesSolid::<3>::zero(current.len());
+            model
+                .nodal_forces_parallel_into(
+                    &mut scratch,
+                    &workers,
+                    black_box(&current),
+                    &mut forces,
+                )
+                .unwrap();
+            black_box(forces);
+        }));
+        let parallel_bound = microseconds(time_of(30, || {
+            black_box(
+                CourantFriedrichsLewy::default()
+                    .time_scale(&model, Some(&workers), black_box(&current))
+                    .unwrap(),
+            );
+        }));
+        let parallel_power = microseconds(time_of(3, || {
+            black_box(
+                ElementPowerIteration
+                    .time_scale(&model, Some(&workers), black_box(&current))
+                    .unwrap(),
+            );
+        }));
+        println!(
+            "{:>10}: forces {parallel_forces:.3} ({:.1}x), Courant-Friedrichs-Lewy \
+             {parallel_bound:.3} ({:.1}x), power iteration {parallel_power:.1} ({:.1}x)",
+            "threads",
+            forces / parallel_forces,
+            bound / parallel_bound,
+            power / parallel_power
         );
         let integrator = VelocityVerlet::new(Time::seconds(1e-8));
         let conditions = BoundaryConditions::<Solid<3>>::new();

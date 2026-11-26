@@ -117,9 +117,10 @@ where
             initial_velocities,
             Stepping::Explicit,
         )?;
-        let mut run = execution.start(self)?;
+        let (workers, mut scratch) = execution.start(self)?.unzip();
         let (times, mut coordinates, velocities, accelerations) = stability.integrate(
             self,
+            workers.as_ref(),
             |time, coordinates| {
                 let mut coordinates = coordinates.clone();
                 motion.apply(time, &mut coordinates);
@@ -129,7 +130,8 @@ where
             |time, coordinates: &NodalCoordinates<3>, _: &NodalVelocities<3>| {
                 let mut coordinates = coordinates.clone();
                 motion.apply(time, &mut coordinates);
-                self.nodal_accelerations_in(&mut run, &coordinates, time, applied_loads, &masses)
+                let parallel = workers.as_ref().zip(scratch.as_mut());
+                self.nodal_accelerations_in(parallel, &coordinates, time, applied_loads, &masses)
                     .map_err(|error| error.to_string())
             },
             time,

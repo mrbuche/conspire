@@ -48,6 +48,7 @@ fn a_bounded_integration_runs_below_the_limit_and_errors_above_it() {
     let model = model();
     let limit = model
         .fastest_time_scale(
+            None,
             &NodalReferenceCoordinates::from(COORDINATES),
             &NodalCoordinates::from(COORDINATES),
         )
@@ -101,6 +102,7 @@ fn rest(
 fn limit() -> f64 {
     model()
         .fastest_time_scale(
+            None,
             &NodalReferenceCoordinates::from(COORDINATES),
             &NodalCoordinates::from(COORDINATES),
         )

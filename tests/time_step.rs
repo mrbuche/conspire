@@ -9,11 +9,11 @@ use conspire::{
         element::{linear::Hexahedron, stabilized},
         solid::{
             Checked, CourantFriedrichsLewy, ElasticExplicitDynamics, ElementPowerIteration,
-            Execution, Lumped, TimeScaleEstimate,
+            Execution, Lumped, TimeScaleEstimate, elastic::Workers,
         },
     },
     math::{
-        Quantity,
+        Quantity, Tensor,
         integrate::{IntegrationError, VelocityVerlet},
     },
     units::{Density, Stress, Time},
@@ -24,13 +24,14 @@ type Stiff = Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8, Quantity<Densit
 type Both = Blocks<Soft, Stiff>;
 
 const CELLS: usize = 3;
+const MANY_CELLS: usize = 6;
 
-fn lattice() -> Vec<[f64; 3]> {
-    (0..=CELLS)
+fn lattice(cells: usize) -> Vec<[f64; 3]> {
+    (0..=cells)
         .flat_map(|k| {
-            (0..=CELLS).flat_map(move |j| {
-                (0..=CELLS).map(move |i| {
-                    let [x, y, z] = [i, j, k].map(|index| index as f64 / CELLS as f64);
+            (0..=cells).flat_map(move |j| {
+                (0..=cells).map(move |i| {
+                    let [x, y, z] = [i, j, k].map(|index| index as f64 / cells as f64);
                     [x + 0.04 * y * z, y + 0.03 * x * x, z]
                 })
             })
@@ -38,12 +39,12 @@ fn lattice() -> Vec<[f64; 3]> {
         .collect()
 }
 
-fn layers(range: core::ops::Range<usize>) -> Vec<[usize; 8]> {
-    let index = |i: usize, j: usize, k: usize| (k * (CELLS + 1) + j) * (CELLS + 1) + i;
+fn layers(cells: usize, range: core::ops::Range<usize>) -> Vec<[usize; 8]> {
+    let index = move |i: usize, j: usize, k: usize| (k * (cells + 1) + j) * (cells + 1) + i;
     range
         .flat_map(|k| {
-            (0..CELLS).flat_map(move |j| {
-                (0..CELLS).map(move |i| {
+            (0..cells).flat_map(move |j| {
+                (0..cells).map(move |i| {
                     [
                         index(i, j, k),
                         index(i + 1, j, k),
@@ -61,11 +62,12 @@ fn layers(range: core::ops::Range<usize>) -> Vec<[usize; 8]> {
 }
 
 fn model() -> Model<Both, 3> {
-    model_of(Density::kilograms_per_cubic_meter(7.8e3))
+    model_of(CELLS, Density::kilograms_per_cubic_meter(7.8e3))
 }
 
-fn model_of(density: Quantity<Density>) -> Model<Both, 3> {
-    let reference = NodalReferenceCoordinates::from(lattice());
+fn model_of(cells: usize, density: Quantity<Density>) -> Model<Both, 3> {
+    let reference = NodalReferenceCoordinates::from(lattice(cells));
+    let soft = 2 * cells / 3;
     let blocks = Blocks(
         Soft::from((
             NeoHookean {
@@ -73,7 +75,7 @@ fn model_of(density: Quantity<Density>) -> Model<Both, 3> {
                 bulk_modulus: Stress::pascals(13.0e9),
             },
             density,
-            layers(0..2),
+            layers(cells, 0..soft),
             &reference,
         )),
         Stiff::from((
@@ -82,7 +84,7 @@ fn model_of(density: Quantity<Density>) -> Model<Both, 3> {
                 bulk_modulus: Stress::pascals(160.0e9),
             },
             density,
-            layers(2..CELLS),
+            layers(cells, soft..cells),
             &reference,
         )),
     );
@@ -90,12 +92,12 @@ fn model_of(density: Quantity<Density>) -> Model<Both, 3> {
 }
 
 fn at_rest() -> NodalCoordinates<3> {
-    lattice().into()
+    lattice(CELLS).into()
 }
 
 fn courant_friedrichs_lewy(model: &Model<Both, 3>) -> Quantity<Time> {
     CourantFriedrichsLewy::default()
-        .time_scale(model, &at_rest())
+        .time_scale(model, None, &at_rest())
         .unwrap()
 }
 
@@ -112,7 +114,7 @@ where
             &[Time::seconds(0.0), Time::seconds(5.0 * step)],
             (
                 at_rest(),
-                NodalVelocities::from(vec![[0.0; 3]; lattice().len()]),
+                NodalVelocities::from(vec![[0.0; 3]; lattice(CELLS).len()]),
             ),
             &(),
             &BoundaryConditions::<Solid<3>>::new(),
@@ -125,7 +127,7 @@ fn the_courant_friedrichs_lewy_time_scale_is_no_longer_than_that_of_the_elements
     let model = model();
     let bound = courant_friedrichs_lewy(&model).value();
     let elements = ElementPowerIteration
-        .time_scale(&model, &at_rest())
+        .time_scale(&model, None, &at_rest())
         .unwrap()
         .value();
     assert!(bound <= elements, "{bound} is longer than {elements}");
@@ -148,7 +150,7 @@ fn a_step_that_the_elements_allow_may_be_refused_by_the_bound() {
     let model = model();
     let bound = courant_friedrichs_lewy(&model).value();
     let elements = ElementPowerIteration
-        .time_scale(&model, &at_rest())
+        .time_scale(&model, None, &at_rest())
         .unwrap()
         .value();
     let step = bound + elements;
@@ -174,10 +176,106 @@ fn a_step_that_the_elements_allow_may_be_refused_by_the_bound() {
 
 #[test]
 fn a_bound_that_is_not_finite_is_an_error() {
-    let model = model_of(Density::kilograms_per_cubic_meter(f64::NAN));
+    let model = model_of(CELLS, Density::kilograms_per_cubic_meter(f64::NAN));
     assert!(
         CourantFriedrichsLewy::default()
-            .time_scale(&model, &at_rest())
+            .time_scale(&model, None, &at_rest())
             .is_err()
     );
+}
+
+fn many() -> Model<Both, 3> {
+    model_of(MANY_CELLS, Density::kilograms_per_cubic_meter(7.8e3))
+}
+
+fn stretched() -> Vec<[f64; 3]> {
+    let mut coordinates = lattice(MANY_CELLS);
+    let node = coordinates.len() - 10;
+    coordinates[node][2] += 1.2 / MANY_CELLS as f64;
+    coordinates
+}
+
+fn time_scales<E>(estimate: E, coordinates: Vec<[f64; 3]>)
+where
+    E: TimeScaleEstimate<Model<Both, 3>>,
+{
+    let model = many();
+    let coordinates = NodalCoordinates::from(coordinates);
+    let serial = estimate
+        .time_scale(&model, None, &coordinates)
+        .map_err(|error| error.to_string());
+    for threads in [1, 2, 3, 7] {
+        let workers = Workers::new(threads).unwrap();
+        let parallel = estimate
+            .time_scale(&model, Some(&workers), &coordinates)
+            .map_err(|error| error.to_string());
+        assert_eq!(parallel, serial, "{threads} threads");
+    }
+}
+
+#[test]
+fn any_number_of_threads_gives_the_serial_time_scales() {
+    let model = many();
+    let at_rest = NodalCoordinates::from(lattice(MANY_CELLS));
+    let moved = NodalCoordinates::from(stretched());
+    assert!(
+        ElementPowerIteration
+            .time_scale(&model, None, &moved)
+            .unwrap()
+            < ElementPowerIteration
+                .time_scale(&model, None, &at_rest)
+                .unwrap()
+    );
+    time_scales(CourantFriedrichsLewy::default(), stretched());
+    time_scales(ElementPowerIteration, stretched());
+}
+
+#[test]
+fn any_number_of_threads_gives_the_serial_error_of_an_estimate() {
+    let mut inverted = lattice(MANY_CELLS);
+    let nodes = inverted.len();
+    inverted[nodes / 3][2] += 3.0;
+    inverted[nodes - 10][2] -= 3.0;
+    let model = many();
+    assert!(
+        CourantFriedrichsLewy::default()
+            .time_scale(&model, None, &NodalCoordinates::from(inverted.clone()))
+            .is_err()
+    );
+    time_scales(CourantFriedrichsLewy::default(), inverted.clone());
+    time_scales(ElementPowerIteration, inverted);
+}
+
+#[test]
+fn a_checked_run_on_threads_is_the_serial_run() {
+    let model = many();
+    let limit = 0.9
+        * 2.0
+        * CourantFriedrichsLewy::default()
+            .time_scale(&model, None, &NodalCoordinates::from(stretched()))
+            .unwrap()
+            .value();
+    let run = |execution, step: f64| {
+        model
+            .integrate(
+                execution,
+                Checked::default(),
+                Lumped,
+                &VelocityVerlet::new(Time::seconds(step)),
+                &[Time::seconds(0.0), Time::seconds(25.0 * step)],
+                (
+                    stretched().into(),
+                    NodalVelocities::from(vec![[0.0; 3]; stretched().len()]),
+                ),
+                &(),
+                &BoundaryConditions::<Solid<3>>::new(),
+            )
+            .map(|(_, coordinates, _, _)| coordinates[coordinates.len() - 1].clone())
+            .map_err(|error| format!("{error:?}"))
+    };
+    for step in [0.1 * limit, 1.01 * limit] {
+        let serial = run(Execution::Serial, step);
+        assert_eq!(serial.is_err(), step > limit);
+        assert!(run(Execution::Threads(3), step) == serial);
+    }
 }

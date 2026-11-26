@@ -19,7 +19,7 @@ use crate::{
 };
 use std::thread::available_parallelism;
 
-/// How the nodal forces of a run of explicit dynamics are computed.
+/// How the nodal forces of explicit dynamics are computed, and the checks of its time steps.
 ///
 /// The choice never changes the results, which are identical in either case, and only the run
 /// is affected: the threads and their storage are created when the run starts and dropped
@@ -35,26 +35,24 @@ pub enum Execution {
     Threads(usize),
 }
 
-/// The threads and storage of one run.
-pub(super) enum Run<S> {
-    Serial,
-    Parallel(Workers, S),
-}
-
 impl Execution {
-    pub(super) fn start<B>(self, model: &Model<B, 3>) -> Result<Run<B::Scratch>, IntegrationError>
+    /// The threads and storage of one run, if it has them.
+    pub(super) fn start<B>(
+        self,
+        model: &Model<B, 3>,
+    ) -> Result<Option<(Workers, B::Scratch)>, IntegrationError>
     where
         B: ParallelElasticElements<3>,
     {
         let threads = match self {
-            Self::Serial => return Ok(Run::Serial),
+            Self::Serial => return Ok(None),
             Self::Threads(0) => available_parallelism().map_or(1, usize::from),
             Self::Threads(threads) => threads,
         };
-        Ok(Run::Parallel(
+        Ok(Some((
             Workers::new(threads).map_err(IntegrationError::Intermediate)?,
             model.scratch(),
-        ))
+        )))
     }
 }
 
@@ -64,15 +62,15 @@ where
 {
     pub(super) fn nodal_accelerations_in(
         &self,
-        run: &mut Run<B::Scratch>,
+        parallel: Option<(&Workers, &mut B::Scratch)>,
         nodal_coordinates: &NodalCoordinates<3>,
         time: Quantity<Time>,
         applied_loads: &impl LoadAt<NodalCoordinates<3>, NodalForcesSolid<3>>,
         masses: &impl InverseMass<3>,
     ) -> Result<NodalAccelerations<3>, ElementModelError> {
-        match run {
-            Run::Serial => self.nodal_accelerations(nodal_coordinates, time, applied_loads, masses),
-            Run::Parallel(workers, scratch) => {
+        match parallel {
+            None => self.nodal_accelerations(nodal_coordinates, time, applied_loads, masses),
+            Some((workers, scratch)) => {
                 let mut unbalanced_forces = NodalForcesSolid::zero(nodal_coordinates.len());
                 self.nodal_forces_parallel_into(
                     scratch,

@@ -28,7 +28,7 @@ fn virtual_time_scale(nodes: &[[f64; 3]], faces: Vec<Vec<usize>>) -> f64 {
         crate::vem::element::DEFAULT_STABILIZATION,
     ))
     .with_density(DENSITY)
-    .fastest_time_scale(&reference, &NodalCoordinates::from(nodes.to_vec()))
+    .fastest_time_scale(None, &reference, &NodalCoordinates::from(nodes.to_vec()))
     .unwrap()
     .value()
 }
@@ -41,7 +41,7 @@ fn finite_time_scale(nodes: &[[f64; 3]], tetrahedra: Vec<[usize; 4]>) -> f64 {
         tetrahedra,
         &reference,
     ))
-    .fastest_time_scale(&reference, &NodalCoordinates::from(nodes.to_vec()))
+    .fastest_time_scale(None, &reference, &NodalCoordinates::from(nodes.to_vec()))
     .unwrap()
     .value()
 }
@@ -115,7 +115,7 @@ fn stabilized_time_scale(stabilization: f64) -> f64 {
         stabilization,
     ))
     .with_density(DENSITY)
-    .fastest_time_scale(&reference, &NodalCoordinates::from(nodes.to_vec()))
+    .fastest_time_scale(None, &reference, &NodalCoordinates::from(nodes.to_vec()))
     .unwrap()
     .value()
 }

@@ -5,11 +5,12 @@ mod pool;
 mod test;
 
 use crate::domain::block::element::Items;
-use core::convert::Infallible;
+use core::{convert::Infallible, ops::Range};
 use pool::Pool;
 use std::sync::Mutex;
 
 const GATHER_CHUNK: usize = 512;
+const REDUCE_CHUNK: usize = 64;
 
 /// The threads that the passes of a run of explicit dynamics are computed on.
 ///
@@ -79,6 +80,37 @@ impl Workers {
             None => Ok(()),
         }
     }
+}
+
+/// Combines what `value` gives for each of `items` items, on the workers if there are any, and
+/// returns the error of the first item that has one.
+///
+/// The workers combine the items of a chunk in order, and then the chunks in order, so the
+/// result is that without workers if `combine` is associative and `initial` is its identity.
+pub(crate) fn reduce_items<T, E>(
+    workers: Option<&Workers>,
+    items: usize,
+    initial: T,
+    value: impl Fn(usize) -> Result<T, E> + Sync,
+    combine: impl Fn(T, T) -> T + Sync,
+) -> Result<T, E>
+where
+    T: Copy + Send + Sync,
+    E: Send,
+{
+    let reduce = |mut range: Range<usize>| {
+        range.try_fold(initial, |total, item| Ok(combine(total, value(item)?)))
+    };
+    let Some(workers) = workers else {
+        return reduce(0..items);
+    };
+    let mut totals = vec![initial; items.div_ceil(REDUCE_CHUNK)];
+    workers.try_for_each_chunk(&mut totals, 1, |chunk, total| {
+        let first = chunk * REDUCE_CHUNK;
+        total[0] = reduce(first..items.min(first + REDUCE_CHUNK))?;
+        Ok(())
+    })?;
+    Ok(totals.into_iter().fold(initial, &combine))
 }
 
 /// For each node, the items that contribute to it, and the position of the node among the nodes

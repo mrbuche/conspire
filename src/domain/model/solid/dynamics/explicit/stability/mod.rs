@@ -15,6 +15,7 @@ use crate::{
     domain::{
         Model, NodalAccelerations, NodalAccelerationsHistory, NodalCoordinates,
         NodalCoordinatesHistory, NodalVelocities, NodalVelocitiesHistory,
+        parallel::Workers,
         solid::{dynamics::Solution, mass::LumpedMassElements},
     },
     math::{
@@ -30,11 +31,13 @@ pub trait Stability<M, C>
 where
     C: MassChoice<M>,
 {
-    /// Takes the steps, with the accelerations from `function`, and `held` gives the coordinates
-    /// as the motion that holds some of them has them.
+    /// Takes steps, with the accelerations from `function`, and `held` gives the coordinates as
+    /// the motion that holds some of them has them. A check is made on `workers` if there are any.
+    #[expect(clippy::too_many_arguments)]
     fn integrate(
         self,
         model: &M,
+        workers: Option<&Workers>,
         held: impl Fn(Quantity<Time>, &NodalCoordinates<3>) -> NodalCoordinates<3>,
         integrator: &impl ExplicitDynamics<
             NodalCoordinates<3>,
@@ -59,6 +62,7 @@ where
     fn integrate(
         self,
         _: &M,
+        _: Option<&Workers>,
         _: impl Fn(Quantity<Time>, &NodalCoordinates<3>) -> NodalCoordinates<3>,
         integrator: &impl ExplicitDynamics<
             NodalCoordinates<3>,
@@ -87,6 +91,7 @@ where
     fn integrate(
         self,
         model: &Model<B, 3>,
+        workers: Option<&Workers>,
         held: impl Fn(Quantity<Time>, &NodalCoordinates<3>) -> NodalCoordinates<3>,
         integrator: &impl ExplicitDynamics<
             NodalCoordinates<3>,
@@ -121,7 +126,7 @@ where
             |time, coordinates: &NodalCoordinates<3>, _: &NodalVelocities<3>| {
                 if evaluations % interval == 0 {
                     time_scale = estimate
-                        .time_scale(model, &held(time, coordinates))
+                        .time_scale(model, workers, &held(time, coordinates))
                         .map_err(|error| error.to_string())?;
                 }
                 evaluations += 1;

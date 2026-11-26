@@ -67,7 +67,11 @@ fn the_patch_bound_is_not_longer_than_the_time_scale_of_the_assembled_system() {
     let model = model(COORDINATES);
     let coordinates = NodalCoordinates::from(COORDINATES);
     let bound = model
-        .fastest_time_scale(&NodalReferenceCoordinates::from(COORDINATES), &coordinates)
+        .fastest_time_scale(
+            None,
+            &NodalReferenceCoordinates::from(COORDINATES),
+            &coordinates,
+        )
         .unwrap()
         .in_seconds();
     let exact = global_time_scale(&model, &coordinates);
@@ -91,7 +95,7 @@ fn the_bound_scales_with_the_square_root_of_the_density()
             PrimitiveConnectivity::from(vec![[0, 1, 2, 3], [1, 2, 3, 4]]),
             &reference,
         ))
-        .fastest_time_scale(&reference, &coordinates)
+        .fastest_time_scale(None, &reference, &coordinates)
         .unwrap()
         .in_seconds()
     };
@@ -118,7 +122,7 @@ fn a_stiffer_body_is_faster() {
             PrimitiveConnectivity::from(vec![[0, 1, 2, 3], [1, 2, 3, 4]]),
             &reference,
         ))
-        .fastest_time_scale(&reference, &coordinates)
+        .fastest_time_scale(None, &reference, &coordinates)
         .unwrap()
         .in_seconds()
     };

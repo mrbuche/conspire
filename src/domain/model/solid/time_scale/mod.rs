@@ -2,6 +2,7 @@ use crate::{
     domain::{
         Blocks, ElementModelError, Model, NodalCoordinates, NodalReferenceCoordinates,
         block::element::Elements,
+        parallel::Workers,
         stability::{CourantFriedrichsLewy, ElementPowerIteration},
     },
     math::Quantity,
@@ -18,6 +19,7 @@ where
     /// reciprocal of the highest angular frequency, which bounds a stable explicit time step.
     fn fastest_time_scale(
         &self,
+        workers: Option<&Workers>,
         reference_coordinates: &NodalReferenceCoordinates<D>,
         nodal_coordinates: &NodalCoordinates<D>,
     ) -> Result<Quantity<Time>, ElementModelError>;
@@ -29,11 +31,12 @@ where
 {
     fn fastest_time_scale(
         &self,
+        workers: Option<&Workers>,
         reference_coordinates: &NodalReferenceCoordinates<D>,
         nodal_coordinates: &NodalCoordinates<D>,
     ) -> Result<Quantity<Time>, ElementModelError> {
         self.blocks
-            .fastest_time_scale(reference_coordinates, nodal_coordinates)
+            .fastest_time_scale(workers, reference_coordinates, nodal_coordinates)
     }
 }
 
@@ -44,15 +47,16 @@ where
 {
     fn fastest_time_scale(
         &self,
+        workers: Option<&Workers>,
         reference_coordinates: &NodalReferenceCoordinates<D>,
         nodal_coordinates: &NodalCoordinates<D>,
     ) -> Result<Quantity<Time>, ElementModelError> {
         Ok(self
             .0
-            .fastest_time_scale(reference_coordinates, nodal_coordinates)?
+            .fastest_time_scale(workers, reference_coordinates, nodal_coordinates)?
             .min(
                 self.1
-                    .fastest_time_scale(reference_coordinates, nodal_coordinates)
+                    .fastest_time_scale(workers, reference_coordinates, nodal_coordinates)
                     .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
             ))
     }
@@ -64,6 +68,7 @@ pub trait TimeScaleEstimate<M> {
     fn time_scale(
         &self,
         model: &M,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError>;
 }
@@ -75,9 +80,10 @@ where
     fn time_scale(
         &self,
         model: &Model<B, 3>,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
-        model.fastest_time_scale(&model.coordinates, nodal_coordinates)
+        model.fastest_time_scale(workers, &model.coordinates, nodal_coordinates)
     }
 }
 
@@ -93,6 +99,7 @@ where
     fn courant_friedrichs_lewy_time_scale(
         &self,
         stiffness: &S,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError>;
 }
@@ -105,14 +112,15 @@ where
     fn courant_friedrichs_lewy_time_scale(
         &self,
         stiffness: &S,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
         Ok(self
             .0
-            .courant_friedrichs_lewy_time_scale(stiffness, nodal_coordinates)?
+            .courant_friedrichs_lewy_time_scale(stiffness, workers, nodal_coordinates)?
             .min(
                 self.1
-                    .courant_friedrichs_lewy_time_scale(stiffness, nodal_coordinates)
+                    .courant_friedrichs_lewy_time_scale(stiffness, workers, nodal_coordinates)
                     .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
             ))
     }
@@ -125,10 +133,11 @@ where
     fn time_scale(
         &self,
         model: &Model<B, 3>,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
         model
             .blocks
-            .courant_friedrichs_lewy_time_scale(&self.stiffness, nodal_coordinates)
+            .courant_friedrichs_lewy_time_scale(&self.stiffness, workers, nodal_coordinates)
     }
 }

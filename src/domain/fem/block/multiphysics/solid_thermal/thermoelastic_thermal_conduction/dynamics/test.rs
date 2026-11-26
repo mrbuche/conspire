@@ -81,7 +81,7 @@ macro_rules! test_thermoelastic_thermal_conduction_time_scale_block {
                     &get_reference_coordinates_block(),
                 ));
                 let expected = elastic
-                    .fastest_time_scale(&get_reference_coordinates_block(), &get_coordinates_block())?;
+                    .fastest_time_scale(None, &get_reference_coordinates_block(), &get_coordinates_block())?;
                 let (wave, _) = coupled_block().fastest_time_scales(
                     &get_reference_coordinates_block(),
                     &get_coordinates_block(),

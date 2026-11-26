@@ -1,4 +1,4 @@
-use super::{ItemIndex, Workers};
+use super::{ItemIndex, Workers, reduce_items};
 use crate::domain::block::element::Items;
 
 #[derive(Debug)]
@@ -149,5 +149,38 @@ mod workers {
                 if first == 30 { Err(()) } else { Ok(()) }
             });
         assert_eq!(items.iter().sum::<i32>(), 100);
+    }
+}
+
+mod reduce {
+    use super::*;
+    fn collected(workers: Option<&Workers>, items: usize) -> Result<(usize, usize), usize> {
+        reduce_items(
+            workers,
+            items,
+            (usize::MAX, 0),
+            |item| {
+                if item % 300 == 299 {
+                    Err(item)
+                } else {
+                    Ok(((item + 7) % items, item))
+                }
+            },
+            |first, second| (first.0.min(second.0), first.1.max(second.1)),
+        )
+    }
+    #[test]
+    fn gives_what_there_is_without_workers() {
+        let workers = Workers::new(3).unwrap();
+        for items in [0, 1, 63, 64, 65, 298] {
+            assert_eq!(collected(Some(&workers), items), collected(None, items));
+        }
+        assert_eq!(collected(Some(&workers), 298), Ok((0, 297)));
+    }
+    #[test]
+    fn returns_the_error_of_the_first_item_that_has_one() {
+        let workers = Workers::new(4).unwrap();
+        assert_eq!(collected(None, 2000), Err(299));
+        assert_eq!(collected(Some(&workers), 2000), Err(299));
     }
 }

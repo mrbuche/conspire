@@ -1,6 +1,9 @@
 use crate::{
     constitutive::solid::elastic::Elastic,
-    domain::{ItemError, Source},
+    domain::{
+        ItemError, Source,
+        parallel::{Workers, reduce_items},
+    },
     fem::{
         ElementModelError, NodalCoordinates, NodalReferenceCoordinates,
         block::{Block, Densities},
@@ -23,30 +26,34 @@ where
     C: Elastic,
     F: ElasticFiniteElement<C, G, M, N, P> + LumpedMassFiniteElement<G, M, N, P>,
     R: Densities<G>,
+    Self: Sync,
 {
     fn fastest_time_scale(
         &self,
+        workers: Option<&Workers>,
         _reference_coordinates: &NodalReferenceCoordinates<3>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
-        self.elements()
-            .iter()
-            .zip(self.connectivity())
-            .enumerate()
-            .try_fold(
-                Time::seconds(f64::INFINITY),
-                |fastest, (element_index, (element, nodes))| {
-                    let stiffnesses = element.nodal_stiffnesses(
+        reduce_items(
+            workers,
+            self.elements().len(),
+            Time::seconds(f64::INFINITY),
+            |element_index| {
+                let element = &self.elements()[element_index];
+                let stiffnesses = element
+                    .nodal_stiffnesses(
                         self.constitutive_model(),
-                        &Self::element_coordinates(nodal_coordinates, nodes),
-                    )?;
-                    let masses = element.nodal_lumped_masses(&self.density().at(element_index));
-                    Ok::<_, FiniteElementError>(
-                        fastest.min(fastest_time_scale(&stiffnesses, &masses)),
+                        &Self::element_coordinates(
+                            nodal_coordinates,
+                            &self.connectivity().iter().as_slice()[element_index],
+                        ),
                     )
-                },
-            )
-            .map_err(|error| ElementModelError::new(type_name::<Self>(), error))
+                    .map_err(|error| ElementModelError::new(type_name::<Self>(), error))?;
+                let masses = element.nodal_lumped_masses(&self.density().at(element_index));
+                Ok(fastest_time_scale(&stiffnesses, &masses))
+            },
+            Quantity::min,
+        )
     }
 }
 
@@ -63,42 +70,53 @@ where
             Error = FiniteElementError,
         >,
     R: Densities<G>,
+    S: Sync,
+    Self: Sync,
 {
     fn courant_friedrichs_lewy_time_scale(
         &self,
         stiffness: &S,
+        workers: Option<&Workers>,
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
-        let mut largest = Quantity::<RateSquared>::default();
-        for (element_index, (element, nodes)) in
-            self.elements().iter().zip(self.connectivity()).enumerate()
-        {
-            let squared_frequency = element
-                .squared_frequency_bound(
-                    self.constitutive_model(),
-                    stiffness,
-                    &Self::element_coordinates(nodal_coordinates, nodes),
-                    &element.nodal_lumped_masses(&self.density().at(element_index)),
-                )
-                .map_err(|source| {
-                    ElementModelError::new(
-                        type_name::<Self>(),
-                        ItemError::new(element_index, source),
-                    )
-                })?;
-            if !squared_frequency.value().is_finite() {
-                return Err(ElementModelError::new(
-                    type_name::<Self>(),
-                    ItemError::new(
-                        element_index,
-                        Source::Text(
-                            "The bound on the frequency of the element is not finite.".to_string(),
+        let largest = reduce_items(
+            workers,
+            self.elements().len(),
+            Quantity::<RateSquared>::default(),
+            |element_index| {
+                let element = &self.elements()[element_index];
+                let squared_frequency = element
+                    .squared_frequency_bound(
+                        self.constitutive_model(),
+                        stiffness,
+                        &Self::element_coordinates(
+                            nodal_coordinates,
+                            &self.connectivity().iter().as_slice()[element_index],
                         ),
-                    ),
-                ));
-            }
-            largest = largest.max(squared_frequency);
-        }
+                        &element.nodal_lumped_masses(&self.density().at(element_index)),
+                    )
+                    .map_err(|source| {
+                        ElementModelError::new(
+                            type_name::<Self>(),
+                            ItemError::new(element_index, source),
+                        )
+                    })?;
+                if !squared_frequency.value().is_finite() {
+                    return Err(ElementModelError::new(
+                        type_name::<Self>(),
+                        ItemError::new(
+                            element_index,
+                            Source::Text(
+                                "The bound on the frequency of the element is not finite."
+                                    .to_string(),
+                            ),
+                        ),
+                    ));
+                }
+                Ok(squared_frequency)
+            },
+            Quantity::max,
+        )?;
         Ok(1.0 / largest.sqrt())
     }
 }
