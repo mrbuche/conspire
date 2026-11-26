@@ -6,8 +6,8 @@ mod implicit;
 pub(crate) mod motion;
 
 pub use explicit::{
-    Checked, Consistent, ElasticExplicitDynamics, ElementPowerIteration, Execution, Lumped,
-    MassChoice, Stability, TimeScaleEstimate, Unchecked,
+    Checked, Consistent, CourantFriedrichsLewy, ElasticExplicitDynamics, ElementPowerIteration,
+    Execution, Lumped, MassChoice, ModelBound, Stability, TimeScaleEstimate, Unchecked,
 };
 pub use implicit::ElasticImplicitDynamics;
 

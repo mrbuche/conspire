@@ -14,9 +14,13 @@ use conspire::{
         NodalVelocities,
         block::Block,
         boundary::{BoundaryConditions, Solid},
-        element::linear::{Hexahedron, Tetrahedron},
+        element::{
+            linear::{Hexahedron, Tetrahedron},
+            stabilized,
+        },
         solid::{
-            ElasticExplicitDynamics, Execution, Lumped, NodalForcesSolid, Unchecked,
+            Checked, CourantFriedrichsLewy, ElasticExplicitDynamics, ElementPowerIteration,
+            Execution, Lumped, NodalForcesSolid, TimeScaleEstimate, Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
             mass::InverseMass,
         },
@@ -573,4 +577,117 @@ fn integrator_marginal() {
             (long - short) / 100.0
         );
     }
+}
+
+type Stabilized = Block<NeoHookean, stabilized::linear::Hexahedron, 1, 3, 8, 8, Quantity<Density>>;
+
+macro_rules! estimates {
+    ($label:literal, $model:expr, $coordinates:expr, $elements:expr) => {{
+        let (model, coordinates, elements) = ($model, $coordinates, $elements);
+        let current = deformed(&coordinates);
+        let microseconds = |milliseconds: f64| 1e3 * milliseconds / elements as f64;
+        let forces = microseconds(time_of(30, || {
+            black_box(model.nodal_forces(black_box(&current)).unwrap());
+        }));
+        let bound = microseconds(time_of(30, || {
+            black_box(
+                CourantFriedrichsLewy::default()
+                    .time_scale(&model, black_box(&current))
+                    .unwrap(),
+            );
+        }));
+        let power = microseconds(time_of(3, || {
+            black_box(
+                ElementPowerIteration
+                    .time_scale(&model, black_box(&current))
+                    .unwrap(),
+            );
+        }));
+        println!(
+            "{} ({elements} elements), microseconds per element: forces {forces:.3}, \
+             Courant-Friedrichs-Lewy {bound:.3}, power iteration {power:.1}",
+            $label
+        );
+        let integrator = VelocityVerlet::new(Time::seconds(1e-8));
+        let conditions = BoundaryConditions::<Solid<3>>::new();
+        for (label, execution) in [
+            ("serial", Execution::Serial),
+            ("threads", Execution::Threads(threads())),
+        ] {
+            macro_rules! step {
+                ($stability:expr) => {{
+                    let run = |steps: usize| {
+                        let time = [Time::seconds(0.0), Time::seconds(steps as f64 * 1e-8)];
+                        time_of(7, || {
+                            black_box(
+                                model
+                                    .integrate(
+                                        execution,
+                                        $stability,
+                                        Lumped,
+                                        &integrator,
+                                        &time,
+                                        (
+                                            current.clone(),
+                                            NodalVelocities::from(vec![
+                                                [0.0; 3];
+                                                coordinates.len()
+                                            ]),
+                                        ),
+                                        &(),
+                                        &conditions,
+                                    )
+                                    .unwrap(),
+                            );
+                        })
+                    };
+                    (run(60) - run(10)) / 50.0
+                }};
+            }
+            let unchecked = step!(Unchecked);
+            let added = |checked: f64| 100.0 * (checked / unchecked - 1.0);
+            let every = step!(Checked {
+                interval: 1,
+                ..Default::default()
+            });
+            let tenth = step!(Checked::default());
+            println!(
+                "{label:>10}: a step {unchecked:.3} ms unchecked, checked every step {every:.3} \
+                 ms ({:.0}% more), every ten steps {tenth:.3} ms ({:.0}% more)",
+                added(every),
+                added(tenth)
+            );
+        }
+    }};
+}
+
+#[test]
+#[ignore]
+fn time_scale_estimates() {
+    println!("\nthreads: {}", threads());
+    let (model, coordinates) = grid_model(22);
+    estimates!("hexahedra", model, coordinates, 22_usize.pow(3));
+    let coordinates = lattice(22, 22, 22);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let model: Model<Stabilized, 3> = (
+        Stabilized::from((
+            rubber(3.0e9, 13.0e9),
+            density(),
+            slab(22, 22, 0..22),
+            &reference,
+        )),
+        reference,
+    )
+        .into();
+    estimates!("stabilized hexahedra", model, coordinates, 22_usize.pow(3));
+    let coordinates = lattice(14, 14, 14);
+    let reference = NodalReferenceCoordinates::from(coordinates.clone());
+    let connectivity = tetrahedra(14, &coordinates);
+    let elements = connectivity.len();
+    let model: Model<Tets, 3> = (
+        Tets::from((rubber(3.0e9, 13.0e9), density(), connectivity, &reference)),
+        reference,
+    )
+        .into();
+    estimates!("tetrahedra", model, coordinates, elements);
 }

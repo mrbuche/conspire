@@ -23,6 +23,15 @@ fn dividing_a_stress_by_a_viscosity_is_a_rate() {
 }
 
 #[test]
+fn a_quantity_divides_by_a_reference_to_a_quantity() {
+    let (modulus, viscosity) = (&Modulus::new(6.0), &Viscous::new(2.0));
+    let owned: Quantity<Rate> = *modulus / viscosity;
+    let borrowed: Quantity<Rate> = modulus / viscosity;
+    assert_eq!(owned, Quantity::<Rate>::new(3.0));
+    assert_eq!(borrowed, Quantity::<Rate>::new(3.0))
+}
+
+#[test]
 fn a_unit_costs_no_space() {
     assert_eq!(size_of::<Modulus>(), size_of::<f64>());
     assert_eq!(size_of::<Quantity<Dimensionless>>(), size_of::<f64>())

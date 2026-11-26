@@ -23,7 +23,10 @@ mod hencky;
 mod saint_venant_kirchhoff;
 mod seth_hill_eulerian;
 mod seth_hill_lagrangian;
+mod stiffness_bound;
 
+pub use self::stiffness_bound::StiffnessBound;
+pub(crate) use self::stiffness_bound::{FRAC_1_SQRT_3, SQRT_2_3};
 pub use self::{
     almansi_hamel_eulerian::AlmansiHamelEulerian, almansi_hamel_lagrangian::AlmansiHamelLagrangian,
     bazant_itskov_eulerian::BazantItskovEulerian, bazant_itskov_lagrangian::BazantItskovLagrangian,

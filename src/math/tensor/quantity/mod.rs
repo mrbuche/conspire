@@ -440,6 +440,26 @@ where
     }
 }
 
+impl<U, V> Div<&Quantity<V>> for Quantity<U>
+where
+    U: UnitDiv<V>,
+{
+    type Output = Quantity<<U as UnitDiv<V>>::Output>;
+    fn div(self, quantity: &Quantity<V>) -> Self::Output {
+        self / *quantity
+    }
+}
+
+impl<U, V> Div<&Quantity<V>> for &Quantity<U>
+where
+    U: UnitDiv<V>,
+{
+    type Output = Quantity<<U as UnitDiv<V>>::Output>;
+    fn div(self, quantity: &Quantity<V>) -> Self::Output {
+        *self / *quantity
+    }
+}
+
 impl<U, V> Mul<&Quantity<V>> for Quantity<U>
 where
     U: UnitMul<V>,

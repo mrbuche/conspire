@@ -56,6 +56,9 @@ fn inertial_units_close_over_their_products() {
     same::<Quotient<Velocity, Time>, Acceleration>();
     same::<Product<Acceleration, Time>, Velocity>();
     same::<Product<Mass, RateSquared>, ForcePerLength>();
+    same::<Product<Stress, crate::units::LengthPerMass>, RateSquared>();
+    same::<Quotient<Length, Mass>, crate::units::LengthPerMass>();
+    same::<Quotient<RateSquared, Stress>, crate::units::LengthPerMass>();
     same::<Product<Density, Acceleration>, StressPerLength>();
     same::<Product<Mass, Dimensionless>, Mass>();
     same::<Product<Dimensionless, Density>, Density>();

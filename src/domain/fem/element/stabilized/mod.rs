@@ -6,11 +6,14 @@ mod values;
 use crate::{
     fem::element::{
         Element, ElementNodalCoordinates, ElementNodalReferenceCoordinates, FiniteElement,
-        GradientVectors, IntegrationWeights,
+        GradientVectors, IntegrationData, IntegrationWeights,
+        mass::ElementNodalLumpedMasses,
         solid::{ElementNodalForcesSolid, ElementNodalStiffnessesSolid},
     },
-    math::{IDENTITY, Projection, Quantity, Scalar, Tensor, TensorRank1, TensorRank1List},
-    units::{Energy, Length, Stress, Volume},
+    math::{
+        IDENTITY, Projection, Quantity, Reference, Scalar, Tensor, TensorRank1, TensorRank1List,
+    },
+    units::{Energy, Length, RateSquared, ReciprocalLength, Stress, Volume},
 };
 use core::{
     array::from_fn,
@@ -111,6 +114,29 @@ impl<const N: usize> StabilizedElement<N> {
                 })
                 .sum::<Quantity<_>>()
     }
+    /// A bound on what the [hourglass stiffnesses](Self::hourglass_stiffnesses) add to the
+    /// square of the highest angular frequency with the lumped masses: the modulus
+    /// times the largest of the sums of the magnitudes of a row of the hourglass matrix, each
+    /// entry over the square roots of the masses of its two nodes.
+    pub(crate) fn hourglass_squared_frequency_bound(
+        &self,
+        shear_modulus: Quantity<Stress>,
+        nodal_masses: &ElementNodalLumpedMasses<N>,
+    ) -> Quantity<RateSquared> {
+        let modulus = shear_modulus * HOURGLASS_PARAMETER;
+        self.hourglass_matrix
+            .iter()
+            .zip(nodal_masses.iter())
+            .map(|(row, mass_a)| {
+                let sum = row
+                    .iter()
+                    .zip(nodal_masses.iter())
+                    .map(|(entry, &mass_b)| entry.abs() * mass_a.ratio(mass_b).sqrt())
+                    .sum::<Quantity<_>>();
+                modulus * sum / mass_a
+            })
+            .fold(Quantity::default(), Quantity::max)
+    }
     /// The derivative of the [hourglass forces](Self::hourglass_forces) with
     /// respect to the nodal coordinates, which is constant.
     pub(crate) fn hourglass_stiffnesses(
@@ -127,6 +153,18 @@ impl<const N: usize> StabilizedElement<N> {
                     .collect()
             })
             .collect()
+    }
+}
+
+impl<const N: usize> IntegrationData<1, N> for StabilizedElement<N> {
+    fn gradient_vectors_at(
+        &self,
+        point: usize,
+    ) -> TensorRank1List<3, Reference, N, ReciprocalLength> {
+        self.gradient_vectors[point].clone()
+    }
+    fn integration_weight_at(&self, point: usize) -> Quantity<Volume> {
+        self.integration_weights[point]
     }
 }
 

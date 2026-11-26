@@ -17,6 +17,9 @@ pub(crate) mod time_scale;
 #[cfg(feature = "vem")]
 pub mod vem;
 
+pub use block::element::time_scale::courant_friedrichs_lewy::point_stiffness::{
+    GradientGram, ModelBound, PointStiffness,
+};
 pub use error::{AtItems, ElementModelError, ForEachAtItems, ItemError, Locate, Source};
 #[cfg(any(feature = "cbm", feature = "fem", feature = "vem"))]
 pub use model::*;

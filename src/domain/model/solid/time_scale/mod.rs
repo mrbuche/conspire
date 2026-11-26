@@ -1,7 +1,8 @@
 use crate::{
     domain::{
         Blocks, ElementModelError, Model, NodalCoordinates, NodalReferenceCoordinates,
-        block::element::Elements, stability::ElementPowerIteration,
+        block::element::Elements,
+        stability::{CourantFriedrichsLewy, ElementPowerIteration},
     },
     math::Quantity,
     units::Time,
@@ -77,5 +78,57 @@ where
         nodal_coordinates: &NodalCoordinates<3>,
     ) -> Result<Quantity<Time>, ElementModelError> {
         model.fastest_time_scale(&model.coordinates, nodal_coordinates)
+    }
+}
+
+/// Elements that bound how fast their motion can be from their integration points, with the
+/// stiffness at each as `S` has it.
+#[cfg_attr(not(feature = "fem"), allow(dead_code))]
+pub trait CourantFriedrichsLewyElements<S>
+where
+    Self: Elements,
+{
+    /// A time scale that is no longer than that of any element at the given coordinates, which
+    /// bounds a stable explicit time step.
+    fn courant_friedrichs_lewy_time_scale(
+        &self,
+        stiffness: &S,
+        nodal_coordinates: &NodalCoordinates<3>,
+    ) -> Result<Quantity<Time>, ElementModelError>;
+}
+
+impl<B1, B2, S> CourantFriedrichsLewyElements<S> for Blocks<B1, B2>
+where
+    B1: CourantFriedrichsLewyElements<S>,
+    B2: CourantFriedrichsLewyElements<S>,
+{
+    fn courant_friedrichs_lewy_time_scale(
+        &self,
+        stiffness: &S,
+        nodal_coordinates: &NodalCoordinates<3>,
+    ) -> Result<Quantity<Time>, ElementModelError> {
+        Ok(self
+            .0
+            .courant_friedrichs_lewy_time_scale(stiffness, nodal_coordinates)?
+            .min(
+                self.1
+                    .courant_friedrichs_lewy_time_scale(stiffness, nodal_coordinates)
+                    .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
+            ))
+    }
+}
+
+impl<B, S> TimeScaleEstimate<Model<B, 3>> for CourantFriedrichsLewy<S>
+where
+    B: CourantFriedrichsLewyElements<S>,
+{
+    fn time_scale(
+        &self,
+        model: &Model<B, 3>,
+        nodal_coordinates: &NodalCoordinates<3>,
+    ) -> Result<Quantity<Time>, ElementModelError> {
+        model
+            .blocks
+            .courant_friedrichs_lewy_time_scale(&self.stiffness, nodal_coordinates)
     }
 }

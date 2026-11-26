@@ -4,9 +4,13 @@ mod test;
 use crate::{
     constitutive::{
         ConstitutiveError, FromParameters,
-        solid::{Solid, TWO_THIRDS, elastic::Elastic, hyperelastic::Hyperelastic},
+        solid::{
+            Solid, TWO_THIRDS,
+            elastic::{Elastic, FRAC_1_SQRT_3, SQRT_2_3, StiffnessBound},
+            hyperelastic::Hyperelastic,
+        },
     },
-    math::{IDENTITY_00, Quantity, Rank2, TensorRank4},
+    math::{IDENTITY_00, Quantity, Rank2, Tensor, TensorRank4},
     mechanics::{
         Deformation, DeformationGradient, SecondPiolaKirchhoffStress,
         SecondPiolaKirchhoffTangentStiffness,
@@ -91,6 +95,42 @@ impl Elastic for SaintVenantKirchhoff {
                     deformation_gradient,
                 ),
         )
+    }
+}
+
+impl StiffnessBound for SaintVenantKirchhoff {
+    /// ```math
+    /// \hat\lambda = \frac{\lambda^+}{J}\,a\left(a + \frac{b}{\sqrt{3}}\right)
+    /// ```
+    /// ```math
+    /// \hat\mu = \frac{1}{2J}\left[2\mu\left(a + \sqrt{\tfrac{2}{3}}\,b\right)^2 + \lambda^+ b\left(b + \sqrt{3}\,a\right)\right] + \frac{s}{2}
+    /// ```
+    /// where $`a=\mathrm{tr}(\mathbf{B})/3`$, $`b=|\mathbf{B}'|`$, $`\lambda^+=\max(0,\lambda)`$,
+    /// and $`s=\max[0,\,\mathrm{tr}(\boldsymbol{\sigma})/3 + \sqrt{2/3}\,|\boldsymbol{\sigma}'|]`$.
+    fn stiffness_bound(
+        &self,
+        deformation_gradient: &DeformationGradient,
+    ) -> Result<(Quantity<Stress>, Quantity<Stress>), ConstitutiveError> {
+        let jacobian = self.jacobian(deformation_gradient)?;
+        let (deviator, trace) = deformation_gradient
+            .left_cauchy_green()
+            .deviatoric_and_trace();
+        let (mean, spread) = (trace.value() / 3.0, deviator.norm().value());
+        let largest = mean + SQRT_2_3 * spread;
+        let (stress_deviator, stress_trace) = self
+            .cauchy_stress(deformation_gradient)?
+            .deviatoric_and_trace();
+        let tension =
+            (stress_trace / 3.0 + stress_deviator.norm() * SQRT_2_3).max(Quantity::default());
+        let lame =
+            (self.bulk_modulus() - self.shear_modulus() * TWO_THIRDS).max(Quantity::default());
+        Ok((
+            lame * (mean * (mean + spread * FRAC_1_SQRT_3) / jacobian),
+            (self.shear_modulus() * (largest * largest)
+                + lame * (0.5 * spread * (spread + mean / FRAC_1_SQRT_3)))
+                / jacobian
+                + tension * 0.5,
+        ))
     }
 }
 

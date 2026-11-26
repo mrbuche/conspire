@@ -6,8 +6,9 @@ mod test;
 use super::{Lumped, MassChoice};
 
 pub use crate::domain::{
+    ModelBound,
     solid::time_scale::TimeScaleEstimate,
-    stability::{Checked, ElementPowerIteration, Unchecked},
+    stability::{Checked, CourantFriedrichsLewy, ElementPowerIteration, Unchecked},
 };
 
 use crate::{

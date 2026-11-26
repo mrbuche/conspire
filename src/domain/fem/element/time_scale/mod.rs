@@ -1,6 +1,11 @@
 #[cfg(test)]
 mod test;
 
+mod courant_friedrichs_lewy;
+
+pub use crate::domain::block::element::time_scale::courant_friedrichs_lewy::CourantFriedrichsLewyElement;
+pub use courant_friedrichs_lewy::squared_frequency_bound_from;
+
 use crate::{
     domain::time_scale::{
         largest_eigenvalue as largest_eigenvalue_of, time_scale_exceeds as time_scale_exceeds_of,

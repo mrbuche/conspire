@@ -187,6 +187,8 @@ units!(
     Rate,
     /// A squared rate, being a squared reciprocal time.
     RateSquared,
+    /// A length per unit mass, which a stress turns into a squared rate.
+    LengthPerMass,
     /// A viscosity, being a stress per unit rate.
     Viscosity,
     /// A fluidity, being the reciprocal of a viscosity.
@@ -717,6 +719,11 @@ unit_products!(
     Acceleration * Mass = Force,
     Mass * RateSquared = ForcePerLength,
     RateSquared * Mass = ForcePerLength,
+    Dimensionless * LengthPerMass = LengthPerMass,
+    LengthPerMass * Mass = Length,
+    Mass * LengthPerMass = Length,
+    Stress * LengthPerMass = RateSquared,
+    LengthPerMass * Stress = RateSquared,
     Density * Acceleration = StressPerLength,
     Acceleration * Density = StressPerLength,
     Dimensionless * SpecificEnergy = SpecificEnergy,

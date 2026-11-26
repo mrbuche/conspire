@@ -22,7 +22,10 @@ mod stability;
 
 pub use crate::domain::solid::mass::{Consistent, Lumped, MassChoice};
 pub use execution::Execution;
-pub use stability::{Checked, ElementPowerIteration, Stability, TimeScaleEstimate, Unchecked};
+pub use stability::{
+    Checked, CourantFriedrichsLewy, ElementPowerIteration, ModelBound, Stability,
+    TimeScaleEstimate, Unchecked,
+};
 
 /// The motion of an elastic model with explicit time integration.
 pub trait ElasticExplicitDynamics

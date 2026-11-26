@@ -1,6 +1,7 @@
 pub(crate) mod solid;
 #[cfg(test)]
 pub(crate) mod test;
+pub(crate) mod time_scale;
 
 use crate::{
     constitutive::ConstitutiveError, domain::block::add_node_neighbors,

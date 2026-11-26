@@ -4,9 +4,13 @@ mod test;
 use crate::{
     constitutive::{
         ConstitutiveError, FromParameters,
-        solid::{FIVE_THIRDS, Solid, TWO_THIRDS, elastic::Elastic, hyperelastic::Hyperelastic},
+        solid::{
+            FIVE_THIRDS, Solid, TWO_THIRDS,
+            elastic::{Elastic, FRAC_1_SQRT_3, SQRT_2_3, StiffnessBound},
+            hyperelastic::Hyperelastic,
+        },
     },
-    math::{IDENTITY, Quantity, Rank2, TensorRank4},
+    math::{IDENTITY, Quantity, Rank2, Tensor, TensorRank4},
     mechanics::{CauchyStress, CauchyTangentStiffness, Deformation, DeformationGradient},
     units::{EnergyDensity, Stress},
 };
@@ -89,6 +93,34 @@ impl Elastic for NeoHookean {
                         * (scaled_shear_modulus * FIVE_THIRDS)),
                 &inverse_transpose_deformation_gradient,
             ))
+    }
+}
+
+impl StiffnessBound for NeoHookean {
+    /// ```math
+    /// \hat\lambda = \max\left[0,\,\kappa J - \frac{2\mu}{3J}\left(a - \frac{b}{\sqrt{3}}\right)\right]
+    /// ```
+    /// ```math
+    /// \hat\mu = \frac{\mu}{2J}\left[2a + \left(\sqrt{\tfrac{2}{3}} + \tfrac{2}{\sqrt{3}}\right)b\right] + \frac{\kappa}{4}\left|J - \frac{1}{J}\right|
+    /// ```
+    /// where $`a=\mathrm{tr}(\mathbf{B}^*)/3`$ and $`b=|{\mathbf{B}^*}'|`$.
+    fn stiffness_bound(
+        &self,
+        deformation_gradient: &DeformationGradient,
+    ) -> Result<(Quantity<Stress>, Quantity<Stress>), ConstitutiveError> {
+        let jacobian = self.jacobian(deformation_gradient)?;
+        let (deviator, trace) = (deformation_gradient.left_cauchy_green()
+            / jacobian.powf(TWO_THIRDS))
+        .deviatoric_and_trace();
+        let (mean, spread) = (trace.value() / 3.0, deviator.norm().value());
+        let shear_modulus = self.shear_modulus() / jacobian;
+        Ok((
+            (self.bulk_modulus() * jacobian
+                - shear_modulus * (TWO_THIRDS * (mean - spread * FRAC_1_SQRT_3)))
+                .max(Quantity::default()),
+            shear_modulus * (mean + (0.5 * SQRT_2_3 + FRAC_1_SQRT_3) * spread)
+                + self.bulk_modulus() * (0.25 * (jacobian - 1.0 / jacobian).abs()),
+        ))
     }
 }
 
