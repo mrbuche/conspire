@@ -7,7 +7,7 @@ pub(crate) mod kernels;
 #[cfg(feature = "elements")]
 pub use crate::domain::block::device::{DeviceBlock, DeviceBlocks, DeviceKind, DeviceLayout};
 #[cfg(feature = "fem")]
-pub use crate::domain::{DeviceError, ExplicitRun, Resident};
+pub use crate::domain::{DeviceError, DeviceStability, ExplicitRun, Resident};
 pub use cuda::{Argument, Buffer, Device, Function, Module, Resources};
 pub use kernels::Application;
 
@@ -43,6 +43,19 @@ pub enum GpuError {
         /// The integration point of the element.
         point: usize,
     },
+    /// A step of a run of dynamics on the device is not stable for an element of a block, by
+    /// the check of the run, whose steps are not stopped when it finds so, so the state after
+    /// them is of no use.
+    UnstableTimeStep {
+        /// The step at whose check it was found, counted from the start of the run.
+        step: usize,
+        /// The block, in the order of the model.
+        block: usize,
+        /// The element of the block.
+        item: usize,
+        /// The time step in seconds.
+        time_step: f64,
+    },
     /// A run of dynamics is not one that the model can take.
     Invalid(String),
     /// The driver reported an error.
@@ -68,6 +81,15 @@ impl Display for GpuError {
             Self::Element { block, item, point } => write!(
                 f,
                 "Integration point {point} of element {item} of block {block} has an error in the run of dynamics on the device."
+            ),
+            Self::UnstableTimeStep {
+                step,
+                block,
+                item,
+                time_step,
+            } => write!(
+                f,
+                "The time step of {time_step} seconds is not stable for element {item} of block {block} at step {step} of the run of dynamics on the device."
             ),
             Self::Invalid(message) => write!(f, "The run of dynamics is not valid: {message}."),
             Self::Cuda(message) => write!(f, "CUDA: {message}"),

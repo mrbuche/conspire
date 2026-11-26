@@ -54,12 +54,13 @@ use conspire::{
             stabilized::linear::Hexahedron as StabilizedHexahedron,
         },
         solid::{
-            ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid, Unchecked,
+            Checked, ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid,
+            Unchecked,
             elastic::{ElasticElements, ParallelElasticElements, Workers},
             mass::LumpedMassElements,
         },
     },
-    gpu::{Device, DeviceBlocks, ExplicitRun, GpuError, Resident},
+    gpu::{Device, DeviceBlocks, DeviceStability, ExplicitRun, GpuError, Resident},
     math::{Quantity, QuantityVector, Tensor, assert::AssertionError, integrate::VelocityVerlet},
     units::{Density, Mass, Time},
 };
@@ -492,6 +493,7 @@ where
 {
     resident
         .explicit_dynamics(
+            Unchecked,
             masses,
             &VelocityVerlet::new(Time::seconds(STEP)),
             Time::seconds(0.0),
@@ -748,6 +750,86 @@ fn steps() -> Result<(), AssertionError> {
         {
             return Ok(());
         }
+    }
+    Ok(())
+}
+
+fn step_with<B>(
+    resident: &mut Resident,
+    work: &Work<B>,
+    stability: impl DeviceStability + Copy,
+) -> Result<f64, AssertionError>
+where
+    B: LumpedMassElements<3>,
+{
+    let (initial, velocities) = (deformed(&work.coordinates), work.velocities());
+    let conditions = conditions_on(work, false);
+    let masses = Lumped.masses(&work.model);
+    let steps = 200;
+    let mut step = f64::INFINITY;
+    for _ in 0..repetitions() {
+        let mut run = resident
+            .explicit_dynamics(
+                stability,
+                &masses,
+                &VelocityVerlet::new(Time::seconds(STEP)),
+                Time::seconds(0.0),
+                (&initial, &velocities),
+                &(),
+                &conditions,
+            )
+            .map_err(describe)?;
+        run.steps(20).map_err(describe)?;
+        let start = Instant::now();
+        run.steps(steps).map_err(describe)?;
+        step = step.min(start.elapsed().as_secs_f64() * 1e3 / steps as f64);
+    }
+    Ok(step)
+}
+
+fn checks_of<B>(label: &str, work: &Work<B>) -> Result<(), AssertionError>
+where
+    B: LumpedMassElements<3> + DeviceBlocks,
+{
+    for fused in [false, true] {
+        let Some(mut resident) = on_device(&work.model, fused) else {
+            return Ok(());
+        };
+        let unchecked = step_with(&mut resident, work, Unchecked)?;
+        let tenth = step_with(&mut resident, work, Checked::default())?;
+        let every = step_with(
+            &mut resident,
+            work,
+            Checked {
+                interval: 1,
+                ..Default::default()
+            },
+        )?;
+        let added = |checked: f64| 100.0 * (checked / unchecked - 1.0);
+        println!(
+            "{label} {}: a step {unchecked:.3} ms unchecked, every ten steps {tenth:.3} ms ({:.0}% more), every step {every:.3} ms ({:.0}% more)",
+            if fused { "fused" } else { "unfused" },
+            added(tenth),
+            added(every),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn time_step_checks() -> Result<(), AssertionError> {
+    for cells in step_cells() {
+        let (model, coordinates) = grid(cells);
+        checks_of(
+            &format!("{} hexahedra", cells.pow(3)),
+            &Work::new(model, coordinates, cells),
+        )?;
+        let (model, coordinates) = stabilized_grid(cells);
+        checks_of(
+            &format!("{} stabilized hexahedra", cells.pow(3)),
+            &Work::new(model, coordinates, cells),
+        )?;
     }
     Ok(())
 }

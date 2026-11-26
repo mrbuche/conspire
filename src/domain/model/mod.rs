@@ -28,7 +28,7 @@ pub(crate) mod thermal;
 pub(crate) mod volume;
 
 #[cfg(all(feature = "gpu", feature = "fem"))]
-pub use device::{DeviceError, ExplicitRun, Resident};
+pub use device::{DeviceError, DeviceStability, ExplicitRun, Resident};
 
 use crate::{
     domain::{

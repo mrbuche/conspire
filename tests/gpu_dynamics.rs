@@ -19,15 +19,15 @@ use conspire::{
         },
         element::{linear::Hexahedron, stabilized::linear::Hexahedron as StabilizedHexahedron},
         solid::{
-            ElasticExplicitDynamics, Execution, Lumped, MassChoice, NodalForcesSolid, Unchecked,
-            elastic::ElasticElements,
+            Checked, CourantFriedrichsLewy, ElasticExplicitDynamics, Execution, Lumped, MassChoice,
+            NodalForcesSolid, TimeScaleEstimate, Unchecked, elastic::ElasticElements,
         },
     },
     gpu::{DeviceBlocks, ExplicitRun, GpuError, Resident},
     math::{
         Quantity, QuantityVector, Tensor,
         assert::{Assert, AssertionError},
-        integrate::VelocityVerlet,
+        integrate::{IntegrationError, VelocityVerlet},
     },
     units::{Density, Length, Mass, Time},
 };
@@ -74,6 +74,7 @@ where
     L: DeviceLoads,
 {
     resident.explicit_dynamics(
+        Unchecked,
         &Lumped.masses(&work.model),
         &VelocityVerlet::new(Time::seconds(DT)),
         Time::seconds(0.0),
@@ -363,6 +364,7 @@ fn an_element_with_an_error_in_a_run_of_dynamics_is_an_error() -> Result<(), Ass
     let mut bad = deformed(&work.coordinates);
     bad[1] = [0.9, 0.9, 0.9].into();
     let error = refused(resident.explicit_dynamics(
+        Unchecked,
         &masses,
         &integrator,
         Time::seconds(0.0),
@@ -376,6 +378,7 @@ fn an_element_with_an_error_in_a_run_of_dynamics_is_an_error() -> Result<(), Ass
     velocities[last] = [-2.0 / DT; 3].into();
     let mut run = resident
         .explicit_dynamics(
+            Unchecked,
             &masses,
             &integrator,
             Time::seconds(0.0),
@@ -413,6 +416,7 @@ fn what_is_not_a_run_of_the_model_is_an_error() -> Result<(), AssertionError> {
     let error = refused(start(&mut resident, &work, &others, &conditions))?;
     assert!(matches!(error, GpuError::Invalid(_)), "{error}");
     let error = refused(resident.explicit_dynamics(
+        Unchecked,
         &Lumped.masses(&work.model),
         &VelocityVerlet::new(Time::seconds(0.0)),
         Time::seconds(0.0),
@@ -513,5 +517,217 @@ fn no_loads_are_no_forces_and_a_load_of_time_is_one_of_those_of_time() -> Result
     let loads = loads_on(&work.model, &work.coordinates)?;
     assert_eq!(device_forces_of(&loads).len(), 3);
     assert_eq!(loads.device_weighted(), 1);
+    Ok(())
+}
+
+fn checked_every(interval: usize) -> Checked<CourantFriedrichsLewy> {
+    Checked {
+        interval,
+        safety: 1.0,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_checked_run_on_a_device_is_the_unchecked_run_to_the_bit() -> Result<(), AssertionError> {
+    let work = both_kinds();
+    let loads = loads_on(&work.model, &work.coordinates)?;
+    let conditions = conditions_on(&work, true);
+    let Some(mut resident) = on_device(&work.model, false) else {
+        return Ok(());
+    };
+    let unchecked = {
+        let mut run = start(&mut resident, &work, &loads, &conditions).map_err(describe)?;
+        run.steps(30).map_err(describe)?;
+        state(&run)?
+    };
+    for interval in [1, 7, 1000] {
+        let mut run = resident
+            .explicit_dynamics(
+                checked_every(interval),
+                &Lumped.masses(&work.model),
+                &VelocityVerlet::new(Time::seconds(DT)),
+                Time::seconds(0.0),
+                (&deformed(&work.coordinates), &work.velocities()),
+                &loads,
+                &conditions,
+            )
+            .map_err(describe)?;
+        run.steps(13).map_err(describe)?;
+        run.steps(17).map_err(describe)?;
+        assert_eq!(state(&run)?, unchecked, "interval {interval}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_device_refuses_a_step_just_above_the_limit_that_the_host_refuses_and_takes_one_below()
+-> Result<(), AssertionError> {
+    let work = both_kinds();
+    let (initial, velocities) = (deformed(&work.coordinates), work.velocities());
+    let conditions = conditions_on(&work, false);
+    let limit = 2.0
+        * CourantFriedrichsLewy::default()
+            .time_scale(&work.model, None, &initial)
+            .map_err(describe)?
+            .value();
+    for (fraction, stable) in [(1.0 - 1e-6, true), (1.0 + 1e-6, false)] {
+        let step = Time::seconds(fraction * limit);
+        let host = work.model.integrate(
+            Execution::Serial,
+            checked_every(1),
+            Lumped,
+            &VelocityVerlet::new(step),
+            &[Time::seconds(0.0), step],
+            (initial.clone(), velocities.clone()),
+            &(),
+            &conditions,
+        );
+        match host {
+            Ok(_) => assert!(stable, "the host takes {fraction}"),
+            Err(IntegrationError::UnstableTimeStep(..)) => {
+                assert!(!stable, "the host refuses {fraction}")
+            }
+            Err(error) => return Err(error.into()),
+        }
+        let Some(mut resident) = on_device(&work.model, false) else {
+            continue;
+        };
+        let mut run = resident
+            .explicit_dynamics(
+                checked_every(1),
+                &Lumped.masses(&work.model),
+                &VelocityVerlet::new(step),
+                Time::seconds(0.0),
+                (&initial, &velocities),
+                &(),
+                &conditions,
+            )
+            .map_err(describe)?;
+        match run.steps(1) {
+            Ok(()) => assert!(stable, "the device takes {fraction}"),
+            Err(GpuError::UnstableTimeStep { step: at, .. }) => {
+                assert!(!stable, "the device refuses {fraction}");
+                assert_eq!(at, 0);
+            }
+            Err(error) => return Err(describe(error)),
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_device_finds_the_step_that_becomes_unstable_where_the_host_does() -> Result<(), AssertionError>
+{
+    let work = steelwork();
+    let initial = NodalCoordinates::from(work.coordinates.clone());
+    let limit = 2.0
+        * CourantFriedrichsLewy::default()
+            .time_scale(&work.model, None, &initial)
+            .map_err(describe)?
+            .value();
+    let step = Time::seconds(0.95 * limit);
+    let velocities = NodalVelocities::from(
+        work.coordinates
+            .iter()
+            .map(|&[_, _, z]| [0.0, 0.0, 5e-3 * z / step.value()])
+            .collect::<Vec<_>>(),
+    );
+    let conditions = conditions_on(&work, false);
+    for interval in [1, 4] {
+        let host_refuses = |steps: usize| match work.model.integrate(
+            Execution::Serial,
+            checked_every(interval),
+            Lumped,
+            &VelocityVerlet::new(step),
+            &[Time::seconds(0.0), step * (steps as f64)],
+            (initial.clone(), velocities.clone()),
+            &(),
+            &conditions,
+        ) {
+            Ok(_) => false,
+            Err(IntegrationError::UnstableTimeStep(..)) => true,
+            Err(error) => panic!("{error}"),
+        };
+        let refused_at = (1..=60)
+            .find(|&steps| host_refuses(steps))
+            .ok_or_else(|| AssertionError::from("the host takes every step"))?
+            - 1;
+        assert!(refused_at > 0, "the host refuses the first step");
+        assert_eq!(refused_at % interval, 0);
+        let Some(mut resident) = on_device(&work.model, false) else {
+            continue;
+        };
+        for together in [60, 3] {
+            let mut run = resident
+                .explicit_dynamics(
+                    checked_every(interval),
+                    &Lumped.masses(&work.model),
+                    &VelocityVerlet::new(step),
+                    Time::seconds(0.0),
+                    (&initial, &velocities),
+                    &(),
+                    &conditions,
+                )
+                .map_err(describe)?;
+            let error = (0..60 / together)
+                .find_map(|_| run.steps(together).err())
+                .ok_or_else(|| AssertionError::from("the device takes every step"))?;
+            match error {
+                GpuError::UnstableTimeStep { step: at, .. } => {
+                    assert_eq!(at, refused_at, "interval {interval}, {together} together")
+                }
+                error => return Err(describe(error)),
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_check_that_cannot_be_made_is_an_error() -> Result<(), AssertionError> {
+    let work = steelwork();
+    let (initial, velocities) = (deformed(&work.coordinates), work.velocities());
+    let conditions = conditions_on(&work, false);
+    let masses = Lumped.masses(&work.model);
+    let integrator = VelocityVerlet::new(Time::seconds(DT));
+    let Some(mut resident) = on_device(&work.model, false) else {
+        return Ok(());
+    };
+    for (interval, safety) in [(0, 0.9), (1, 0.0), (1, 1.5), (1, f64::NAN)] {
+        let error = refused(resident.explicit_dynamics(
+            Checked {
+                interval,
+                safety,
+                ..Default::default()
+            },
+            &masses,
+            &integrator,
+            Time::seconds(0.0),
+            (&initial, &velocities),
+            &(),
+            &conditions,
+        ))?;
+        assert!(matches!(error, GpuError::Invalid(_)), "{error}");
+    }
+    let reference = NodalReferenceCoordinates::from(work.coordinates.clone());
+    let massless: Model<Block<SaintVenantKirchhoff, Hexahedron, 8, 3, 8, 8>, 3> = (
+        (steel(), slab(COLUMNS, 0..LAYERS), &reference).into(),
+        reference,
+    )
+        .into();
+    let Some(mut resident) = on_device(&massless, false) else {
+        return Ok(());
+    };
+    let error = refused(resident.explicit_dynamics(
+        Checked::default(),
+        &masses,
+        &integrator,
+        Time::seconds(0.0),
+        (&initial, &velocities),
+        &(),
+        &conditions,
+    ))?;
+    assert!(matches!(error, GpuError::Invalid(_)), "{error}");
     Ok(())
 }

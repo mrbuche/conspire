@@ -1,6 +1,10 @@
 #[cfg(test)]
 mod test;
 
+mod stability;
+
+pub use stability::DeviceStability;
+
 use super::{Resident, THREADS_PER_BLOCK};
 use crate::{
     domain::{
@@ -10,11 +14,16 @@ use crate::{
     },
     gpu::{Application, Buffer, Device, Function, GpuError, kernels::ptx},
     math::{
-        Quantity, Tensor,
+        Quantity, Scalar, Tensor,
         integrate::{FixedStep, VelocityVerlet},
     },
-    units::Time,
+    units::{RateSquared, Time},
 };
+use core::ops::Range;
+
+fn step_index(step: usize) -> Result<u32, GpuError> {
+    u32::try_from(step).map_err(|_| GpuError::Invalid("a run has too many steps".to_string()))
+}
 
 const TABLE_VALUES: usize = 1 << 22;
 const MAX_ROWS: usize = 1024;
@@ -81,6 +90,9 @@ pub struct ExplicitRun<'a, C, L> {
     rows: usize,
     /// The row of the state of the run, which is the number of steps that it has taken.
     row: usize,
+    /// How many steps there are from one check of the time step to the next, and the fraction
+    /// of the stability limit that a step may be, if the run is checked.
+    check: Option<(usize, Scalar)>,
 }
 
 impl Resident {
@@ -92,8 +104,14 @@ impl Resident {
     /// fixed ones lose their velocity, and the coordinates of the moved ones are put where they
     /// are held. Constraints by multipliers and linear constraints are not taken. The
     /// accelerations at the start are those of the forces on the coordinates, less the loads.
+    ///
+    /// The time step is checked as `stability` ([`Unchecked`](crate::domain::stability::Unchecked)
+    /// or [`Checked`](crate::domain::stability::Checked)) says, for which every block must have
+    /// densities.
+    #[expect(clippy::too_many_arguments)]
     pub fn explicit_dynamics<'a, C, L>(
         &'a mut self,
+        stability: impl DeviceStability,
         masses: &NodalLumpedMasses,
         integrator: &VelocityVerlet,
         time: Quantity<Time>,
@@ -117,6 +135,20 @@ impl Resident {
                 "the step is {} seconds, which is not a time that passes",
                 step.value()
             )));
+        }
+        let check = stability.device_check();
+        if let Some((interval, safety)) = check {
+            if interval == 0 {
+                return Err(GpuError::Invalid(
+                    "the interval between checks of the time step must be at least one".to_string(),
+                ));
+            }
+            if !(safety > 0.0 && safety <= 1.0) {
+                return Err(GpuError::Invalid(format!(
+                    "the safety factor of the time step is {safety}, which is not in (0, 1]"
+                )));
+            }
+            self.checks()?;
         }
         let mut forces = Vec::new();
         loads.device_forces(&mut |force| forces.push(force));
@@ -210,6 +242,7 @@ impl Resident {
             load_tables: self.device.buffer_of(&tables)?,
             rows,
             row: 0,
+            check,
             resident: self,
             motion,
             loads,
@@ -254,9 +287,17 @@ where
     /// The times of the steps are those of the grid of fixed steps of the host, and each step is
     /// of the difference of its times, as on the host. An element that has an error is not noticed
     /// until the steps are done, and then it is an error, and the state is of no use.
+    ///
+    /// A checked run checks the elements before the first step and then every so many steps,
+    /// against the largest of the steps until the next check. A step that is not stable is an
+    /// error in the same way, which is reported before the errors of the elements.
     pub fn steps(&mut self, steps: usize) -> Result<(), GpuError> {
         let count = self.resident.dofs()?;
         self.resident.forget_errors()?;
+        if self.check.is_some() {
+            self.resident.forget_unstable()?;
+        }
+        let end = self.row + steps;
         let mut done = 0;
         while done < steps {
             let batch = (steps - done).min(self.rows);
@@ -267,6 +308,14 @@ where
             let mut previous = self.time(self.row);
             for (row, &time) in times.iter().enumerate() {
                 let dt = (time - previous).value();
+                let step = self.row + row;
+                if let Some((interval, safety)) = self.check
+                    && step.is_multiple_of(interval)
+                {
+                    let until = step + interval.min(end - step);
+                    self.resident
+                        .launch_check(self.limit(step..until, safety).value(), step_index(step)?)?;
+                }
                 self.resident.device.launch(
                     &self.kernels()?.kick_drift,
                     3 * self.resident.nodes,
@@ -288,7 +337,27 @@ where
             done += batch;
         }
         self.resident.device.synchronize()?;
+        if self.check.is_some()
+            && let Some((block, record)) = self.resident.unstable()?
+        {
+            let step = record.step() as usize;
+            return Err(GpuError::UnstableTimeStep {
+                step,
+                block,
+                item: record.item(),
+                time_step: (self.time(step + 1) - self.time(step)).value(),
+            });
+        }
         self.resident.errors()
+    }
+    /// The largest squared angular frequency for which the largest of the steps from the rows
+    /// is a fraction `safety` of the stability limit.
+    fn limit(&self, rows: Range<usize>, safety: Scalar) -> Quantity<RateSquared> {
+        let largest = rows
+            .map(|row| self.time(row + 1) - self.time(row))
+            .fold(Quantity::default(), Quantity::max);
+        let rate = (VelocityVerlet::EXTENT * safety) / largest;
+        rate * rate
     }
     /// The time of a row of the grid of times, which is the state after as many steps.
     fn time(&self, row: usize) -> Quantity<Time> {

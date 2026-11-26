@@ -1,6 +1,6 @@
 mod dynamics;
 
-pub use dynamics::ExplicitRun;
+pub use dynamics::{DeviceStability, ExplicitRun};
 
 use self::dynamics::Kernels;
 use crate::{

@@ -7,9 +7,6 @@ use crate::math::{
 };
 use core::ops::Mul;
 
-/// The extent of the stability region of the method along the imaginary axis.
-const EXTENT: Scalar = 2.0;
-
 /// Explicit, second-order, fixed-step method for dynamics.[^1]
 ///
 /// ```math
@@ -44,6 +41,8 @@ impl<T> FixedStep<T> for VelocityVerlet {
 }
 
 impl VelocityVerlet {
+    /// The extent of the stability region of the method along the imaginary axis.
+    pub(crate) const EXTENT: Scalar = 2.0;
     /// Constructs the integrator with a fixed time step.
     pub fn new<T>(dt: Quantity<T>) -> Self {
         Self { dt: dt.value() }
@@ -175,7 +174,7 @@ where
         self.integrate_checked(
             function,
             |t, x, v, dt| {
-                let limit = bound(t, x, v)? * (EXTENT * safety);
+                let limit = bound(t, x, v)? * (Self::EXTENT * safety);
                 if dt > limit {
                     Err(IntegrationError::UnstableTimeStep(
                         dt.value(),
