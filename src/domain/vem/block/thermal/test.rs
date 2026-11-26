@@ -3,7 +3,7 @@ use crate::{
     math::{Quantity, Scalar},
     units::{PowerPerLengthTemperature, Temperature},
     vem::{
-        Checked, Lumped, NodalReferenceCoordinates, Unchecked,
+        Checked, ElementPowerIteration, Lumped, NodalReferenceCoordinates, Unchecked,
         block::{Block, thermal::NodalTemperatures},
         element::{DEFAULT_STABILIZATION, Element},
     },
@@ -275,8 +275,9 @@ mod heat {
             let (_, history, _) = model
                 .integrate(
                     Checked {
-                        safety: SAFETY,
+                        estimate: ElementPowerIteration,
                         interval: 1,
+                        safety: SAFETY,
                     },
                     Lumped,
                     &Euler::default(),
@@ -309,8 +310,9 @@ mod heat {
             let (_, history, rates) = model
                 .integrate(
                     Checked {
-                        safety: SAFETY,
+                        estimate: ElementPowerIteration,
                         interval: 1,
+                        safety: SAFETY,
                     },
                     Lumped,
                     &Euler::default(),
@@ -348,8 +350,9 @@ mod heat {
             let error = model
                 .integrate(
                     Checked {
-                        safety: 1.0,
+                        estimate: ElementPowerIteration,
                         interval: 1,
+                        safety: 1.0,
                     },
                     Lumped,
                     &Euler::default(),
@@ -387,8 +390,9 @@ mod heat {
             let error = model
                 .integrate(
                     Checked {
-                        safety: SAFETY,
+                        estimate: ElementPowerIteration,
                         interval: 0,
+                        safety: SAFETY,
                     },
                     Lumped,
                     &Euler::default(),

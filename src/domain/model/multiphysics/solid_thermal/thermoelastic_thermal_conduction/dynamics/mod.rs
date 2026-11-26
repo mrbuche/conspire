@@ -3,7 +3,7 @@ mod stability;
 pub mod time_scale;
 
 #[cfg_attr(not(feature = "fem"), allow(unused_imports))]
-pub use crate::domain::stability::{Checked, Unchecked};
+pub use crate::domain::stability::{Checked, ElementPowerIteration, Unchecked};
 pub use stability::Stability;
 
 use super::{motion::Motion, rates::ThermoelasticThermalConductionRateElements};

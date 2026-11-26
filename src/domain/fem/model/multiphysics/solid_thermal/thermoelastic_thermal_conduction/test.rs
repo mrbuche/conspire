@@ -333,7 +333,7 @@ mod dynamics {
                 ThermoelasticThermalConductionDynamics,
                 time_scale::ThermoelasticThermalConductionTimeScaleElements,
             },
-            solid::{Checked, Lumped, Unchecked},
+            solid::{Checked, ElementPowerIteration, Lumped, Unchecked},
         },
         math::{
             Quantity, Tensor,
@@ -591,7 +591,11 @@ mod dynamics {
         interval: usize,
     ) -> Result<(NodalCoordinates<3>, NodalTemperatures), IntegrationError> {
         let (_, coordinates, _, _, temperatures, _) = model().integrate(
-            Checked { safety, interval },
+            Checked {
+                estimate: ElementPowerIteration,
+                interval,
+                safety,
+            },
             Lumped,
             Lumped,
             &DormandPrinceFixedStep::default(),
@@ -743,8 +747,9 @@ mod dynamics {
         let (times, _, velocities, ..) = model
             .integrate(
                 Checked {
-                    safety: 0.5,
+                    estimate: ElementPowerIteration,
                     interval: 1,
+                    safety: 0.5,
                 },
                 Lumped,
                 Lumped,

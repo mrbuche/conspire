@@ -7,7 +7,7 @@ use crate::{
         NodalCoordinatesHistory, NodalVelocities, NodalVelocitiesHistory,
         lumping::Lumped,
         solid::mass::{LumpedMassElements, MassChoice},
-        stability::{Checked, Unchecked},
+        stability::{Checked, ElementPowerIteration, Unchecked},
         thermal::{
             NodalTemperatures,
             capacity::{CapacityChoice, LumpedHeatCapacityElements, NodalTemperatureRates},
@@ -103,7 +103,7 @@ where
     }
 }
 
-impl<B> Stability<Model<B, 3>, Lumped, Lumped> for Checked
+impl<B> Stability<Model<B, 3>, Lumped, Lumped> for Checked<ElementPowerIteration>
 where
     B: LumpedMassElements<3> + LumpedHeatCapacityElements<3>,
     Model<B, 3>: ThermoelasticThermalConductionTimeScaleElements,
@@ -135,7 +135,11 @@ where
         (initial_coordinates, initial_velocities): (NodalCoordinates<3>, NodalVelocities<3>),
         initial_temperatures: NodalTemperatures,
     ) -> Result<Solution, IntegrationError> {
-        let Self { safety, interval } = self;
+        let Self {
+            estimate: ElementPowerIteration,
+            interval,
+            safety,
+        } = self;
         if interval == 0 {
             return Err(IntegrationError::Intermediate(
                 "The interval between estimates of the time scales must be at least one."

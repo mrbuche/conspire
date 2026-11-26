@@ -1,7 +1,7 @@
 use crate::{
     domain::{
         Blocks, ElementModelError, Model, NodalCoordinates, NodalReferenceCoordinates,
-        block::element::Elements,
+        block::element::Elements, stability::ElementPowerIteration,
     },
     math::Quantity,
     units::Time,
@@ -54,5 +54,28 @@ where
                     .fastest_time_scale(reference_coordinates, nodal_coordinates)
                     .map_err(|error| error.in_block(self.0.number_of_blocks()))?,
             ))
+    }
+}
+
+/// A way to estimate the fastest time scale of the motion of a model.
+pub trait TimeScaleEstimate<M> {
+    /// The fastest time scale of the model, which bounds a stable explicit time step.
+    fn time_scale(
+        &self,
+        model: &M,
+        nodal_coordinates: &NodalCoordinates<3>,
+    ) -> Result<Quantity<Time>, ElementModelError>;
+}
+
+impl<B> TimeScaleEstimate<Model<B, 3>> for ElementPowerIteration
+where
+    B: TimeScaleElements<3>,
+{
+    fn time_scale(
+        &self,
+        model: &Model<B, 3>,
+        nodal_coordinates: &NodalCoordinates<3>,
+    ) -> Result<Quantity<Time>, ElementModelError> {
+        model.fastest_time_scale(&model.coordinates, nodal_coordinates)
     }
 }

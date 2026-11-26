@@ -15,7 +15,7 @@ use crate::{
             thermal::{NodalTemperatures, conduction::NodalForcesThermal},
         },
         element::linear::Tetrahedron,
-        solid::{Checked, Consistent, Lumped, Unchecked},
+        solid::{Checked, Consistent, ElementPowerIteration, Lumped, Unchecked},
         thermal::{
             capacity::HeatCapacityMatrix, time_scale::ThermalTimeScaleElements,
             transient::ThermalConductionTransient,
@@ -140,8 +140,9 @@ mod integrate_temperatures {
         let (.., history, _) = {
             let (times, history, rates) = model.integrate(
                 Checked {
-                    safety: SAFETY,
+                    estimate: ElementPowerIteration,
                     interval: 1,
+                    safety: SAFETY,
                 },
                 Lumped,
                 &Euler::default(),
@@ -212,8 +213,9 @@ mod integrate_temperatures {
         let dt = step(&model);
         let (_, history, rates) = model.integrate(
             Checked {
-                safety: SAFETY,
+                estimate: ElementPowerIteration,
                 interval: 1,
+                safety: SAFETY,
             },
             Lumped,
             &Euler::default(),
@@ -248,8 +250,9 @@ mod integrate_temperatures {
         );
         let (times, history, _) = model.integrate(
             Checked {
-                safety: SAFETY,
+                estimate: ElementPowerIteration,
                 interval: 1,
+                safety: SAFETY,
             },
             Lumped,
             &Euler::default(),
@@ -325,8 +328,9 @@ mod integrate_temperatures {
         let error = model
             .integrate(
                 Checked {
-                    safety: 1.0,
+                    estimate: ElementPowerIteration,
                     interval: 1,
+                    safety: 1.0,
                 },
                 Lumped,
                 &Euler::default(),

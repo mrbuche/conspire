@@ -1,4 +1,4 @@
-use super::{Checked, Stability, Unchecked};
+use super::{Checked, ElementPowerIteration, Stability, Unchecked};
 use crate::{
     cbm::{
         ElasticExplicitDynamics, Execution, Lumped, Model, NodalCoordinates,
@@ -57,8 +57,9 @@ fn a_bounded_integration_runs_below_the_limit_and_errors_above_it() {
         model.integrate(
             Execution::Serial,
             Checked {
-                safety: 1.0,
+                estimate: ElementPowerIteration,
                 interval: 1,
+                safety: 1.0,
             },
             Lumped,
             &VelocityVerlet::new(Time::seconds(dt)),
@@ -111,8 +112,9 @@ fn limit() -> f64 {
 fn an_unchecked_integration_accepts_a_step_that_a_checked_one_refuses() {
     let (model, step) = (model(), 4.0 * limit());
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 1,
+        safety: 1.0,
     };
     assert!(matches!(
         rest(&model, checked, step),
@@ -125,8 +127,9 @@ fn an_unchecked_integration_accepts_a_step_that_a_checked_one_refuses() {
 fn a_smaller_fraction_of_the_limit_refuses_a_step_that_a_larger_one_accepts() {
     let (model, step) = (model(), 1.5 * limit());
     let checked = |safety| Checked {
-        safety,
+        estimate: ElementPowerIteration,
         interval: 1,
+        safety,
     };
     assert!(rest(&model, checked(1.0), step).is_ok());
     assert!(rest(&model, checked(0.5), step).is_err());
@@ -136,8 +139,9 @@ fn a_smaller_fraction_of_the_limit_refuses_a_step_that_a_larger_one_accepts() {
 fn a_checked_integration_needs_an_interval() {
     let model = model();
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 0,
+        safety: 1.0,
     };
     assert!(matches!(
         rest(&model, checked, 0.5 * limit()),
@@ -149,8 +153,9 @@ fn a_checked_integration_needs_an_interval() {
 fn a_checked_integration_with_a_longer_interval_still_checks_the_first_step() {
     let (model, step) = (model(), 4.0 * limit());
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 1000,
+        safety: 1.0,
     };
     assert!(rest(&model, checked, step).is_err());
 }

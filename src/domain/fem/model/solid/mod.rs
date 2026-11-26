@@ -15,8 +15,8 @@ pub mod time_scale;
 pub mod viscoelastic;
 
 pub use crate::domain::solid::dynamics::{
-    Checked, Consistent, ElasticExplicitDynamics, ElasticImplicitDynamics, Execution, Lumped,
-    MassChoice, Stability, Unchecked,
+    Checked, Consistent, ElasticExplicitDynamics, ElasticImplicitDynamics, ElementPowerIteration,
+    Execution, Lumped, MassChoice, Stability, TimeScaleEstimate, Unchecked,
 };
 
 pub use crate::domain::solid::{

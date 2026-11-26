@@ -1,4 +1,4 @@
-use super::{Checked, Stability, Unchecked};
+use super::{Checked, ElementPowerIteration, Stability, Unchecked};
 use crate::{
     cbm::{
         Lumped, Model,
@@ -85,8 +85,9 @@ fn run(
 fn a_checked_run_refuses_a_step_above_the_limit_and_accepts_one_below_it() {
     let model = model();
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 1,
+        safety: 1.0,
     };
     assert!(run(&model, checked, 0.4 * limit()).is_ok());
     assert!(matches!(
@@ -99,8 +100,9 @@ fn a_checked_run_refuses_a_step_above_the_limit_and_accepts_one_below_it() {
 fn an_unchecked_run_accepts_a_step_that_a_checked_one_refuses() {
     let (model, step) = (model(), 4.0 * limit());
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 1,
+        safety: 1.0,
     };
     assert!(run(&model, checked, step).is_err());
     assert!(run(&model, Unchecked, step).is_ok());
@@ -110,8 +112,9 @@ fn an_unchecked_run_accepts_a_step_that_a_checked_one_refuses() {
 fn a_smaller_fraction_of_the_limit_refuses_a_step_that_a_larger_one_accepts() {
     let (model, step) = (model(), 1.5 * limit());
     let checked = |safety| Checked {
-        safety,
+        estimate: ElementPowerIteration,
         interval: 1,
+        safety,
     };
     assert!(run(&model, checked(1.0), step).is_ok());
     assert!(run(&model, checked(0.5), step).is_err());
@@ -121,8 +124,9 @@ fn a_smaller_fraction_of_the_limit_refuses_a_step_that_a_larger_one_accepts() {
 fn a_checked_run_needs_an_interval() {
     let model = model();
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 0,
+        safety: 1.0,
     };
     assert!(matches!(
         run(&model, checked, 0.4 * limit()),
@@ -134,8 +138,9 @@ fn a_checked_run_needs_an_interval() {
 fn a_checked_run_with_a_longer_interval_still_checks_the_first_step() {
     let (model, step) = (model(), 4.0 * limit());
     let checked = Checked {
-        safety: 1.0,
+        estimate: ElementPowerIteration,
         interval: 1000,
+        safety: 1.0,
     };
     assert!(run(&model, checked, step).is_err());
 }

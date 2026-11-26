@@ -8,7 +8,7 @@ use crate::{
     domain::{
         Model,
         lumping::Lumped,
-        stability::{Checked, Unchecked},
+        stability::{Checked, ElementPowerIteration, Unchecked},
         thermal::{
             NodalTemperatures,
             capacity::{CapacityChoice, LumpedHeatCapacityElements, NodalTemperatureRates},
@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<B> Stability<Model<B, 3>, Lumped> for Checked
+impl<B> Stability<Model<B, 3>, Lumped> for Checked<ElementPowerIteration>
 where
     B: LumpedHeatCapacityElements<3>,
     Model<B, 3>: ThermalTimeScaleElements<3>,
@@ -93,7 +93,11 @@ where
         time: &[Quantity<Time>],
         initial_temperatures: NodalTemperatures,
     ) -> Result<Solution, IntegrationError> {
-        let Self { safety, interval } = self;
+        let Self {
+            estimate: ElementPowerIteration,
+            interval,
+            safety,
+        } = self;
         if interval == 0 {
             return Err(IntegrationError::Intermediate(
                 "The interval between estimates of the time scale must be at least one."

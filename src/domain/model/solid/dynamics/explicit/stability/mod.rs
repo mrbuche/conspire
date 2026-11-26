@@ -5,13 +5,16 @@ mod test;
 
 use super::{Lumped, MassChoice};
 
-pub use crate::domain::stability::{Checked, Unchecked};
+pub use crate::domain::{
+    solid::time_scale::TimeScaleEstimate,
+    stability::{Checked, ElementPowerIteration, Unchecked},
+};
 
 use crate::{
     domain::{
         Model, NodalAccelerations, NodalAccelerationsHistory, NodalCoordinates,
         NodalCoordinatesHistory, NodalVelocities, NodalVelocitiesHistory,
-        solid::{dynamics::Solution, mass::LumpedMassElements, time_scale::TimeScaleElements},
+        solid::{dynamics::Solution, mass::LumpedMassElements},
     },
     math::{
         Quantity, Scalar,
@@ -75,9 +78,10 @@ where
     }
 }
 
-impl<B> Stability<Model<B, 3>, Lumped> for Checked
+impl<B, E> Stability<Model<B, 3>, Lumped> for Checked<E>
 where
-    B: LumpedMassElements<3> + TimeScaleElements<3>,
+    B: LumpedMassElements<3>,
+    E: TimeScaleEstimate<Model<B, 3>>,
 {
     fn integrate(
         self,
@@ -97,7 +101,11 @@ where
         time: &[Quantity<Time>],
         initial_state: (NodalCoordinates<3>, NodalVelocities<3>),
     ) -> Result<Solution, IntegrationError> {
-        let Self { safety, interval } = self;
+        let Self {
+            estimate,
+            interval,
+            safety,
+        } = self;
         let (initial_coordinates, initial_velocities) = initial_state;
         if interval == 0 {
             return Err(IntegrationError::Intermediate(
@@ -111,8 +119,8 @@ where
             function,
             |time, coordinates: &NodalCoordinates<3>, _: &NodalVelocities<3>| {
                 if evaluations % interval == 0 {
-                    time_scale = model
-                        .fastest_time_scale(&model.coordinates, &held(time, coordinates))
+                    time_scale = estimate
+                        .time_scale(model, &held(time, coordinates))
                         .map_err(|error| error.to_string())?;
                 }
                 evaluations += 1;
